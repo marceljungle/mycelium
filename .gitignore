@@ -210,7 +210,8 @@ __marimo__/
 
 # Mycelium specific
 music_vector_db/
-*.json
+plex_music_library.json
+music_embeddings.json
 *.wav
 *.mp3
 *.flac
