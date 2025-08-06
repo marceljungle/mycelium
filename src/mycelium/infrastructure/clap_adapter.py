@@ -91,3 +91,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         except Exception as e:
             print(f"Error processing text '{text}': {e}")
             return None
+    
+    def generate_embedding_from_file(self, filepath: Path) -> List[float]:
+        """Alias for generate_embedding for consistency."""
+        return self.generate_embedding(filepath)

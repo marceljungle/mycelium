@@ -117,3 +117,34 @@ class MyceliumService:
             "collection_name": self.embedding_repository.collection_name,
             "database_path": self.embedding_repository.db_path
         }
+    
+    def get_track_by_id(self, track_id: str) -> Optional[Track]:
+        """Get track information by Plex rating key."""
+        return self.plex_repository.get_track_by_id(track_id)
+    
+    def has_embedding(self, track_id: str) -> bool:
+        """Check if embedding exists for a track."""
+        return self.embedding_repository.has_embedding(track_id)
+    
+    def save_embedding(self, track_id: str, embedding: List[float]) -> None:
+        """Save an embedding for a track."""
+        # Get track info first
+        track = self.get_track_by_id(track_id)
+        if track:
+            track_embedding = TrackEmbedding(
+                track=track,
+                embedding=embedding
+            )
+            self.embedding_repository.save_embedding(track_embedding)
+    
+    def search_similar_by_track_id(
+        self, 
+        track_id: str, 
+        n_results: int = 10
+    ) -> List[SearchResult]:
+        """Search for tracks similar to a given track ID."""
+        return self.music_search.search_by_track_id(track_id, n_results)
+    
+    def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
+        """Compute embedding on CPU (fallback)."""
+        return self.embedding_generator.generate_embedding_from_file(Path(audio_filepath))

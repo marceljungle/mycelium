@@ -123,6 +123,28 @@ class MusicSearchUseCase:
         results = self.embedding_repository.search_by_embedding(text_embedding, n_results)
         
         return results
+    
+    def search_by_track_id(self, track_id: str, n_results: int = 10) -> List[SearchResult]:
+        """Find songs similar to a track identified by its ID."""
+        print(f"Searching for songs similar to track ID: {track_id}")
+        
+        # Get the embedding for this track
+        embedding = self.embedding_repository.get_embedding_by_track_id(track_id)
+        
+        if embedding is None:
+            print(f"No embedding found for track ID: {track_id}")
+            return []
+        
+        # Search for similar tracks
+        results = self.embedding_repository.search_by_embedding(embedding, n_results + 1)
+        
+        # Filter out the same track (it will be the first result with distance 0)
+        results = [
+            result for result in results 
+            if result.track.plex_rating_key != track_id
+        ][:n_results]
+        
+        return results
 
 
 class DataExportUseCase:

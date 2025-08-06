@@ -120,3 +120,39 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             ))
         
         return search_results
+    
+    def has_embedding(self, track_id: str) -> bool:
+        """Check if an embedding exists for a track."""
+        try:
+            result = self.collection.get(ids=[track_id])
+            return len(result['ids']) > 0
+        except Exception:
+            return False
+    
+    def save_embedding(self, track_embedding: TrackEmbedding) -> None:
+        """Save a single track embedding to ChromaDB."""
+        track = track_embedding.track
+        
+        self.collection.add(
+            ids=[track.plex_rating_key],
+            embeddings=[track_embedding.embedding],
+            metadatas=[{
+                "filepath": str(track.filepath),
+                "artist": track.artist,
+                "album": track.album,
+                "title": track.title
+            }]
+        )
+    
+    def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
+        """Get embedding for a specific track."""
+        try:
+            result = self.collection.get(
+                ids=[track_id],
+                include=['embeddings']
+            )
+            if result['embeddings'] and len(result['embeddings']) > 0:
+                return result['embeddings'][0]
+            return None
+        except Exception:
+            return None

@@ -1,7 +1,7 @@
 """Plex integration for accessing music library."""
 
 import os
-from typing import List
+from typing import List, Optional
 from pathlib import Path
 
 from plexapi.server import PlexServer
@@ -62,3 +62,27 @@ class PlexMusicRepository(PlexRepository):
                 print(f"Error processing artist {artist.title}: {e}. Continuing...")
 
         return all_tracks
+    
+    def get_track_by_id(self, track_id: str) -> Optional[Track]:
+        """Get a specific track by Plex rating key."""
+        try:
+            plex = PlexServer(self.plex_url, self.plex_token)
+            track = plex.fetchItem(int(track_id))
+            
+            # Get the first available part of the track
+            for part in track.iterParts():
+                filepath = Path(part.file)
+                if filepath.exists():
+                    return Track(
+                        artist=track.grandparentTitle or "Unknown Artist",
+                        album=track.parentTitle or "Unknown Album",
+                        title=track.title,
+                        filepath=filepath,
+                        plex_rating_key=str(track.ratingKey)
+                    )
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error getting track {track_id}: {e}")
+            return None
