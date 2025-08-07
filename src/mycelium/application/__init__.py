@@ -14,8 +14,8 @@ __all__ = [
     "MyceliumService",
     "LibraryScanUseCase",
     "EmbeddingGenerationUseCase",
-    "EmbeddingIndexingUseCase", 
+    "EmbeddingIndexingUseCase",
     "MusicSearchUseCase",
     "DataExportUseCase",
-    "DataImportUseCase",
+    "DataImportUseCase"
 ]

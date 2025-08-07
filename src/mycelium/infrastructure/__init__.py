@@ -6,6 +6,6 @@ from .chroma_adapter import ChromaEmbeddingRepository
 
 __all__ = [
     "PlexMusicRepository",
-    "CLAPEmbeddingGenerator", 
-    "ChromaEmbeddingRepository",
+    "CLAPEmbeddingGenerator",
+    "ChromaEmbeddingRepository"
 ]
