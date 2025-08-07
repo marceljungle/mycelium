@@ -100,7 +100,7 @@ def run_api(config: MyceliumConfig) -> None:
 
 def run_frontend(reload: bool = False):
     """Run the frontend development server."""
-    frontend_dir = Path(__file__).parent.parent.parent.parent / "frontend"
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if not frontend_dir.exists():
         print("Frontend directory not found. Skipping frontend server.")
         return
