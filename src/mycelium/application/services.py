@@ -3,9 +3,9 @@
 from typing import List, Optional
 from pathlib import Path
 
-from ..domain.models import Track, TrackEmbedding, SearchResult
-from ..infrastructure import PlexMusicRepository, CLAPEmbeddingGenerator, ChromaEmbeddingRepository
-from .use_cases import (
+from mycelium.domain.models import Track, TrackEmbedding, SearchResult
+from mycelium.infrastructure import PlexMusicRepository, CLAPEmbeddingGenerator, ChromaEmbeddingRepository
+from mycelium.application.use_cases import (
     LibraryScanUseCase,
     EmbeddingGenerationUseCase, 
     EmbeddingIndexingUseCase,

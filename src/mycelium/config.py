@@ -3,6 +3,22 @@
 import os
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+def load_env_file():
+    """Load environment variables from .env file if it exists."""
+    # Look for .env file in the project root (going up from src/mycelium/)
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+    else:
+        # Fallback: try to load from current directory
+        load_dotenv()
+
+# Load the .env file when this module is imported
+load_env_file()
 
 
 @dataclass
@@ -30,6 +46,16 @@ class CLAPConfig:
     chunk_duration_s: int = 10
     batch_size: int = 16
 
+    @classmethod
+    def from_env(cls) -> "CLAPConfig":
+        """Create CLAPConfig from environment variables."""
+        return cls(
+            model_id=os.environ.get("CLAP_MODEL_ID", "laion/larger_clap_music_and_speech"),
+            target_sr=int(os.environ.get("CLAP_TARGET_SR", "48000")),
+            chunk_duration_s=int(os.environ.get("CLAP_CHUNK_DURATION", "10")),
+            batch_size=int(os.environ.get("CLAP_BATCH_SIZE", "16"))
+        )
+
 
 @dataclass
 class ChromaConfig:
@@ -37,6 +63,15 @@ class ChromaConfig:
     db_path: str = "./music_vector_db"
     collection_name: str = "my_music_library"
     batch_size: int = 1000
+
+    @classmethod
+    def from_env(cls) -> "ChromaConfig":
+        """Create ChromaConfig from environment variables."""
+        return cls(
+            db_path=os.environ.get("CHROMA_DB_PATH", "./music_vector_db"),
+            collection_name=os.environ.get("COLLECTION_NAME", "my_music_library"),
+            batch_size=int(os.environ.get("CHROMA_BATCH_SIZE", "1000"))
+        )
 
 
 @dataclass
@@ -69,7 +104,7 @@ class MyceliumConfig:
         """Create configuration from environment variables."""
         return cls(
             plex=PlexConfig.from_env(),
-            clap=CLAPConfig(),
-            chroma=ChromaConfig(),
+            clap=CLAPConfig.from_env(),
+            chroma=ChromaConfig.from_env(),
             api=APIConfig.from_env()
         )

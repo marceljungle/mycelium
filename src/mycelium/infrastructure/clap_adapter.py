@@ -24,15 +24,50 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
         
-        # Setup device
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Setup device with MPS support for Apple Silicon
+        self.device = self._get_best_device()
         print(f"Using device: {self.device}")
         
         # Load model and processor
-        self.model = ClapModel.from_pretrained(model_id).to(self.device).half()
+        self.model = ClapModel.from_pretrained(model_id).to(self.device)
         self.processor = ClapProcessor.from_pretrained(model_id)
+
+        # Apply optimizations based on device
+        if self.device == "cuda":
+            self.model.half()
+        elif self.device == "mps":
+            try:
+                self.model.half()
+                torch.backends.mps.enabled = True
+                print("MPS half precision enabled for optimal performance")
+            except RuntimeError as e:
+                print(f"MPS half precision not supported, using FP32: {e}")
+                # Fallback to FP32 if half precision fails
+
         self.model.eval()
     
+    def _get_best_device(self) -> str:
+        """Get the best available device for computation."""
+        if torch.cuda.is_available():
+            return "cuda"
+        elif torch.backends.mps.is_available():
+            return "mps"
+        else:
+            return "cpu"
+
+    def _can_use_half_precision(self) -> bool:
+        """Check if the current device supports half precision."""
+        if self.device == "cuda":
+            return True
+        elif self.device == "mps":
+            # Test if MPS supports half precision on this device
+            try:
+                test_tensor = torch.rand(1, device=self.device, dtype=torch.half)
+                return True
+            except RuntimeError:
+                return False
+        return False
+
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
         """Generate embedding for an audio file."""
         try:
@@ -56,7 +91,14 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 return_tensors="pt", 
                 padding=True
             )
-            inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
+
+            # Move to device with device-specific optimizations
+            use_half = self._can_use_half_precision()
+            if use_half and (self.device == "cuda" or self.device == "mps"):
+                inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
+            else:
+                # For CPU or devices without half precision support, use float32
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
                 # Get embeddings for all chunks
@@ -80,7 +122,13 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 return_tensors="pt", 
                 padding=True
             )
-            text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+
+            # Apply same precision logic as audio embeddings
+            use_half = self._can_use_half_precision()
+            if use_half and (self.device == "cuda" or self.device == "mps"):
+                text_inputs = {k: v.to(self.device).half() for k, v in text_inputs.items()}
+            else:
+                text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
 
             with torch.no_grad():
                 text_features = self.model.get_text_features(**text_inputs)

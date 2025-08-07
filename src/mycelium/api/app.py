@@ -1,24 +1,24 @@
 """FastAPI application for Mycelium web interface."""
 
-import os
-from typing import List, Optional
 from pathlib import Path
+from typing import List
 
+import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..application.services import MyceliumService
-from ..application.job_queue import JobQueueService
-from ..config import MyceliumConfig
-from ..domain.worker import TaskResult
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
     ConfirmationRequiredResponse, ComputeOnServerRequest,
     QueueStatsResponse
 )
+from ..application.job_queue import JobQueueService
+from ..application.services import MyceliumService
+from ..config import MyceliumConfig
+from ..domain.worker import TaskResult
 
 
 # Pydantic models for API
@@ -345,7 +345,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
         # No active workers - return confirmation required
         return ConfirmationRequiredResponse(
             status="confirmation_required",
-            message="The sonic signature for this song needs to be calculated. This process will take approximately 30-45 seconds on the server hardware. Do you wish to continue?",
+            message="The sonic signature for this song needs to be calculated, and no workers are active. Do you wish to continue on the server hardware?",
             track_id=track_id
         )
     
@@ -381,7 +381,7 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         return {
             "message": "Computation started in background",
             "track_id": request.track_id,
-            "estimated_time": "30-45 seconds"
+            "estimated_time": "unknown"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -398,7 +398,6 @@ async def get_queue_stats():
 
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(
         "mycelium.api.app:app",
         host=config.api.host,

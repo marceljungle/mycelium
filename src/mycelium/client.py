@@ -37,8 +37,8 @@ class MyceliumClient:
         # Initialize model (will be loaded when first needed)
         self.model = None
         self.processor = None
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
+        self.device = self._get_best_device()
+
         print(f"Mycelium Client initialized")
         print(f"Worker ID: {self.worker_id}")
         print(f"Server: {self.server_url}")
@@ -54,6 +54,15 @@ class MyceliumClient:
         except Exception:
             return "127.0.0.1"
     
+    def _get_best_device(self) -> str:
+        """Get the best available device for computation."""
+        if torch.cuda.is_available():
+            return "cuda"
+        elif torch.backends.mps.is_available():
+            return "mps"
+        else:
+            return "cpu"
+
     def _load_model(self):
         """Load the CLAP model and processor."""
         if self.model is None:
@@ -62,9 +71,17 @@ class MyceliumClient:
             self.processor = ClapProcessor.from_pretrained(self.model_id)
             self.model.eval()
             
+            # Apply device-specific optimizations
             if self.device == "cuda":
-                self.model.half()  # Use FP16 for faster GPU processing
-            
+                self.model.half()
+            elif self.device == "mps":
+                try:
+                    self.model.half()
+                    torch.backends.mps.enabled = True
+                    print("MPS half precision enabled for optimal performance")
+                except RuntimeError as e:
+                    print(f"MPS half precision not supported, using FP32: {e}")
+
             print("Model loaded successfully")
     
     def _unload_model(self):
@@ -77,7 +94,9 @@ class MyceliumClient:
             
             if self.device == "cuda":
                 torch.cuda.empty_cache()
-            
+            elif self.device == "mps":
+                torch.mps.empty_cache()  # Clear MPS cache
+
             print("Model unloaded")
     
     def register_with_server(self) -> bool:
@@ -147,6 +166,19 @@ class MyceliumClient:
             print(f"Error downloading file: {e}")
             return None
     
+    def _can_use_half_precision(self) -> bool:
+        """Check if the current device supports half precision."""
+        if self.device == "cuda":
+            return True
+        elif self.device == "mps":
+            # Test if MPS supports half precision on this device
+            try:
+                test_tensor = torch.rand(1, device=self.device, dtype=torch.half)
+                return True
+            except RuntimeError:
+                return False
+        return False
+
     def compute_embedding(self, audio_file: Path) -> Optional[List[float]]:
         """Compute CLAP embedding for an audio file."""
         try:
@@ -177,11 +209,14 @@ class MyceliumClient:
                 padding=True
             )
             
-            # Move to device
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            if self.device == "cuda":
-                inputs = {k: v.half() for k, v in inputs.items()}
-            
+            # Move to device with device-specific optimizations
+            use_half = self._can_use_half_precision()
+            if use_half and (self.device == "cuda" or self.device == "mps"):
+                inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
+            else:
+                # For CPU or devices without half precision support, use float32
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
             with torch.no_grad():
                 # Get embeddings for all chunks
                 audio_features = self.model.get_audio_features(**inputs)
