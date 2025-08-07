@@ -100,7 +100,7 @@ def run_api(config: MyceliumConfig) -> None:
 
 def run_frontend():
     """Run the frontend development server."""
-    frontend_dir = Path(__file__).parent.parent.parent.parent / "frontend"
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if frontend_dir.exists():
         print("Starting frontend development server...")
         subprocess.run(["npm", "run", "dev"], cwd=frontend_dir)
