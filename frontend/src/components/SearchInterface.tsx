@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import SearchResults from './SearchResults';
+import { API_BASE_URL } from '../config/api';
 
 interface SearchResult {
   track: {
@@ -28,8 +29,8 @@ export default function SearchInterface() {
     setError(null);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/search/text?q=${encodeURIComponent(query)}&n_results=10`);
-      
+      const response = await fetch(`${API_BASE_URL}/api/search/text?q=${encodeURIComponent(query)}&n_results=10`);
+
       if (!response.ok) {
         throw new Error('Search failed. Make sure the Mycelium API is running.');
       }

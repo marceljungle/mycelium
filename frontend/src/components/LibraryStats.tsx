@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface LibraryStats {
   total_embeddings: number;
@@ -15,7 +16,7 @@ export default function LibraryStats() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/library/stats');
+      const response = await fetch(`${API_BASE_URL}/api/library/stats`);
       if (!response.ok) {
         throw new Error('Failed to fetch library stats');
       }
