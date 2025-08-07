@@ -123,19 +123,34 @@ def run_server_mode(config: MyceliumConfig) -> None:
     """Run server mode (API + Frontend)."""
     print("Starting Mycelium Server...")
 
-    # Start API server in a separate thread
-    api_thread = threading.Thread(target=run_api, args=(config,))
-    api_thread.daemon = True
-    api_thread.start()
+    if config.api.reload:
+        # In reload mode, run API in main thread and frontend in background
+        print("Reload mode: Starting API server in main thread...")
 
-    # Give API server time to start
-    time.sleep(2)
+        # Start frontend in background thread
+        frontend_thread = threading.Thread(target=run_frontend, args=(config.api.reload,))
+        frontend_thread.daemon = True
+        frontend_thread.start()
 
-    # Start frontend (this will run in the main thread)
-    try:
-        run_frontend(config.api.reload)
-    except KeyboardInterrupt:
-        print("\nShutting down server...")
+        # Give frontend time to start
+        time.sleep(2)
+
+        # Run API in main thread (required for reload/signal handling)
+        run_api(config)
+    else:
+        # In production mode, run API in background and frontend in main thread
+        api_thread = threading.Thread(target=run_api, args=(config,))
+        api_thread.daemon = True
+        api_thread.start()
+
+        # Give API server time to start
+        time.sleep(2)
+
+        # Start frontend (this will run in the main thread)
+        try:
+            run_frontend(config.api.reload)
+        except KeyboardInterrupt:
+            print("\nShutting down server...")
 
 
 def run_client_mode(
