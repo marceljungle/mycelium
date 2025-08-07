@@ -98,59 +98,33 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(reload: bool = False):
+def run_frontend():
     """Run the frontend development server."""
-    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-    if not frontend_dir.exists():
-        print("Frontend directory not found. Skipping frontend server.")
-        return
-
-    if reload:
-        print("Starting frontend development server (hot reload enabled)...")
+    frontend_dir = Path(__file__).parent.parent.parent.parent / "frontend"
+    if frontend_dir.exists():
+        print("Starting frontend development server...")
         subprocess.run(["npm", "run", "dev"], cwd=frontend_dir)
     else:
-        print("Building frontend for production...")
-        build_result = subprocess.run(["npm", "run", "build"], cwd=frontend_dir)
-        if build_result.returncode == 0:
-            print("Starting frontend production server...")
-            subprocess.run(["npm", "run", "start"], cwd=frontend_dir)
-        else:
-            print("Frontend build failed. Falling back to development server...")
-            subprocess.run(["npm", "run", "dev"], cwd=frontend_dir)
+        print("Frontend directory not found. Skipping frontend server.")
 
 
 def run_server_mode(config: MyceliumConfig) -> None:
     """Run server mode (API + Frontend)."""
     print("Starting Mycelium Server...")
 
-    if config.api.reload:
-        # In reload mode, run API in main thread and frontend in background
-        print("Reload mode: Starting API server in main thread...")
+    # Start API server in a separate thread
+    api_thread = threading.Thread(target=run_api, args=(config,))
+    api_thread.daemon = True
+    api_thread.start()
 
-        # Start frontend in background thread
-        frontend_thread = threading.Thread(target=run_frontend, args=(config.api.reload,))
-        frontend_thread.daemon = True
-        frontend_thread.start()
+    # Give API server time to start
+    time.sleep(2)
 
-        # Give frontend time to start
-        time.sleep(2)
-
-        # Run API in main thread (required for reload/signal handling)
-        run_api(config)
-    else:
-        # In production mode, run API in background and frontend in main thread
-        api_thread = threading.Thread(target=run_api, args=(config,))
-        api_thread.daemon = True
-        api_thread.start()
-
-        # Give API server time to start
-        time.sleep(2)
-
-        # Start frontend (this will run in the main thread)
-        try:
-            run_frontend(config.api.reload)
-        except KeyboardInterrupt:
-            print("\nShutting down server...")
+    # Start frontend (this will run in the main thread)
+    try:
+        run_frontend()
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
 
 
 def run_client_mode(
