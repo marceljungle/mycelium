@@ -61,7 +61,8 @@ service = MyceliumService(
     music_library_name=config.plex.music_library_name,
     db_path=config.chroma.db_path,
     collection_name=config.chroma.collection_name,
-    model_id=config.clap.model_id
+    model_id=config.clap.model_id,
+    track_db_path=config.database.db_path
 )
 
 # Initialize job queue service
@@ -94,7 +95,11 @@ async def root():
             "library_stats": "/api/library/stats",
             "search_text": "/api/search/text",
             "scan_library": "/api/library/scan",
-            "process_library": "/api/library/process",
+            "process_library": "/api/library/process", 
+            "stop_processing": "/api/library/process/stop",
+            "processing_progress": "/api/library/progress",
+            "can_resume": "/api/library/can_resume",
+            "process_legacy": "/api/library/process/legacy",
             "worker_register": "/workers/register",
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
@@ -170,20 +175,15 @@ async def search_by_text_get(
 
 @app.post("/api/library/scan")
 async def scan_library():
-    """Scan the Plex music library."""
+    """Scan the Plex music library and save metadata to database."""
     try:
-        tracks = service.scan_library()
+        result = service.scan_library_to_database()
         return {
-            "message": f"Successfully scanned library",
-            "tracks_found": len(tracks),
-            "sample_tracks": [
-                {
-                    "artist": track.artist,
-                    "title": track.title,
-                    "album": track.album
-                }
-                for track in tracks[:5]  # First 5 tracks as sample
-            ]
+            "message": f"Successfully scanned library and saved to database",
+            "total_tracks": result["total_tracks"],
+            "new_tracks": result["new_tracks"],
+            "updated_tracks": result["updated_tracks"],
+            "scan_timestamp": result["scan_timestamp"]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -191,13 +191,59 @@ async def scan_library():
 
 @app.post("/api/library/process")
 async def process_library():
-    """Run the full library processing workflow (scan, generate embeddings, index)."""
+    """Process embeddings for unprocessed tracks from database."""
+    try:
+        result = service.process_embeddings_from_database()
+        return {
+            "message": "Embedding processing completed",
+            "processed": result["processed"],
+            "failed": result["failed"],
+            "total": result["total"],
+            "stopped": result.get("stopped", False)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/library/process/stop")
+async def stop_processing():
+    """Stop the current embedding processing."""
+    try:
+        service.stop_processing()
+        return {"message": "Processing stop requested"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/library/progress")
+async def get_processing_progress():
+    """Get current processing progress and statistics."""
+    try:
+        stats = service.get_processing_progress()
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/library/can_resume")
+async def can_resume_processing():
+    """Check if processing can be resumed."""
+    try:
+        can_resume = service.can_resume_processing()
+        return {"can_resume": can_resume}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/library/process/legacy")
+async def process_library_legacy():
+    """Run the full library processing workflow (scan, generate embeddings, index) - legacy method."""
     try:
         # This is a long-running operation, in production you'd want to run this async
         service.full_library_processing()
         stats = service.get_database_stats()
         return {
-            "message": "Library processing completed successfully",
+            "message": "Library processing completed successfully (legacy workflow)",
             "stats": stats
         }
     except Exception as e:

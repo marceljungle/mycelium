@@ -1,0 +1,31 @@
+# Mycelium Configuration Example
+# Copy this file to ~/.config/mycelium/config.yml and customize for your setup
+
+# Plex server configuration
+plex:
+  url: http://localhost:32400
+  token: null  # Replace with your Plex token
+  music_library_name: Music
+
+# CLAP model configuration
+clap:
+  model_id: laion/larger_clap_music_and_speech
+  target_sr: 48000
+  chunk_duration_s: 10
+  batch_size: 16
+
+# ChromaDB vector database configuration
+chroma:
+  db_path: ./music_vector_db
+  collection_name: my_music_library
+  batch_size: 1000
+
+# Track metadata database configuration
+database:
+  db_path: ./mycelium_tracks.db
+
+# API server configuration
+api:
+  host: localhost
+  port: 8000
+  reload: false
