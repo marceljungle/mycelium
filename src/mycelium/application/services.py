@@ -16,7 +16,7 @@ from mycelium.application.use_cases import (
     EmbeddingIndexingUseCase,
     MusicSearchUseCase
 )
-from mycelium.application.new_use_cases import (
+from mycelium.application.workflow_use_cases import (
     SeparatedLibraryScanUseCase,
     ResumableEmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
