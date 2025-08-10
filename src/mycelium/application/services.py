@@ -74,6 +74,9 @@ class MyceliumService:
         )
         self.progress_tracker = ProcessingProgressUseCase(self.track_database)
         self.database_maintenance = DatabaseMaintenanceUseCase(self.track_database)
+        
+        # Processing state tracking
+        self._processing_in_progress = False
     
     # New separated workflow methods
     def scan_library_to_database(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
@@ -86,7 +89,20 @@ class MyceliumService:
         max_tracks: Optional[int] = None
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks from database."""
-        return self.resumable_processing.execute(progress_callback, max_tracks)
+        if self._processing_in_progress:
+            return {
+                "message": "Processing is already in progress",
+                "status": "already_running"
+            }
+        
+        self._processing_in_progress = True
+        try:
+            # Reset stop flag for new session
+            self.reset_processing_stop_flag()
+            result = self.resumable_processing.execute(progress_callback, max_tracks)
+            return result
+        finally:
+            self._processing_in_progress = False
     
     def stop_processing(self) -> None:
         """Stop the current embedding processing."""
@@ -98,7 +114,9 @@ class MyceliumService:
     
     def get_processing_progress(self) -> Dict[str, Any]:
         """Get current processing progress and statistics."""
-        return self.progress_tracker.get_current_stats()
+        stats = self.progress_tracker.get_current_stats()
+        stats["is_processing"] = self._processing_in_progress
+        return stats
     
     def can_resume_processing(self) -> bool:
         """Check if processing can be resumed."""

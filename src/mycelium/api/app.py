@@ -190,16 +190,22 @@ async def scan_library():
 
 
 @app.post("/api/library/process")
-async def process_library():
+async def process_library(background_tasks: BackgroundTasks):
     """Process embeddings for unprocessed tracks from database."""
     try:
-        result = service.process_embeddings_from_database()
+        # Check if processing is already running
+        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+            return {
+                "message": "Processing is already in progress",
+                "status": "already_running"
+            }
+        
+        # Start processing in background
+        background_tasks.add_task(service.process_embeddings_from_database)
+        
         return {
-            "message": "Embedding processing completed",
-            "processed": result["processed"],
-            "failed": result["failed"],
-            "total": result["total"],
-            "stopped": result.get("stopped", False)
+            "message": "Embedding processing started in background",
+            "status": "started"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
