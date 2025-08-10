@@ -62,7 +62,7 @@ export default function LibraryStats() {
         if (stats) {
           setStats(prev => prev ? { ...prev, track_database_stats: data } : null);
         }
-        
+
         // Update processing state based on backend status
         if (data.is_processing && !processLoading) {
           setProcessLoading(true);
@@ -84,7 +84,7 @@ export default function LibraryStats() {
     setScanLoading(true);
     setOperationMessage(null);
     setProgressInfo(null);
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/library/scan`, {
         method: 'POST',
@@ -111,7 +111,7 @@ export default function LibraryStats() {
     setProcessLoading(true);
     setOperationMessage(null);
     setProgressInfo({ stage: 'starting' });
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/library/process`, {
         method: 'POST',
@@ -120,20 +120,20 @@ export default function LibraryStats() {
         throw new Error('Failed to start processing');
       }
       const data = await response.json();
-      
+
       if (data.status === 'already_running') {
         setOperationMessage('⚠️ Processing is already in progress');
         setProcessLoading(false);
         setProgressInfo(null);
         return;
       }
-      
+
       if (data.status === 'worker_processing_started') {
         setOperationMessage(`🚀 Worker processing started! Created ${data.tasks_created} tasks for ${data.active_workers} workers. Progress will be updated automatically.`);
         // Don't set processLoading to false - let the progress monitoring handle it
         return;
       }
-      
+
       if (data.status === 'no_workers' && data.confirmation_required) {
         setOperationMessage('⚠️ No client workers detected. Server processing will use local hardware.');
         setShowConfirmation(true);
@@ -141,16 +141,16 @@ export default function LibraryStats() {
         setProgressInfo(null);
         return;
       }
-      
+
       // Handle other status types
       if (data.status === 'server_started') {
         setOperationMessage('🚀 Server processing started! Progress will be updated automatically.');
         return;
       }
-      
+
       // Default success case (backward compatibility)
       setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
-      
+
     } catch (_err) {
       setOperationMessage('❌ Failed to start processing. Make sure the API server is running.');
       setProcessLoading(false);
@@ -163,7 +163,7 @@ export default function LibraryStats() {
     setShowConfirmation(false);
     setOperationMessage(null);
     setProgressInfo({ stage: 'starting' });
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/library/process/server`, {
         method: 'POST',
@@ -172,16 +172,16 @@ export default function LibraryStats() {
         throw new Error('Failed to start server processing');
       }
       const data = await response.json();
-      
+
       if (data.status === 'already_running') {
         setOperationMessage('⚠️ Processing is already in progress');
         setProcessLoading(false);
         setProgressInfo(null);
         return;
       }
-      
+
       setOperationMessage('🖥️ Server processing started! This may take longer on low-power hardware. Progress will be updated automatically.');
-      
+
     } catch (_err) {
       setOperationMessage('❌ Failed to start server processing. Make sure the API server is running.');
       setProcessLoading(false);
@@ -210,15 +210,15 @@ export default function LibraryStats() {
   useEffect(() => {
     fetchStats();
     fetchProgress();
-    
+
     // Refresh stats and progress every 5 seconds
     const interval = setInterval(() => {
       fetchStats();
       fetchProgress();
     }, 5000);
-    
+
     return () => clearInterval(interval);
-  }, [fetchStats, fetchProgress]);
+  }, []); // Remove fetchStats and fetchProgress from dependencies to prevent multiple intervals
 
   if (loading) {
     return (
@@ -242,8 +242,8 @@ export default function LibraryStats() {
         <span className="text-gray-900 dark:text-white font-medium">{percentage.toFixed(1)}%</span>
       </div>
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-        <div 
-          className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all duration-300" 
+        <div
+          className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all duration-300"
           style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
       </div>
@@ -255,7 +255,7 @@ export default function LibraryStats() {
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
         📊 Library Management
       </h3>
-      
+
       {error ? (
         <div className="text-center py-6">
           <div className="text-4xl mb-2">⚠️</div>
@@ -295,7 +295,7 @@ export default function LibraryStats() {
                   </div>
                 </div>
               </div>
-              
+
               {stats.track_database_stats.total_tracks > 0 && (
                 <div className="mt-3">
                   {renderProgressBar(
@@ -306,7 +306,7 @@ export default function LibraryStats() {
               )}
             </div>
           )}
-          
+
           {/* Vector Database Stats */}
           <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 p-4 rounded-lg">
             <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">
@@ -316,7 +316,7 @@ export default function LibraryStats() {
               Embeddings in Vector DB
             </div>
           </div>
-          
+
           <div className="space-y-3">
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Collection</div>
@@ -324,7 +324,7 @@ export default function LibraryStats() {
                 {stats.collection_name}
               </div>
             </div>
-            
+
             <div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Database Path</div>
               <div className="font-mono text-xs text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 p-2 rounded">
@@ -341,7 +341,7 @@ export default function LibraryStats() {
           </p>
         </div>
       )}
-      
+
       {/* Operations */}
       <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
         <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
@@ -392,7 +392,7 @@ export default function LibraryStats() {
               '📖 Scan Library'
             )}
           </button>
-          
+
           <button
             onClick={processEmbeddings}
             disabled={processLoading || scanLoading}
@@ -410,7 +410,7 @@ export default function LibraryStats() {
               '⚡ Process Embeddings'
             )}
           </button>
-          
+
           {processLoading && (
             <button
               onClick={stopProcessing}
@@ -420,14 +420,14 @@ export default function LibraryStats() {
             </button>
           )}
         </div>
-        
+
         <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
           <p>• Scan Library: Discovers tracks and saves metadata</p>
           <p>• Process Embeddings: Generates AI embeddings for search</p>
           <p>• Processing can be stopped and resumed anytime</p>
         </div>
       </div>
-      
+
       {/* Confirmation Dialog */}
       {showConfirmation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

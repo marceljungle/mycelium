@@ -128,7 +128,7 @@ class MyceliumClient:
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
                 params={"worker_id": self.worker_id},
-                timeout=10
+                timeout=3600
             )
             
             if response.status_code == 200:
