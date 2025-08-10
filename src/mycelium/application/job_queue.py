@@ -133,3 +133,27 @@ class JobQueueService:
                 "failed_tasks": failed_tasks,
                 "total_tasks": len(self._tasks)
             }
+
+    def clear_pending_tasks(self) -> int:
+        """Clear all pending tasks from the queue. Returns number of tasks cleared."""
+        with self._lock:
+            cleared_count = len(self._pending_tasks)
+            
+            # Mark all pending tasks as cancelled
+            for task_id in self._pending_tasks:
+                if task_id in self._tasks:
+                    self._tasks[task_id].status = TaskStatus.FAILED
+                    self._tasks[task_id].error_message = "Processing stopped by user"
+                    self._tasks[task_id].completed_at = datetime.now()
+            
+            # Clear the pending tasks list
+            self._pending_tasks.clear()
+            
+            return cleared_count
+
+    def has_active_processing(self) -> bool:
+        """Check if there are any tasks currently being processed or pending."""
+        with self._lock:
+            return len(self._pending_tasks) > 0 or any(
+                t.status == TaskStatus.IN_PROGRESS for t in self._tasks.values()
+            )

@@ -107,7 +107,14 @@ class MyceliumService:
     
     def stop_processing(self) -> None:
         """Stop the current embedding processing."""
+        # Stop server-side processing
         self.resumable_processing.stop()
+        
+        # Stop worker-based processing if available
+        if hasattr(self, 'worker_processing'):
+            return self.stop_worker_processing()
+        
+        return {"cleared_tasks": 0, "message": "Server processing stop requested"}
     
     def reset_processing_stop_flag(self) -> None:
         """Reset the stop flag for new processing session."""
@@ -252,3 +259,22 @@ class MyceliumService:
                 "tasks_created": 0
             }
         return self.worker_processing.create_worker_tasks(max_tracks)
+    
+    def stop_worker_processing(self) -> Dict[str, Any]:
+        """Stop worker processing by clearing pending tasks."""
+        if not hasattr(self, 'worker_processing'):
+            return {"cleared_tasks": 0, "message": "Worker processing not initialized"}
+        
+        # Clear pending tasks from the job queue
+        cleared_count = self.worker_processing.job_queue.clear_pending_tasks()
+        
+        return {
+            "cleared_tasks": cleared_count,
+            "message": f"Cleared {cleared_count} pending tasks. Tasks currently being processed by workers will complete."
+        }
+    
+    def has_active_worker_processing(self) -> bool:
+        """Check if there are active worker processing tasks."""
+        if not hasattr(self, 'worker_processing'):
+            return False
+        return self.worker_processing.job_queue.has_active_processing()

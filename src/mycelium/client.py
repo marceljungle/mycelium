@@ -182,7 +182,7 @@ class MyceliumClient:
     def compute_embedding(self, audio_file: Path) -> Optional[List[float]]:
         """Compute CLAP embedding for an audio file."""
         try:
-            # Load model if not already loaded
+            # Ensure model is loaded (only loads if not already loaded)
             self._load_model()
             
             # Load and process audio
@@ -305,6 +305,10 @@ class MyceliumClient:
             print("Failed to register with server. Exiting.")
             return
         
+        # Pre-load model at start of session for efficiency
+        print("Loading CLAP model for the session...")
+        self._load_model()
+        
         print(f"Worker loop started. Polling every {self.poll_interval} seconds...")
         
         try:
@@ -313,11 +317,8 @@ class MyceliumClient:
                 job = self.get_job()
                 
                 if job:
-                    # Process the job
+                    # Process the job (model is already loaded)
                     self.process_job(job)
-                    
-                    # Unload model to free GPU memory between jobs
-                    self._unload_model()
                 else:
                     # No job available, wait before polling again
                     time.sleep(self.poll_interval)
@@ -325,6 +326,7 @@ class MyceliumClient:
         except KeyboardInterrupt:
             print("\nShutting down worker...")
         finally:
+            # Only unload model when shutting down
             self._unload_model()
             print("Worker stopped")
 

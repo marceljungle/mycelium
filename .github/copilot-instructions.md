@@ -68,6 +68,10 @@ mycelium scan
 mycelium process
 # **NEVER CANCEL:** Takes 30+ minutes for large libraries
 
+# Start GPU worker for distributed processing (on powerful machines)
+mycelium client --server-host your-server-ip
+# **RECOMMENDED:** Run on machines with GPUs for fast CLAP processing
+
 # Search by text
 mycelium search-text "upbeat 80s synthpop"
 
@@ -83,6 +87,25 @@ mycelium api
 # Start server mode (API + Frontend)
 mycelium server
 ```
+
+### Distributed Worker Architecture
+**NEW: Worker-First Processing Design**
+
+Mycelium now prioritizes distributed GPU workers over server processing:
+
+1. **Optimal Setup:** Run server on lightweight hardware (Orange Pi, etc.) + GPU workers on powerful machines
+2. **Processing Flow:** 
+   - Frontend → Server checks for active workers
+   - If workers available: Creates distributed tasks
+   - If no workers: Asks user confirmation for server processing
+3. **Worker Commands:**
+   ```bash
+   # On powerful GPU machine
+   mycelium client --server-host 192.168.1.100
+   
+   # Server will automatically detect and use workers
+   # Frontend "Process Embeddings" uses workers when available
+   ```
 
 ## Validation Scenarios
 
@@ -107,6 +130,12 @@ mycelium server
    - Configure .env with valid Plex token
    - Run: `mycelium scan` to test Plex connectivity
    - Run: `mycelium stats` to verify database
+
+4. **Worker Integration Test (for distributed processing):**
+   - Start server: `mycelium api`
+   - Start worker (separate machine): `mycelium client --server-host your-server-ip`
+   - In frontend: Click "Process Embeddings" - should show worker processing
+   - Without workers: Should show confirmation dialog for server processing
 
 ### Known Network Issues
 - **PyPI timeouts:** Python dependency installation may fail in CI/restricted networks
@@ -141,8 +170,11 @@ mycelium/
 ├── src/mycelium/           # Python backend
 │   ├── domain/             # Core business logic and models
 │   ├── application/        # Use cases and services (MyceliumService)
+│   │   ├── job_queue.py    # Worker coordination and task distribution
+│   │   └── workflow_use_cases.py  # Worker-based processing logic
 │   ├── infrastructure/     # External adapters (Plex, CLAP, ChromaDB)
 │   ├── api/                # FastAPI web API endpoints
+│   ├── client.py           # GPU worker client for distributed processing
 │   ├── main.py             # CLI entry point with Typer
 │   └── config.py           # Configuration management
 ├── frontend/               # Next.js frontend  
@@ -159,6 +191,8 @@ mycelium/
 - **Check `frontend/src/components/LibraryStats.tsx`** for API integration
 - **Check `src/mycelium/api/app.py`** for API endpoint changes
 - **Check `src/mycelium/main.py`** for CLI command modifications
+- **Check `src/mycelium/application/job_queue.py`** for worker coordination
+- **Check `src/mycelium/client.py`** for GPU worker functionality
 
 ## Dependencies and Requirements
 
@@ -199,8 +233,10 @@ mycelium/
 
 ### Performance Notes
 - **First-time model downloads:** CLAP models (~1GB) download on first use
-- **Embedding generation:** CPU-intensive, can take hours for large libraries
+- **Embedding generation:** GPU-accelerated on workers, CPU-intensive on server
+- **Distributed processing:** Workers keep models loaded for efficiency
 - **Database indexing:** ChromaDB operations scale with library size
+- **Worker optimization:** Models loaded once per worker session, not per track
 
 ## Quick Reference Commands
 
@@ -218,6 +254,9 @@ mycelium api                       # Start backend (separate terminal)
 mycelium scan                      # Scan Plex library
 mycelium process                   # Full processing (30+ min, NEVER CANCEL)
 mycelium search-text "jazz piano"  # Test search
+
+# Distributed processing (recommended)
+mycelium client --server-host 192.168.1.100  # Start GPU worker
 
 # Validation
 npm run lint                       # Frontend linting

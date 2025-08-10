@@ -263,8 +263,21 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
 async def stop_processing():
     """Stop the current embedding processing."""
     try:
-        service.stop_processing()
-        return {"message": "Processing stop requested"}
+        result = service.stop_processing()
+        
+        # Also check for worker processing
+        if service.has_active_worker_processing():
+            worker_result = service.stop_worker_processing()
+            return {
+                "message": f"Processing stop requested. {worker_result['message']}",
+                "cleared_tasks": worker_result.get("cleared_tasks", 0),
+                "type": "worker_processing"
+            }
+        else:
+            return {
+                "message": "Processing stop requested - will finish current track and stop",
+                "type": "server_processing"
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
