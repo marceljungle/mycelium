@@ -8,6 +8,7 @@ from tqdm import tqdm
 from ..domain.models import TrackEmbedding
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
 from ..infrastructure.track_database import TrackDatabase
+from .job_queue import JobQueueService
 
 
 class SeparatedLibraryScanUseCase:
@@ -236,3 +237,80 @@ class DatabaseMaintenanceUseCase:
         """Reset all tracks to unprocessed state (for reprocessing)."""
         # This would require additional database methods
         pass
+
+
+class WorkerBasedProcessingUseCase:
+    """Use case for processing embeddings using client workers."""
+
+    def __init__(
+        self,
+        job_queue_service: JobQueueService,
+        track_database: TrackDatabase,
+        api_host: str = "localhost",
+        api_port: int = 8000
+    ):
+        self.job_queue = job_queue_service
+        self.track_database = track_database
+        self.api_host = api_host
+        self.api_port = api_port
+
+    def can_use_workers(self) -> bool:
+        """Check if there are active workers available."""
+        active_workers = self.job_queue.get_active_workers()
+        return len(active_workers) > 0
+
+    def get_worker_info(self) -> Dict[str, Any]:
+        """Get information about available workers."""
+        active_workers = self.job_queue.get_active_workers()
+        queue_stats = self.job_queue.get_queue_stats()
+        
+        return {
+            "active_workers": len(active_workers),
+            "worker_details": [
+                {
+                    "id": worker.id,
+                    "ip_address": worker.ip_address,
+                    "last_heartbeat": worker.last_heartbeat.isoformat()
+                }
+                for worker in active_workers
+            ],
+            "queue_stats": queue_stats
+        }
+
+    def create_worker_tasks(self, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+        """Create tasks for all unprocessed tracks to be handled by workers."""
+        if not self.can_use_workers():
+            return {
+                "success": False,
+                "message": "No active workers available",
+                "tasks_created": 0
+            }
+
+        # Get unprocessed tracks
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
+        
+        if not unprocessed_tracks:
+            return {
+                "success": True,
+                "message": "No tracks to process",
+                "tasks_created": 0
+            }
+
+        # Create tasks for each track
+        tasks_created = 0
+        for stored_track in unprocessed_tracks:
+            try:
+                download_url = f"http://{self.api_host}:{self.api_port}/download_track/{stored_track.plex_rating_key}"
+                task = self.job_queue.create_task(stored_track.plex_rating_key, download_url)
+                tasks_created += 1
+            except Exception as e:
+                print(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
+                continue
+
+        return {
+            "success": True,
+            "message": f"Created {tasks_created} tasks for worker processing",
+            "tasks_created": tasks_created,
+            "total_unprocessed": len(unprocessed_tracks),
+            "worker_info": self.get_worker_info()
+        }

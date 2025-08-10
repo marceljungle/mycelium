@@ -20,7 +20,8 @@ from mycelium.application.workflow_use_cases import (
     SeparatedLibraryScanUseCase,
     ResumableEmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
-    DatabaseMaintenanceUseCase
+    DatabaseMaintenanceUseCase,
+    WorkerBasedProcessingUseCase
 )
 
 
@@ -220,3 +221,34 @@ class MyceliumService:
     def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
         """Compute embedding on CPU (fallback)."""
         return self.embedding_generator.generate_embedding_from_file(Path(audio_filepath))
+    
+    def initialize_worker_processing(self, job_queue_service, api_host: str = "localhost", api_port: int = 8000):
+        """Initialize worker-based processing use case."""
+        self.worker_processing = WorkerBasedProcessingUseCase(
+            job_queue_service,
+            self.track_database,
+            api_host,
+            api_port
+        )
+    
+    def can_use_workers(self) -> bool:
+        """Check if workers are available for processing."""
+        if not hasattr(self, 'worker_processing'):
+            return False
+        return self.worker_processing.can_use_workers()
+    
+    def get_worker_info(self) -> Dict[str, Any]:
+        """Get information about available workers."""
+        if not hasattr(self, 'worker_processing'):
+            return {"active_workers": 0, "worker_details": [], "queue_stats": {}}
+        return self.worker_processing.get_worker_info()
+    
+    def create_worker_tasks(self, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+        """Create tasks for worker processing."""
+        if not hasattr(self, 'worker_processing'):
+            return {
+                "success": False, 
+                "message": "Worker processing not initialized",
+                "tasks_created": 0
+            }
+        return self.worker_processing.create_worker_tasks(max_tracks)

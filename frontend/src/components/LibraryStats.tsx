@@ -35,6 +35,7 @@ export default function LibraryStats() {
   const [processLoading, setProcessLoading] = useState(false);
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
   const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -127,16 +128,70 @@ export default function LibraryStats() {
         return;
       }
       
-      setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
+      if (data.status === 'worker_processing_started') {
+        setOperationMessage(`🚀 Worker processing started! Created ${data.tasks_created} tasks for ${data.active_workers} workers. Progress will be updated automatically.`);
+        // Don't set processLoading to false - let the progress monitoring handle it
+        return;
+      }
       
-      // Don't set processLoading to false here - let the progress monitoring handle it
-      // The processing is now async, so we monitor progress via the progress endpoint
+      if (data.status === 'no_workers' && data.confirmation_required) {
+        setOperationMessage('⚠️ No client workers detected. Server processing will use local hardware.');
+        setShowConfirmation(true);
+        setProcessLoading(false);
+        setProgressInfo(null);
+        return;
+      }
+      
+      // Handle other status types
+      if (data.status === 'server_started') {
+        setOperationMessage('🚀 Server processing started! Progress will be updated automatically.');
+        return;
+      }
+      
+      // Default success case (backward compatibility)
+      setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
       
     } catch (_err) {
       setOperationMessage('❌ Failed to start processing. Make sure the API server is running.');
       setProcessLoading(false);
       setProgressInfo(null);
     }
+  };
+
+  const processOnServer = async () => {
+    setProcessLoading(true);
+    setShowConfirmation(false);
+    setOperationMessage(null);
+    setProgressInfo({ stage: 'starting' });
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/library/process/server`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to start server processing');
+      }
+      const data = await response.json();
+      
+      if (data.status === 'already_running') {
+        setOperationMessage('⚠️ Processing is already in progress');
+        setProcessLoading(false);
+        setProgressInfo(null);
+        return;
+      }
+      
+      setOperationMessage('🖥️ Server processing started! This may take longer on low-power hardware. Progress will be updated automatically.');
+      
+    } catch (_err) {
+      setOperationMessage('❌ Failed to start server processing. Make sure the API server is running.');
+      setProcessLoading(false);
+      setProgressInfo(null);
+    }
+  };
+
+  const cancelConfirmation = () => {
+    setShowConfirmation(false);
+    setOperationMessage(null);
   };
 
   const stopProcessing = async () => {
@@ -372,6 +427,37 @@ export default function LibraryStats() {
           <p>• Processing can be stopped and resumed anytime</p>
         </div>
       </div>
+      
+      {/* Confirmation Dialog */}
+      {showConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              ⚠️ No Client Workers Available
+            </h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              No GPU workers are currently connected to process embeddings. Processing on the server may be very slow if it lacks sufficient hardware (GPU/powerful CPU).
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+              To use GPU workers, start a client with: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">mycelium client --server-host your-server-ip</code>
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={processOnServer}
+                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              >
+                🖥️ Process on Server
+              </button>
+              <button
+                onClick={cancelConfirmation}
+                className="flex-1 px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

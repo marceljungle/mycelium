@@ -13,7 +13,7 @@ from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
     ConfirmationRequiredResponse, ComputeOnServerRequest,
-    QueueStatsResponse
+    QueueStatsResponse, WorkerProcessingResponse, NoWorkersResponse
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
@@ -68,6 +68,9 @@ service = MyceliumService(
 # Initialize job queue service
 job_queue = JobQueueService()
 
+# Initialize worker processing in the service
+service.initialize_worker_processing(job_queue, config.api.host, config.api.port)
+
 # Create FastAPI app
 app = FastAPI(
     title="Mycelium API",
@@ -96,6 +99,7 @@ async def root():
             "search_text": "/api/search/text",
             "scan_library": "/api/library/scan",
             "process_library": "/api/library/process", 
+            "process_on_server": "/api/library/process/server",
             "stop_processing": "/api/library/process/stop",
             "processing_progress": "/api/library/progress",
             "can_resume": "/api/library/can_resume",
@@ -104,7 +108,8 @@ async def root():
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
             "similar_by_track": "/similar/by_track/{track_id}",
-            "compute_on_server": "/compute/on_server"
+            "compute_on_server": "/compute/on_server",
+            "queue_stats": "/api/queue/stats"
         }
     }
 
@@ -190,8 +195,51 @@ async def scan_library():
 
 
 @app.post("/api/library/process")
-async def process_library(background_tasks: BackgroundTasks):
-    """Process embeddings for unprocessed tracks from database."""
+async def process_library():
+    """Process embeddings - prioritize workers, fallback to server with confirmation."""
+    try:
+        # Check if processing is already running
+        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+            return {
+                "status": "already_running",
+                "message": "Processing is already in progress"
+            }
+        
+        # Check for active workers first
+        if service.can_use_workers():
+            # Use worker-based processing
+            result = service.create_worker_tasks()
+            
+            if result["success"]:
+                return WorkerProcessingResponse(
+                    status="worker_processing_started",
+                    message=f"Created {result['tasks_created']} tasks for worker processing",
+                    tasks_created=result["tasks_created"],
+                    active_workers=result["worker_info"]["active_workers"]
+                )
+            else:
+                return NoWorkersResponse(
+                    status="worker_error",
+                    message=result["message"],
+                    active_workers=0,
+                    confirmation_required=False
+                )
+        else:
+            # No workers available - require confirmation for server processing
+            return NoWorkersResponse(
+                status="no_workers",
+                message="No client workers are available. The server hardware may not have sufficient resources for CLAP model processing. Do you want to proceed with server processing anyway?",
+                active_workers=0,
+                confirmation_required=True
+            )
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/library/process/server")
+async def process_library_on_server(background_tasks: BackgroundTasks):
+    """Process embeddings on server after user confirmation."""
     try:
         # Check if processing is already running
         if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
@@ -200,12 +248,12 @@ async def process_library(background_tasks: BackgroundTasks):
                 "status": "already_running"
             }
         
-        # Start processing in background
+        # Start processing in background on server
         background_tasks.add_task(service.process_embeddings_from_database)
         
         return {
-            "message": "Embedding processing started in background",
-            "status": "started"
+            "message": "Server-side embedding processing started in background",
+            "status": "server_started"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
