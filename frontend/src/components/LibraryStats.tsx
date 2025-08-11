@@ -63,11 +63,11 @@ export default function LibraryStats() {
           setStats(prev => prev ? { ...prev, track_database_stats: data } : null);
         }
 
-        // Update processing state based on backend status
-        if (data.is_processing && !processLoading) {
+        // Only update processing state if we haven't explicitly stopped
+        if (data.is_processing && !processLoading && !operationMessage?.includes('Stop signal sent')) {
           setProcessLoading(true);
           setProgressInfo({ stage: 'processing' });
-        } else if (!data.is_processing && processLoading) {
+        } else if (!data.is_processing && processLoading && !operationMessage?.includes('Stop signal sent')) {
           setProcessLoading(false);
           setProgressInfo(null);
           if (operationMessage?.includes('started')) {
@@ -200,6 +200,9 @@ export default function LibraryStats() {
         method: 'POST',
       });
       if (response.ok) {
+        // Clear progress info and processing state immediately when stop is requested
+        setProgressInfo(null);
+        setProcessLoading(false);
         setOperationMessage('🛑 Stop signal sent. Processing will finish current track and stop.');
       }
     } catch (_err) {
