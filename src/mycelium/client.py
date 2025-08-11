@@ -5,13 +5,25 @@ import uuid
 import socket
 import requests
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 import tempfile
 import os
+import threading
+from queue import Queue, Empty
+from dataclasses import dataclass
 
 import torch
 from transformers import ClapModel, ClapProcessor
 import librosa
+
+
+@dataclass
+class DownloadedJob:
+    """Represents a job with downloaded audio file."""
+    task_id: str
+    track_id: str
+    audio_file: Path
+    original_job: dict
 
 
 class MyceliumClient:
@@ -22,13 +34,15 @@ class MyceliumClient:
         server_host: str = "localhost",
         server_port: int = 8000,
         model_id: str = "laion/clap-htsat-unfused",
-        poll_interval: int = 5
+        poll_interval: int = 5,
+        download_queue_size: int = 5
     ):
         self.server_host = server_host
         self.server_port = server_port
         self.server_url = f"http://{server_host}:{server_port}"
         self.model_id = model_id
         self.poll_interval = poll_interval
+        self.download_queue_size = download_queue_size
         
         # Generate unique worker ID
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
@@ -39,10 +53,17 @@ class MyceliumClient:
         self.processor = None
         self.device = self._get_best_device()
 
+        # Download queue management
+        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
+        self.pending_downloads: Dict[str, threading.Event] = {}
+        self.download_thread = None
+        self.stop_download_thread = threading.Event()
+
         print(f"Mycelium Client initialized")
         print(f"Worker ID: {self.worker_id}")
         print(f"Server: {self.server_url}")
         print(f"Device: {self.device}")
+        print(f"Download queue size: {download_queue_size}")
         
     def _get_local_ip(self) -> str:
         """Get the local IP address."""
@@ -165,6 +186,78 @@ class MyceliumClient:
         except Exception as e:
             print(f"Error downloading file: {e}")
             return None
+
+    def _download_worker(self):
+        """Background thread worker for downloading audio files."""
+        print("Download worker thread started")
+        
+        while not self.stop_download_thread.is_set():
+            try:
+                # Get next job from server
+                job = self.get_job()
+                
+                if job:
+                    task_id = job["task_id"]
+                    print(f"Download worker: Downloading audio for job {task_id}")
+                    
+                    # Download audio file
+                    audio_file = self.download_audio_file(job["download_url"])
+                    
+                    if audio_file:
+                        # Create downloaded job object
+                        downloaded_job = DownloadedJob(
+                            task_id=task_id,
+                            track_id=job["track_id"],
+                            audio_file=audio_file,
+                            original_job=job
+                        )
+                        
+                        try:
+                            # Add to queue (this will block if queue is full)
+                            self.download_queue.put(downloaded_job, timeout=5)
+                            print(f"Download worker: Queued job {task_id} for processing")
+                        except:
+                            # Queue is full, clean up the file
+                            print(f"Download worker: Queue full, discarding job {task_id}")
+                            try:
+                                os.unlink(audio_file)
+                            except:
+                                pass
+                    else:
+                        print(f"Download worker: Failed to download audio for job {task_id}")
+                else:
+                    # No job available, wait before polling again
+                    time.sleep(self.poll_interval)
+                    
+            except Exception as e:
+                print(f"Download worker error: {e}")
+                time.sleep(1)
+        
+        print("Download worker thread stopped")
+
+    def _start_download_worker(self):
+        """Start the background download worker thread."""
+        if self.download_thread is None or not self.download_thread.is_alive():
+            self.stop_download_thread.clear()
+            self.download_thread = threading.Thread(target=self._download_worker, daemon=True)
+            self.download_thread.start()
+
+    def _stop_download_worker(self):
+        """Stop the background download worker thread."""
+        if self.download_thread and self.download_thread.is_alive():
+            self.stop_download_thread.set()
+            self.download_thread.join(timeout=5)
+            
+            # Clean up any remaining files in queue
+            while not self.download_queue.empty():
+                try:
+                    downloaded_job = self.download_queue.get_nowait()
+                    try:
+                        os.unlink(downloaded_job.audio_file)
+                    except:
+                        pass
+                except Empty:
+                    break
     
     def _can_use_half_precision(self) -> bool:
         """Check if the current device supports half precision."""
@@ -259,19 +352,13 @@ class MyceliumClient:
             print(f"Error submitting result: {e}")
             return False
     
-    def process_job(self, job: dict) -> bool:
-        """Process a single job."""
-        task_id = job["task_id"]
-        track_id = job["track_id"]
-        download_url = job["download_url"]
+    def process_job(self, downloaded_job: DownloadedJob) -> bool:
+        """Process a downloaded job."""
+        task_id = downloaded_job.task_id
+        track_id = downloaded_job.track_id
+        audio_file = downloaded_job.audio_file
         
         print(f"Processing job {task_id} for track {track_id}")
-        
-        # Download audio file
-        audio_file = self.download_audio_file(download_url)
-        if audio_file is None:
-            self.submit_result(task_id, track_id, None, "Failed to download audio file")
-            return False
         
         try:
             # Compute embedding
@@ -309,23 +396,31 @@ class MyceliumClient:
         print("Loading CLAP model for the session...")
         self._load_model()
         
-        print(f"Worker loop started. Polling every {self.poll_interval} seconds...")
+        # Start background download worker
+        print("Starting background download worker...")
+        self._start_download_worker()
+        
+        print(f"Worker loop started. Processing downloaded audio files...")
         
         try:
             while True:
-                # Get next job
-                job = self.get_job()
-                
-                if job:
-                    # Process the job (model is already loaded)
-                    self.process_job(job)
-                else:
-                    # No job available, wait before polling again
-                    time.sleep(self.poll_interval)
+                try:
+                    # Get next downloaded job from queue (with timeout)
+                    downloaded_job = self.download_queue.get(timeout=self.poll_interval)
+                    
+                    # Process the job (model is already loaded, audio is already downloaded)
+                    self.process_job(downloaded_job)
+                    
+                except Empty:
+                    # No downloaded job available, continue polling
+                    continue
                     
         except KeyboardInterrupt:
             print("\nShutting down worker...")
         finally:
+            # Stop download worker
+            self._stop_download_worker()
+            
             # Only unload model when shutting down
             self._unload_model()
             print("Worker stopped")
@@ -334,12 +429,14 @@ class MyceliumClient:
 def run_client(
     server_host: str = "localhost",
     server_port: int = 8000,
-    model_id: str = "laion/clap-htsat-unfused"
+    model_id: str = "laion/clap-htsat-unfused",
+    download_queue_size: int = 5
 ):
     """Run the Mycelium client."""
     client = MyceliumClient(
         server_host=server_host,
         server_port=server_port,
-        model_id=model_id
+        model_id=model_id,
+        download_queue_size=download_queue_size
     )
     client.run()
