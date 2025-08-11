@@ -123,12 +123,18 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 padding=True
             )
 
-            # Apply same precision logic as audio embeddings
+            # Move to device first
+            text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+
+            # Apply half precision only to appropriate tensors (not token indices)
             use_half = self._can_use_half_precision()
             if use_half and (self.device == "cuda" or self.device == "mps"):
-                text_inputs = {k: v.to(self.device).half() for k, v in text_inputs.items()}
-            else:
-                text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+                # Only convert embeddings and attention masks to half precision
+                # Keep input_ids as long tensors (they are token indices)
+                for k, v in text_inputs.items():
+                    if k not in ['input_ids']:  # Don't convert token indices to half
+                        if v.dtype in [torch.float32, torch.float64]:
+                            text_inputs[k] = v.half()
 
             with torch.no_grad():
                 text_features = self.model.get_text_features(**text_inputs)

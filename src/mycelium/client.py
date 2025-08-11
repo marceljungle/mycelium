@@ -35,7 +35,8 @@ class MyceliumClient:
         server_port: int = 8000,
         model_id: str = "laion/clap-htsat-unfused",
         poll_interval: int = 5,
-        download_queue_size: int = 5
+        download_queue_size: int = 15,
+        download_workers: int = 10
     ):
         self.server_host = server_host
         self.server_port = server_port
@@ -43,7 +44,8 @@ class MyceliumClient:
         self.model_id = model_id
         self.poll_interval = poll_interval
         self.download_queue_size = download_queue_size
-        
+        self.download_workers = download_workers  # Number of parallel download threads
+
         # Generate unique worker ID
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
@@ -56,7 +58,7 @@ class MyceliumClient:
         # Download queue management
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
         self.pending_downloads: Dict[str, threading.Event] = {}
-        self.download_thread = None
+        self.download_threads: List[threading.Thread] = []  # Multiple download threads
         self.stop_download_thread = threading.Event()
 
         print(f"Mycelium Client initialized")
@@ -64,7 +66,29 @@ class MyceliumClient:
         print(f"Server: {self.server_url}")
         print(f"Device: {self.device}")
         print(f"Download queue size: {download_queue_size}")
-        
+        print(f"Parallel download workers: {download_workers}")
+
+    def _log_queue_status(self, context: str = ""):
+        """Log current queue status with context."""
+        queue_size = self.download_queue.qsize()
+        queue_capacity = self.download_queue.maxsize
+        queue_percent = (queue_size / queue_capacity) * 100 if queue_capacity > 0 else 0
+
+        status_msg = f"Queue status{' (' + context + ')' if context else ''}: {queue_size}/{queue_capacity} jobs ({queue_percent:.1f}% full)"
+        print(status_msg)
+
+        # Add visual indicator for queue fullness
+        if queue_percent >= 90:
+            print("  📦 Queue nearly full - download worker will start discarding jobs")
+        elif queue_percent >= 70:
+            print("  ⚠️  Queue getting full")
+        elif queue_percent >= 50:
+            print("  🔄 Queue half full")
+        elif queue_size > 0:
+            print("  📥 Queue has jobs ready for processing")
+        else:
+            print("  📭 Queue empty - waiting for downloads")
+
     def _get_local_ip(self) -> str:
         """Get the local IP address."""
         try:
@@ -216,6 +240,7 @@ class MyceliumClient:
                             # Add to queue (this will block if queue is full)
                             self.download_queue.put(downloaded_job, timeout=5)
                             print(f"Download worker: Queued job {task_id} for processing")
+                            self._log_queue_status("after queuing")
                         except:
                             # Queue is full, clean up the file
                             print(f"Download worker: Queue full, discarding job {task_id}")
@@ -237,28 +262,29 @@ class MyceliumClient:
 
     def _start_download_worker(self):
         """Start the background download worker thread."""
-        if self.download_thread is None or not self.download_thread.is_alive():
-            self.stop_download_thread.clear()
-            self.download_thread = threading.Thread(target=self._download_worker, daemon=True)
-            self.download_thread.start()
+        for i in range(self.download_workers):
+            thread = threading.Thread(target=self._download_worker, daemon=True)
+            thread.start()
+            self.download_threads.append(thread)
+            print(f"Started download worker thread {i+1}/{self.download_workers}")
 
     def _stop_download_worker(self):
         """Stop the background download worker thread."""
-        if self.download_thread and self.download_thread.is_alive():
-            self.stop_download_thread.set()
-            self.download_thread.join(timeout=5)
-            
-            # Clean up any remaining files in queue
-            while not self.download_queue.empty():
+        self.stop_download_thread.set()
+        for thread in self.download_threads:
+            thread.join(timeout=5)
+
+        # Clean up any remaining files in queue
+        while not self.download_queue.empty():
+            try:
+                downloaded_job = self.download_queue.get_nowait()
                 try:
-                    downloaded_job = self.download_queue.get_nowait()
-                    try:
-                        os.unlink(downloaded_job.audio_file)
-                    except:
-                        pass
-                except Empty:
-                    break
-    
+                    os.unlink(downloaded_job.audio_file)
+                except:
+                    pass
+            except Empty:
+                break
+
     def _can_use_half_precision(self) -> bool:
         """Check if the current device supports half precision."""
         if self.device == "cuda":
@@ -400,24 +426,44 @@ class MyceliumClient:
         print("Starting background download worker...")
         self._start_download_worker()
         
+        # Log initial queue status
+        self._log_queue_status("worker started")
+
         print(f"Worker loop started. Processing downloaded audio files...")
         
+        # Add periodic queue status logging
+        last_status_log = time.time()
+        status_log_interval = 30  # Log queue status every 30 seconds
+
         try:
             while True:
                 try:
                     # Get next downloaded job from queue (with timeout)
                     downloaded_job = self.download_queue.get(timeout=self.poll_interval)
                     
+                    print(f"Retrieved job {downloaded_job.task_id} from queue")
+                    self._log_queue_status("after retrieval")
+
                     # Process the job (model is already loaded, audio is already downloaded)
                     self.process_job(downloaded_job)
                     
+                    # Log queue status after processing
+                    self._log_queue_status("after processing")
+
                 except Empty:
                     # No downloaded job available, continue polling
+                    current_time = time.time()
+                    if current_time - last_status_log >= status_log_interval:
+                        self._log_queue_status("periodic check")
+                        last_status_log = current_time
                     continue
                     
         except KeyboardInterrupt:
             print("\nShutting down worker...")
         finally:
+            # Log final queue status
+            self._log_queue_status("shutdown")
+
             # Stop download worker
             self._stop_download_worker()
             
@@ -430,13 +476,15 @@ def run_client(
     server_host: str = "localhost",
     server_port: int = 8000,
     model_id: str = "laion/clap-htsat-unfused",
-    download_queue_size: int = 5
+    download_queue_size: int = 15,
+    download_workers: int = 10
 ):
     """Run the Mycelium client."""
     client = MyceliumClient(
         server_host=server_host,
         server_port=server_port,
         model_id=model_id,
-        download_queue_size=download_queue_size
+        download_queue_size=download_queue_size,
+        download_workers=download_workers
     )
     client.run()
