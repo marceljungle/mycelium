@@ -1,7 +1,7 @@
 """ChromaDB integration for storing and searching embeddings."""
 
-from typing import List, Optional
 from pathlib import Path
+from typing import List, Optional
 
 import chromadb
 from tqdm import tqdm

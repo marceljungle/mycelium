@@ -2,12 +2,14 @@
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
 
 # Import new YAML configuration
 from .config_yaml import MyceliumConfig, get_config_file_path
+
 
 # Load environment variables from .env file for backward compatibility
 def load_env_file():

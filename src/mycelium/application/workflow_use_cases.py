@@ -5,10 +5,10 @@ from typing import Optional, Dict, Any
 
 from tqdm import tqdm
 
+from .job_queue import JobQueueService
 from ..domain.models import TrackEmbedding
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
 from ..infrastructure.track_database import TrackDatabase
-from .job_queue import JobQueueService
 
 
 class SeparatedLibraryScanUseCase:

@@ -1,11 +1,10 @@
 """SQLite database for storing track metadata and processing state."""
 
 import sqlite3
-import json
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
 
 from ..domain.models import Track
 

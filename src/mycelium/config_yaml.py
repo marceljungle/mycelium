@@ -1,10 +1,11 @@
 """YAML-based configuration management for Mycelium."""
 
 import os
-import yaml
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
+
+import yaml
 
 
 def get_config_dir() -> Path:

@@ -1,7 +1,7 @@
 """FastAPI application for Mycelium web interface."""
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Dict, Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
@@ -36,10 +36,20 @@ class SearchResultResponse(BaseModel):
     distance: float
 
 
+class TrackDatabaseStats(BaseModel):
+    total_tracks: int
+    processed_tracks: int
+    unprocessed_tracks: int
+    progress_percentage: float
+    is_processing: Optional[bool] = None
+    latest_session: Optional[Dict[str, Any]] = None
+
+
 class LibraryStatsResponse(BaseModel):
     total_embeddings: int
     collection_name: str
     database_path: str
+    track_database_stats: Optional[TrackDatabaseStats] = None
 
 
 class SearchRequest(BaseModel):

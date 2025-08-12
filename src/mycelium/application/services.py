@@ -1,18 +1,11 @@
 """Application services for orchestrating business logic."""
 
-from typing import List, Optional, Dict, Any
 from pathlib import Path
+from typing import List, Optional, Dict, Any
 
-from mycelium.domain.models import Track, TrackEmbedding, SearchResult
-from mycelium.infrastructure import (
-    PlexMusicRepository, 
-    CLAPEmbeddingGenerator, 
-    ChromaEmbeddingRepository,
-    TrackDatabase
-)
 from mycelium.application.use_cases import (
     LibraryScanUseCase,
-    EmbeddingGenerationUseCase, 
+    EmbeddingGenerationUseCase,
     EmbeddingIndexingUseCase,
     MusicSearchUseCase
 )
@@ -22,6 +15,13 @@ from mycelium.application.workflow_use_cases import (
     ProcessingProgressUseCase,
     DatabaseMaintenanceUseCase,
     WorkerBasedProcessingUseCase
+)
+from mycelium.domain.models import Track, TrackEmbedding, SearchResult
+from mycelium.infrastructure import (
+    PlexMusicRepository,
+    CLAPEmbeddingGenerator,
+    ChromaEmbeddingRepository,
+    TrackDatabase
 )
 
 

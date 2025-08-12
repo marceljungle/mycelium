@@ -1,6 +1,7 @@
 """API models for worker coordination."""
 
 from typing import List, Optional
+
 from pydantic import BaseModel
 
 from ..domain.worker import TaskType, TaskStatus

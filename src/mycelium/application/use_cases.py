@@ -1,7 +1,7 @@
 """Use cases for the Mycelium application."""
 
-from typing import List, Optional
 from pathlib import Path
+from typing import List
 
 from ..domain.models import Track, TrackEmbedding, SearchResult
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator

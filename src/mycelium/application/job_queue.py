@@ -2,8 +2,8 @@
 
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict
 from threading import Lock
+from typing import List, Optional, Dict
 
 from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus
 

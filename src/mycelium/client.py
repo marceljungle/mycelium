@@ -1,20 +1,21 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
 
+import os
+import socket
+import tempfile
+import threading
 import time
 import uuid
-import socket
-import requests
-from pathlib import Path
-from typing import Optional, List, Dict
-import tempfile
-import os
-import threading
-from queue import Queue, Empty
 from dataclasses import dataclass
+from pathlib import Path
+from queue import Queue, Empty
+from typing import Optional, List, Dict
 
+import requests
 import torch
 from transformers import ClapModel, ClapProcessor
-import librosa
+
+from mycelium.infrastructure import CLAPEmbeddingGenerator
 
 
 @dataclass
@@ -60,6 +61,8 @@ class MyceliumClient:
         self.pending_downloads: Dict[str, threading.Event] = {}
         self.download_threads: List[threading.Thread] = []  # Multiple download threads
         self.stop_download_thread = threading.Event()
+
+        self.clap_embedding_generator = CLAPEmbeddingGenerator()
 
         print(f"Mycelium Client initialized")
         print(f"Worker ID: {self.worker_id}")
@@ -297,58 +300,6 @@ class MyceliumClient:
             except RuntimeError:
                 return False
         return False
-
-    def compute_embedding(self, audio_file: Path) -> Optional[List[float]]:
-        """Compute CLAP embedding for an audio file."""
-        try:
-            # Ensure model is loaded (only loads if not already loaded)
-            self._load_model()
-            
-            # Load and process audio
-            target_sr = 48000
-            chunk_duration_s = 10
-            
-            waveform, sr = librosa.load(str(audio_file), sr=target_sr, mono=True)
-            
-            # Split into chunks
-            chunk_len = chunk_duration_s * sr
-            chunks = [waveform[i:i + chunk_len] for i in range(0, len(waveform), chunk_len)]
-            
-            # Ensure last chunk is not too short
-            if len(chunks) > 1 and len(chunks[-1]) < sr:  # Less than 1 second
-                chunks.pop(-1)
-            if not chunks:
-                return None
-            
-            # Process chunks
-            inputs = self.processor(
-                audios=chunks,
-                sampling_rate=target_sr,
-                return_tensors="pt",
-                padding=True
-            )
-            
-            # Move to device with device-specific optimizations
-            use_half = self._can_use_half_precision()
-            if use_half and (self.device == "cuda" or self.device == "mps"):
-                inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
-            else:
-                # For CPU or devices without half precision support, use float32
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-            with torch.no_grad():
-                # Get embeddings for all chunks
-                audio_features = self.model.get_audio_features(**inputs)
-                
-                # Average embeddings of chunks and normalize
-                mean_embedding = torch.mean(audio_features, dim=0)
-                normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-            
-            return normalized_embedding.cpu().numpy().tolist()
-            
-        except Exception as e:
-            print(f"Error computing embedding: {e}")
-            return None
     
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]], error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
@@ -388,7 +339,8 @@ class MyceliumClient:
         
         try:
             # Compute embedding
-            embedding = self.compute_embedding(audio_file)
+            self._load_model()
+            embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
             
             # Submit result
             if embedding:
