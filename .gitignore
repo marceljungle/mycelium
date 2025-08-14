@@ -216,6 +216,16 @@ music_embeddings.json
 *.mp3
 *.flac
 
+# New database files
+mycelium_tracks.db
+*.sqlite
+*.sqlite3
+
+# Test files
+test_*.py
+test_*.db
+test_*.yml
+
 # Frontend (Next.js)
 frontend/node_modules/
 frontend/.next/

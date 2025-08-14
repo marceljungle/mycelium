@@ -1,8 +1,7 @@
 """Use cases for the Mycelium application."""
 
-from typing import List, Optional
 from pathlib import Path
-import json
+from typing import List
 
 from ..domain.models import Track, TrackEmbedding, SearchResult
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
@@ -145,49 +144,3 @@ class MusicSearchUseCase:
         ][:n_results]
         
         return results
-
-
-class DataExportUseCase:
-    """Use case for exporting library data."""
-    
-    def __init__(self, plex_repository: PlexRepository):
-        self.plex_repository = plex_repository
-    
-    def export_library_to_json(self, output_file: str) -> None:
-        """Export library data to JSON file."""
-        tracks = self.plex_repository.get_all_tracks()
-        
-        track_data = []
-        for track in tracks:
-            track_data.append({
-                "artist": track.artist,
-                "album": track.album,
-                "track_title": track.title,
-                "filepath": str(track.filepath),
-                "plex_rating_key": track.plex_rating_key
-            })
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(track_data, f, indent=4, ensure_ascii=False)
-        
-        print(f"Exported {len(tracks)} tracks to {output_file}")
-
-
-class DataImportUseCase:
-    """Use case for importing embedding data."""
-    
-    def import_embeddings_from_json(self, input_file: str) -> List[TrackEmbedding]:
-        """Import embedding data from JSON file."""
-        with open(input_file, 'r', encoding='utf-8') as f:
-            embedding_data = json.load(f)
-        
-        embeddings = []
-        for item in embedding_data:
-            try:
-                embedding = TrackEmbedding.from_dict(item)
-                embeddings.append(embedding)
-            except Exception as e:
-                print(f"Error importing embedding: {e}")
-        
-        print(f"Imported {len(embeddings)} embeddings from {input_file}")
-        return embeddings

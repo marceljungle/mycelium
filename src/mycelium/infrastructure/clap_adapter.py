@@ -1,12 +1,11 @@
 """CLAP model integration for generating embeddings."""
 
-from typing import List, Optional
 from pathlib import Path
+from typing import List, Optional
 
 import librosa
 import torch
 from transformers import ClapModel, ClapProcessor
-from tqdm import tqdm
 
 from ..domain.repositories import EmbeddingGenerator
 
@@ -69,49 +68,50 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         return False
 
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
-        """Generate embedding for an audio file."""
         try:
-            # Load and resample audio
             waveform, sr = librosa.load(str(filepath), sr=self.target_sr, mono=True)
 
-            # Split into chunks of specified duration
             chunk_len = self.chunk_duration_s * sr
             chunks = [waveform[i:i + chunk_len] for i in range(0, len(waveform), chunk_len)]
 
-            # Ensure last chunk is not too short
-            if len(chunks) > 1 and len(chunks[-1]) < sr:  # Less than 1 second
+            if len(chunks) > 1 and len(chunks[-1]) < sr:
                 chunks.pop(-1)
             if not chunks:
                 return None
 
-            # Process chunks
             inputs = self.processor(
-                audios=chunks, 
-                sampling_rate=self.target_sr, 
-                return_tensors="pt", 
+                audios=chunks,
+                sampling_rate=self.target_sr,
+                return_tensors="pt",
                 padding=True
             )
 
-            # Move to device with device-specific optimizations
             use_half = self._can_use_half_precision()
-            if use_half and (self.device == "cuda" or self.device == "mps"):
+            if use_half and self.device in ["cuda", "mps"]:
                 inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
             else:
-                # For CPU or devices without half precision support, use float32
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                # Get embeddings for all chunks
                 audio_features = self.model.get_audio_features(**inputs)
 
-                # Average embeddings of chunks and normalize
+                # Device-specific monitoring
+                if self.device == "mps":
+                    print(f"MPS memory used: {torch.mps.current_allocated_memory() / 1024 ** 2:.1f} MB")
+                    print(f"Audio features device: {audio_features.device}")
+                    print(f"Audio features dtype: {audio_features.dtype}")
+                elif self.device == "cuda":
+                    print(f"CUDA memory used: {torch.cuda.memory_allocated() / 1024 ** 2:.1f} MB")
+                    print(f"Audio features device: {audio_features.device}")
+                    print(f"Audio features dtype: {audio_features.dtype}")
+
                 mean_embedding = torch.mean(audio_features, dim=0)
                 normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
 
             return normalized_embedding.cpu().numpy().tolist()
 
         except Exception as e:
-            print(f"Error processing {filepath}: {e}")
+            print(f"Error generating embeddings for {filepath}: {e}")
             return None
     
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
@@ -123,12 +123,18 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 padding=True
             )
 
-            # Apply same precision logic as audio embeddings
+            # Move to device first
+            text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+
+            # Apply half precision only to appropriate tensors (not token indices)
             use_half = self._can_use_half_precision()
             if use_half and (self.device == "cuda" or self.device == "mps"):
-                text_inputs = {k: v.to(self.device).half() for k, v in text_inputs.items()}
-            else:
-                text_inputs = {k: v.to(self.device) for k, v in text_inputs.items()}
+                # Only convert embeddings and attention masks to half precision
+                # Keep input_ids as long tensors (they are token indices)
+                for k, v in text_inputs.items():
+                    if k not in ['input_ids']:  # Don't convert token indices to half
+                        if v.dtype in [torch.float32, torch.float64]:
+                            text_inputs[k] = v.half()
 
             with torch.no_grad():
                 text_features = self.model.get_text_features(**text_inputs)

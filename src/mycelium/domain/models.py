@@ -1,8 +1,8 @@
 """Domain models for the Mycelium application."""
 
 from dataclasses import dataclass
-from typing import List, Optional
 from pathlib import Path
+from typing import List
 
 
 @dataclass

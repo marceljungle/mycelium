@@ -1,17 +1,30 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
 
+import os
+import socket
+import tempfile
+import threading
 import time
 import uuid
-import socket
-import requests
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List
-import tempfile
-import os
+from queue import Queue, Empty
+from typing import Optional, List, Dict
 
+import requests
 import torch
 from transformers import ClapModel, ClapProcessor
-import librosa
+
+from mycelium.infrastructure import CLAPEmbeddingGenerator
+
+
+@dataclass
+class DownloadedJob:
+    """Represents a job with downloaded audio file."""
+    task_id: str
+    track_id: str
+    audio_file: Path
+    original_job: dict
 
 
 class MyceliumClient:
@@ -22,14 +35,18 @@ class MyceliumClient:
         server_host: str = "localhost",
         server_port: int = 8000,
         model_id: str = "laion/clap-htsat-unfused",
-        poll_interval: int = 5
+        poll_interval: int = 5,
+        download_queue_size: int = 15,
+        download_workers: int = 10
     ):
         self.server_host = server_host
         self.server_port = server_port
         self.server_url = f"http://{server_host}:{server_port}"
         self.model_id = model_id
         self.poll_interval = poll_interval
-        
+        self.download_queue_size = download_queue_size
+        self.download_workers = download_workers  # Number of parallel download threads
+
         # Generate unique worker ID
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
@@ -39,11 +56,42 @@ class MyceliumClient:
         self.processor = None
         self.device = self._get_best_device()
 
+        # Download queue management
+        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
+        self.pending_downloads: Dict[str, threading.Event] = {}
+        self.download_threads: List[threading.Thread] = []  # Multiple download threads
+        self.stop_download_thread = threading.Event()
+
+        self.clap_embedding_generator = CLAPEmbeddingGenerator()
+
         print(f"Mycelium Client initialized")
         print(f"Worker ID: {self.worker_id}")
         print(f"Server: {self.server_url}")
         print(f"Device: {self.device}")
-        
+        print(f"Download queue size: {download_queue_size}")
+        print(f"Parallel download workers: {download_workers}")
+
+    def _log_queue_status(self, context: str = ""):
+        """Log current queue status with context."""
+        queue_size = self.download_queue.qsize()
+        queue_capacity = self.download_queue.maxsize
+        queue_percent = (queue_size / queue_capacity) * 100 if queue_capacity > 0 else 0
+
+        status_msg = f"Queue status{' (' + context + ')' if context else ''}: {queue_size}/{queue_capacity} jobs ({queue_percent:.1f}% full)"
+        print(status_msg)
+
+        # Add visual indicator for queue fullness
+        if queue_percent >= 90:
+            print("  📦 Queue nearly full - download workers will pause fetching new jobs")
+        elif queue_percent >= 70:
+            print("  ⚠️  Queue getting full")
+        elif queue_percent >= 50:
+            print("  🔄 Queue half full")
+        elif queue_size > 0:
+            print("  📥 Queue has jobs ready for processing")
+        else:
+            print("  📭 Queue empty - waiting for downloads")
+
     def _get_local_ip(self) -> str:
         """Get the local IP address."""
         try:
@@ -128,7 +176,7 @@ class MyceliumClient:
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
                 params={"worker_id": self.worker_id},
-                timeout=10
+                timeout=3600
             )
             
             if response.status_code == 200:
@@ -165,7 +213,88 @@ class MyceliumClient:
         except Exception as e:
             print(f"Error downloading file: {e}")
             return None
-    
+
+    def _download_worker(self):
+        """Background thread worker for downloading audio files."""
+        print("Download worker thread started")
+        
+        while not self.stop_download_thread.is_set():
+            try:
+                # If the processing queue is full, pause fetching new jobs
+                if self.download_queue.full():
+                    print("Download worker: Queue full, pausing job fetch")
+                    self._log_queue_status("queue full - pausing fetch")
+                    time.sleep(1)
+                    continue
+
+                # Get next job from server
+                job = self.get_job()
+                
+                if job:
+                    task_id = job["task_id"]
+                    print(f"Download worker: Downloading audio for job {task_id}")
+                    
+                    # Download audio file
+                    audio_file = self.download_audio_file(job["download_url"])
+                    
+                    if audio_file:
+                        # Create downloaded job object
+                        downloaded_job = DownloadedJob(
+                            task_id=task_id,
+                            track_id=job["track_id"],
+                            audio_file=audio_file,
+                            original_job=job
+                        )
+                        
+                        try:
+                            # Add to queue (this will block if queue is full)
+                            self.download_queue.put(downloaded_job, timeout=5)
+                            print(f"Download worker: Queued job {task_id} for processing")
+                            self._log_queue_status("after queuing")
+                        except:
+                            # Queue remained full; clean up the downloaded temp file
+                            print(f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                            try:
+                                os.unlink(audio_file)
+                            except:
+                                pass
+                    else:
+                        print(f"Download worker: Failed to download audio for job {task_id}")
+                else:
+                    # No job available, wait before polling again
+                    time.sleep(self.poll_interval)
+                    
+            except Exception as e:
+                print(f"Download worker error: {e}")
+                time.sleep(1)
+        
+        print("Download worker thread stopped")
+
+    def _start_download_worker(self):
+        """Start the background download worker thread."""
+        for i in range(self.download_workers):
+            thread = threading.Thread(target=self._download_worker, daemon=True)
+            thread.start()
+            self.download_threads.append(thread)
+            print(f"Started download worker thread {i+1}/{self.download_workers}")
+
+    def _stop_download_worker(self):
+        """Stop the background download worker thread."""
+        self.stop_download_thread.set()
+        for thread in self.download_threads:
+            thread.join(timeout=5)
+
+        # Clean up any remaining files in queue
+        while not self.download_queue.empty():
+            try:
+                downloaded_job = self.download_queue.get_nowait()
+                try:
+                    os.unlink(downloaded_job.audio_file)
+                except:
+                    pass
+            except Empty:
+                break
+
     def _can_use_half_precision(self) -> bool:
         """Check if the current device supports half precision."""
         if self.device == "cuda":
@@ -178,58 +307,6 @@ class MyceliumClient:
             except RuntimeError:
                 return False
         return False
-
-    def compute_embedding(self, audio_file: Path) -> Optional[List[float]]:
-        """Compute CLAP embedding for an audio file."""
-        try:
-            # Load model if not already loaded
-            self._load_model()
-            
-            # Load and process audio
-            target_sr = 48000
-            chunk_duration_s = 10
-            
-            waveform, sr = librosa.load(str(audio_file), sr=target_sr, mono=True)
-            
-            # Split into chunks
-            chunk_len = chunk_duration_s * sr
-            chunks = [waveform[i:i + chunk_len] for i in range(0, len(waveform), chunk_len)]
-            
-            # Ensure last chunk is not too short
-            if len(chunks) > 1 and len(chunks[-1]) < sr:  # Less than 1 second
-                chunks.pop(-1)
-            if not chunks:
-                return None
-            
-            # Process chunks
-            inputs = self.processor(
-                audios=chunks,
-                sampling_rate=target_sr,
-                return_tensors="pt",
-                padding=True
-            )
-            
-            # Move to device with device-specific optimizations
-            use_half = self._can_use_half_precision()
-            if use_half and (self.device == "cuda" or self.device == "mps"):
-                inputs = {k: v.to(self.device).half() for k, v in inputs.items()}
-            else:
-                # For CPU or devices without half precision support, use float32
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-            with torch.no_grad():
-                # Get embeddings for all chunks
-                audio_features = self.model.get_audio_features(**inputs)
-                
-                # Average embeddings of chunks and normalize
-                mean_embedding = torch.mean(audio_features, dim=0)
-                normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-            
-            return normalized_embedding.cpu().numpy().tolist()
-            
-        except Exception as e:
-            print(f"Error computing embedding: {e}")
-            return None
     
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]], error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
@@ -259,23 +336,18 @@ class MyceliumClient:
             print(f"Error submitting result: {e}")
             return False
     
-    def process_job(self, job: dict) -> bool:
-        """Process a single job."""
-        task_id = job["task_id"]
-        track_id = job["track_id"]
-        download_url = job["download_url"]
+    def process_job(self, downloaded_job: DownloadedJob) -> bool:
+        """Process a downloaded job."""
+        task_id = downloaded_job.task_id
+        track_id = downloaded_job.track_id
+        audio_file = downloaded_job.audio_file
         
         print(f"Processing job {task_id} for track {track_id}")
         
-        # Download audio file
-        audio_file = self.download_audio_file(download_url)
-        if audio_file is None:
-            self.submit_result(task_id, track_id, None, "Failed to download audio file")
-            return False
-        
         try:
             # Compute embedding
-            embedding = self.compute_embedding(audio_file)
+            self._load_model()
+            embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
             
             # Submit result
             if embedding:
@@ -305,26 +377,56 @@ class MyceliumClient:
             print("Failed to register with server. Exiting.")
             return
         
-        print(f"Worker loop started. Polling every {self.poll_interval} seconds...")
+        # Pre-load model at start of session for efficiency
+        print("Loading CLAP model for the session...")
+        self._load_model()
         
+        # Start background download worker
+        print("Starting background download worker...")
+        self._start_download_worker()
+        
+        # Log initial queue status
+        self._log_queue_status("worker started")
+
+        print(f"Worker loop started. Processing downloaded audio files...")
+        
+        # Add periodic queue status logging
+        last_status_log = time.time()
+        status_log_interval = 30  # Log queue status every 30 seconds
+
         try:
             while True:
-                # Get next job
-                job = self.get_job()
-                
-                if job:
-                    # Process the job
-                    self.process_job(job)
+                try:
+                    # Get next downloaded job from queue (with timeout)
+                    downloaded_job = self.download_queue.get(timeout=self.poll_interval)
                     
-                    # Unload model to free GPU memory between jobs
-                    self._unload_model()
-                else:
-                    # No job available, wait before polling again
-                    time.sleep(self.poll_interval)
+                    print(f"Retrieved job {downloaded_job.task_id} from queue")
+                    self._log_queue_status("after retrieval")
+
+                    # Process the job (model is already loaded, audio is already downloaded)
+                    self.process_job(downloaded_job)
+                    
+                    # Log queue status after processing
+                    self._log_queue_status("after processing")
+
+                except Empty:
+                    # No downloaded job available, continue polling
+                    current_time = time.time()
+                    if current_time - last_status_log >= status_log_interval:
+                        self._log_queue_status("periodic check")
+                        last_status_log = current_time
+                    continue
                     
         except KeyboardInterrupt:
             print("\nShutting down worker...")
         finally:
+            # Log final queue status
+            self._log_queue_status("shutdown")
+
+            # Stop download worker
+            self._stop_download_worker()
+            
+            # Only unload model when shutting down
             self._unload_model()
             print("Worker stopped")
 
@@ -332,12 +434,16 @@ class MyceliumClient:
 def run_client(
     server_host: str = "localhost",
     server_port: int = 8000,
-    model_id: str = "laion/clap-htsat-unfused"
+    model_id: str = "laion/clap-htsat-unfused",
+    download_queue_size: int = 15,
+    download_workers: int = 10
 ):
     """Run the Mycelium client."""
     client = MyceliumClient(
         server_host=server_host,
         server_port=server_port,
-        model_id=model_id
+        model_id=model_id,
+        download_queue_size=download_queue_size,
+        download_workers=download_workers
     )
     client.run()

@@ -1,8 +1,8 @@
 """Repository interfaces for domain layer."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
 from pathlib import Path
+from typing import List, Optional
 
 from .models import Track, TrackEmbedding, SearchResult
 

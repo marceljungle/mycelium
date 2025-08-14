@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import SearchInterface from '@/components/SearchInterface';
 import LibraryStats from '@/components/LibraryStats';
 import Header from '@/components/Header';
@@ -41,7 +40,7 @@ export default function Home() {
               Semantic Search
             </h3>
             <p className="text-gray-600 dark:text-gray-300">
-              Find music using natural language. Search for "upbeat indie rock" or "melancholic piano".
+              Find music using natural language. Search for &quot;upbeat indie rock&quot; or &quot;melancholic piano&quot;.
             </p>
           </div>
           

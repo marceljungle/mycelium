@@ -1,11 +1,28 @@
 """Infrastructure package initialization."""
 
-from .plex_adapter import PlexMusicRepository
-from .clap_adapter import CLAPEmbeddingGenerator
-from .chroma_adapter import ChromaEmbeddingRepository
+# Import database first as it has no external dependencies
+from .track_database import TrackDatabase, StoredTrack
 
 __all__ = [
-    "PlexMusicRepository",
-    "CLAPEmbeddingGenerator",
-    "ChromaEmbeddingRepository"
+    "TrackDatabase",
+    "StoredTrack"
 ]
+
+# Try to import other components that have external dependencies
+try:
+    from .plex_adapter import PlexMusicRepository
+    __all__.append("PlexMusicRepository")
+except ImportError:
+    pass
+
+try:
+    from .clap_adapter import CLAPEmbeddingGenerator
+    __all__.append("CLAPEmbeddingGenerator")
+except ImportError:
+    pass
+
+try:
+    from .chroma_adapter import ChromaEmbeddingRepository
+    __all__.append("ChromaEmbeddingRepository")
+except ImportError:
+    pass

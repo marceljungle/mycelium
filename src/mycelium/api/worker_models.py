@@ -1,6 +1,7 @@
 """API models for worker coordination."""
 
 from typing import List, Optional
+
 from pydantic import BaseModel
 
 from ..domain.worker import TaskType, TaskStatus
@@ -62,3 +63,19 @@ class QueueStatsResponse(BaseModel):
     completed_tasks: int
     failed_tasks: int
     total_tasks: int
+
+
+class WorkerProcessingResponse(BaseModel):
+    """Response when worker processing is initiated."""
+    status: str
+    message: str
+    tasks_created: int
+    active_workers: int
+
+
+class NoWorkersResponse(BaseModel):
+    """Response when no workers are available."""
+    status: str
+    message: str
+    active_workers: int
+    confirmation_required: bool

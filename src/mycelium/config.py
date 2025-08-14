@@ -2,11 +2,16 @@
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Import new YAML configuration
+from .config_yaml import MyceliumConfig, get_config_file_path
+
+
+# Load environment variables from .env file for backward compatibility
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     # Look for .env file in the project root (going up from src/mycelium/)
@@ -21,6 +26,7 @@ def load_env_file():
 load_env_file()
 
 
+# Legacy classes for backward compatibility
 @dataclass
 class PlexConfig:
     """Configuration for Plex connection."""
@@ -91,20 +97,12 @@ class APIConfig:
         )
 
 
-@dataclass
-class MyceliumConfig:
-    """Main configuration class."""
-    plex: PlexConfig
-    clap: CLAPConfig
-    chroma: ChromaConfig
-    api: APIConfig
-    
-    @classmethod
-    def from_env(cls) -> "MyceliumConfig":
-        """Create configuration from environment variables."""
-        return cls(
-            plex=PlexConfig.from_env(),
-            clap=CLAPConfig.from_env(),
-            chroma=ChromaConfig.from_env(),
-            api=APIConfig.from_env()
-        )
+# Export the new YAML-based configuration as the main one
+__all__ = [
+    "MyceliumConfig", 
+    "get_config_file_path",
+    "PlexConfig", 
+    "CLAPConfig", 
+    "ChromaConfig", 
+    "APIConfig"
+]
