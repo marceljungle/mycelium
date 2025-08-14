@@ -211,6 +211,11 @@ class MyceliumService:
         # Fallback to Plex API
         return self.plex_repository.get_track_by_id(track_id)
     
+    def get_all_tracks(self, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
+        """Get all tracks from the database with optional pagination."""
+        stored_tracks = self.track_database.get_all_tracks(limit=limit, offset=offset)
+        return [stored_track.to_track() for stored_track in stored_tracks]
+    
     def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""
         return self.embedding_repository.has_embedding(track_id)

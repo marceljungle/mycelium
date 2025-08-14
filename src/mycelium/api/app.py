@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+import tempfile
+import os
 
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
@@ -55,6 +57,24 @@ class LibraryStatsResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     n_results: int = 10
+
+
+class ConfigRequest(BaseModel):
+    """Request model for updating configuration."""
+    plex: Dict[str, Any]
+    api: Dict[str, Any]
+    client: Dict[str, Any]
+    chroma: Dict[str, Any]
+    clap: Dict[str, Any]
+    logging: Dict[str, Any]
+
+
+class TracksListResponse(BaseModel):
+    """Response model for tracks listing."""
+    tracks: List[TrackResponse]
+    total_count: int
+    page: int
+    limit: int
 
 
 # Initialize configuration and service
@@ -106,7 +126,11 @@ async def root():
         "version": "0.1.0",
         "endpoints": {
             "library_stats": "/api/library/stats",
+            "library_tracks": "/api/library/tracks",
             "search_text": "/api/search/text",
+            "search_audio": "/api/search/audio",
+            "config_get": "/api/config",
+            "config_save": "/api/config",
             "scan_library": "/api/library/scan",
             "process_library": "/api/library/process", 
             "process_on_server": "/api/library/process/server",
@@ -186,6 +210,156 @@ async def search_by_text_get(
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/search/audio", response_model=List[SearchResultResponse])
+async def search_by_audio(
+    audio: UploadFile = File(..., description="Audio file to search with"),
+    n_results: int = Form(10, description="Number of results to return")
+):
+    """Search for music tracks by audio file."""
+    try:
+        # Validate file type
+        if not audio.content_type or not any(
+            audio.content_type.startswith(mime) 
+            for mime in ["audio/", "application/octet-stream"]
+        ):
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
+        
+        # Create temporary file to store upload
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
+            content = await audio.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Search using temporary file
+            results = service.search_similar_by_audio(temp_file_path, n_results)
+            
+            return [
+                SearchResultResponse(
+                    track=TrackResponse(
+                        artist=result.track.artist,
+                        album=result.track.album,
+                        title=result.track.title,
+                        filepath=str(result.track.filepath),
+                        plex_rating_key=result.track.plex_rating_key
+                    ),
+                    similarity_score=result.similarity_score,
+                    distance=result.distance
+                )
+                for result in results
+            ]
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except OSError:
+                pass
+                
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/library/tracks", response_model=TracksListResponse)
+async def get_library_tracks(
+    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+    limit: int = Query(50, ge=1, le=200, description="Number of tracks per page")
+):
+    """Get tracks from the library with pagination."""
+    try:
+        offset = (page - 1) * limit
+        tracks = service.get_all_tracks(limit=limit, offset=offset)
+        
+        # Get total count for pagination info
+        stats = service.get_database_stats()
+        total_count = stats.get("track_database_stats", {}).get("total_tracks", 0)
+        
+        return TracksListResponse(
+            tracks=[
+                TrackResponse(
+                    artist=track.artist,
+                    album=track.album,
+                    title=track.title,
+                    filepath=str(track.filepath),
+                    plex_rating_key=track.plex_rating_key
+                )
+                for track in tracks
+            ],
+            total_count=total_count,
+            page=page,
+            limit=limit
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/config")
+async def get_config():
+    """Get current configuration."""
+    try:
+        # Return current configuration as dict
+        config_dict = {
+            "plex": {
+                "url": config.plex.url,
+                "token": config.plex.token,
+                "music_library_name": config.plex.music_library_name
+            },
+            "api": {
+                "host": config.api.host,
+                "port": config.api.port,
+                "reload": config.api.reload
+            },
+            "client": {
+                "server_host": config.client.server_host,
+                "server_port": config.client.server_port,
+                "model_id": config.client.model_id
+            },
+            "chroma": {
+                "collection_name": config.chroma.collection_name,
+                "batch_size": config.chroma.batch_size
+            },
+            "clap": {
+                "model_id": config.clap.model_id,
+                "target_sr": config.clap.target_sr,
+                "chunk_duration_s": config.clap.chunk_duration_s,
+                "batch_size": config.clap.batch_size
+            },
+            "logging": {
+                "level": config.logging.level
+            }
+        }
+        return config_dict
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/config")
+async def save_config(config_request: ConfigRequest):
+    """Save configuration to YAML file."""
+    try:
+        # Import the YAML config manager
+        from ..config_yaml import MyceliumConfigYAML
+        
+        # Create new config object with updated values
+        yaml_config = MyceliumConfigYAML(
+            plex=config_request.plex,
+            api=config_request.api,
+            client=config_request.client,
+            chroma=config_request.chroma,
+            clap=config_request.clap,
+            logging=config_request.logging
+        )
+        
+        # Save to default YAML location
+        yaml_config.save_to_yaml()
+        
+        return {
+            "message": "Configuration saved successfully. Restart the server to apply changes.",
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
 
 
 @app.post("/api/library/scan")

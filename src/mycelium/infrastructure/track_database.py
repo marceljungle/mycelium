@@ -300,3 +300,34 @@ class TrackDatabase:
                     embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
                 )
             return None
+    
+    def get_all_tracks(self, limit: Optional[int] = None, offset: int = 0) -> List[StoredTrack]:
+        """Get all tracks from the database with optional pagination."""
+        query = """
+            SELECT plex_rating_key, artist, album, title, filepath, added_at, last_scanned,
+                   embedding_processed, embedding_processed_at
+            FROM tracks 
+            ORDER BY artist, album, title
+        """
+        
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query).fetchall()
+            
+            return [
+                StoredTrack(
+                    plex_rating_key=row["plex_rating_key"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                    embedding_processed=bool(row["embedding_processed"]),
+                    embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
+                )
+                for row in rows
+            ]

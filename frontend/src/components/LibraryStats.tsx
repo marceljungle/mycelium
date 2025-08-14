@@ -46,7 +46,7 @@ export default function LibraryStats() {
       const data = await response.json();
       setStats(data);
       setError(null);
-    } catch (_err) {
+    } catch {
       setError('Unable to connect to API');
       setStats(null);
     } finally {
@@ -75,7 +75,7 @@ export default function LibraryStats() {
           }
         }
       }
-    } catch (_err) {
+    } catch {
       // Ignore progress fetch errors
     }
   }, [stats, processLoading, operationMessage]);
@@ -100,7 +100,7 @@ export default function LibraryStats() {
       // Refresh stats after scanning
       await fetchStats();
       await fetchProgress();
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to scan library. Make sure the API server is running and Plex is accessible.');
     } finally {
       setScanLoading(false);
@@ -151,7 +151,7 @@ export default function LibraryStats() {
       // Default success case (backward compatibility)
       setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
 
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to start processing. Make sure the API server is running.');
       setProcessLoading(false);
       setProgressInfo(null);
@@ -182,7 +182,7 @@ export default function LibraryStats() {
 
       setOperationMessage('🖥️ Server processing started! This may take longer on low-power hardware. Progress will be updated automatically.');
 
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to start server processing. Make sure the API server is running.');
       setProcessLoading(false);
       setProgressInfo(null);
@@ -205,7 +205,7 @@ export default function LibraryStats() {
         setProcessLoading(false);
         setOperationMessage('🛑 Stop signal sent. Processing will finish current track and stop.');
       }
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to send stop signal.');
     }
   };
@@ -221,7 +221,7 @@ export default function LibraryStats() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []); // Remove fetchStats and fetchProgress from dependencies to prevent multiple intervals
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

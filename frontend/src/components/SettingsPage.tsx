@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 
 interface ConfigData {
   plex: {
@@ -49,43 +50,15 @@ export default function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      // For now, we'll show a placeholder since we need a config endpoint
-      // This would typically come from a /api/config endpoint
-      const mockConfig: ConfigData = {
-        plex: {
-          url: 'http://localhost:32400',
-          token: '',
-          music_library_name: 'Music'
-        },
-        api: {
-          host: '0.0.0.0',
-          port: 8000,
-          reload: false
-        },
-        client: {
-          server_host: 'localhost',
-          server_port: 8000,
-          model_id: 'laion/clap-htsat-unfused'
-        },
-        chroma: {
-          collection_name: 'my_music_library',
-          batch_size: 1000
-        },
-        clap: {
-          model_id: 'laion/larger_clap_music_and_speech',
-          target_sr: 48000,
-          chunk_duration_s: 10,
-          batch_size: 16
-        },
-        logging: {
-          level: 'INFO'
-        }
-      };
-      
-      setConfig(mockConfig);
-      setOriginalConfig(JSON.parse(JSON.stringify(mockConfig)));
+      const response = await fetch(`${API_BASE_URL}/api/config`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch configuration');
+      }
+      const configData = await response.json();
+      setConfig(configData);
+      setOriginalConfig(JSON.parse(JSON.stringify(configData)));
     } catch {
-      setError('Unable to fetch configuration');
+      setError('Unable to fetch configuration. Make sure the API server is running.');
     } finally {
       setLoading(false);
     }
@@ -99,20 +72,21 @@ export default function SettingsPage() {
     setSuccessMessage(null);
     
     try {
-      // This would POST to /api/config endpoint
-      // const response = await fetch(`${API_BASE_URL}/api/config`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(config)
-      // });
+      const response = await fetch(`${API_BASE_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
       
-      // For now, simulate success
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        throw new Error('Failed to save configuration');
+      }
       
+      const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      setSuccessMessage('Configuration saved successfully! Restart the server to apply changes.');
-    } catch {
-      setError('Failed to save configuration');
+      setSuccessMessage(result.message || 'Configuration saved successfully! Restart the server to apply changes.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
       setSaving(false);
     }

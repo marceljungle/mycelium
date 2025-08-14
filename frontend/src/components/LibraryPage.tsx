@@ -13,6 +13,14 @@ interface Track {
   processed: boolean;
 }
 
+interface TrackResponse {
+  artist: string;
+  album: string;
+  title: string;
+  filepath: string;
+  plex_rating_key: string;
+}
+
 interface LibrarySearchResult {
   track: Track;
   similarity_score: number;
@@ -52,16 +60,25 @@ export default function LibraryPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/library/stats`);
+      const response = await fetch(`${API_BASE_URL}/api/library/tracks?page=1&limit=100`);
       if (!response.ok) {
         throw new Error('Failed to fetch tracks');
       }
-      // const data = await response.json();
+      const data = await response.json();
       
-      // For now, we'll show placeholder data since we need a new endpoint for track listing
-      // This would typically come from a /api/library/tracks endpoint
-      setTracks([]);
-      setFilteredTracks([]);
+      // Convert API response to Track objects
+      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
+        id: track.plex_rating_key,
+        artist: track.artist,
+        album: track.album,
+        title: track.title,
+        filepath: track.filepath,
+        plex_rating_key: track.plex_rating_key,
+        processed: true // Assume processed if in the database
+      }));
+      
+      setTracks(tracksData);
+      setFilteredTracks(tracksData);
     } catch {
       setError('Unable to connect to API. Make sure the server is running.');
       setTracks([]);
@@ -75,11 +92,17 @@ export default function LibraryPage() {
     setRecommendationsLoading(true);
     setRecommendations([]);
     try {
-      // This would use a track-based search endpoint
-      const response = await fetch(`${API_BASE_URL}/api/search/by-track/${track.plex_rating_key}?n_results=10`);
+      // Use the correct similar tracks endpoint
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=10`);
       if (response.ok) {
         const data = await response.json();
-        setRecommendations(data.results || []);
+        // Check if it's a list of results or a confirmation required response
+        if (Array.isArray(data)) {
+          setRecommendations(data);
+        } else if (data.status === 'confirmation_required') {
+          // Handle confirmation required case
+          setError('This track needs to be processed first. Processing can be done from the settings.');
+        }
       }
     } catch (err) {
       console.error('Failed to get recommendations:', err);
