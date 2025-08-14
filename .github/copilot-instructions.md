@@ -27,11 +27,20 @@ Mycelium is a Python-based music recommendation system with AI-powered embedding
    - **TIMEOUT: Use 3+ minutes minimum**
    - **NEVER CANCEL:** Wait for completion even if it appears slow
 
-3. **Setup environment configuration:**
+3. **Setup configuration (YAML recommended):**
    ```bash
+   # Preferred: YAML configuration
+   mkdir -p ~/.config/mycelium
+   cp config.example.yml ~/.config/mycelium/config.yml
+   # Edit ~/.config/mycelium/config.yml and add your Plex token
+   
+   # Alternative: Environment variables (legacy)
    cp .env.example .env
    # Edit .env and add your Plex token
    ```
+   - **YAML config**: `~/.config/mycelium/config.yml` (preferred method)
+   - **Environment variables**: Still supported for backward compatibility
+   - **Priority**: Environment variables > YAML config > defaults
 
 ### Build and Test
 1. **Build frontend:**
@@ -61,12 +70,17 @@ Mycelium is a Python-based music recommendation system with AI-powered embedding
 **All CLI commands require Python dependencies installed successfully:**
 
 ```bash
-# Scan Plex library
+# NEW SEPARATED WORKFLOW (Recommended):
+# 1. Scan Plex library (save metadata to database)
 mycelium scan
 
-# Process entire library (scan + generate embeddings + index)
+# 2. Process embeddings (from database, resumable)
 mycelium process
 # **NEVER CANCEL:** Takes 30+ minutes for large libraries
+
+# LEGACY WORKFLOW (Still supported):
+# Process entire library (scan + generate embeddings + index)
+mycelium process  # Uses new separated workflow internally
 
 # Start GPU worker for distributed processing (on powerful machines)
 mycelium client --server-host your-server-ip
@@ -107,6 +121,29 @@ Mycelium now prioritizes distributed GPU workers over server processing:
    # Frontend "Process Embeddings" uses workers when available
    ```
 
+### API Endpoints
+**New Separated Workflow Endpoints:**
+
+```bash
+# Library Operations
+POST /api/library/scan              # Scan Plex library, save metadata to database
+POST /api/library/process           # Process embeddings from database (resumable)
+POST /api/library/process/server    # Force processing on server (with confirmation)
+POST /api/library/process/stop      # Stop current processing operation
+GET /api/library/progress           # Get processing progress and statistics
+GET /api/library/can_resume         # Check if processing can be resumed
+GET /api/library/stats              # Get database and library statistics
+
+# Legacy Endpoints (still supported)
+POST /api/library/process/legacy    # Old workflow (scan + process combined)
+
+# Worker Coordination  
+POST /workers/register              # Register a worker with the server
+GET /workers/get_job                # Get next job for a worker
+POST /workers/submit_result         # Submit completed job result
+GET /api/queue/stats                # Get job queue statistics
+```
+
 ## Validation Scenarios
 
 ### Manual Testing Requirements
@@ -123,15 +160,27 @@ Mycelium now prioritizes distributed GPU workers over server processing:
 
 2. **Backend API Test (when dependencies work):**
    - Start API: `mycelium api`
-   - Test endpoint: `curl http://localhost:8000/api/library/stats`
+   - Test endpoints: 
+     - `curl http://localhost:8000/api/library/stats` - Database statistics
+     - `curl -X POST http://localhost:8000/api/library/scan` - Scan library
+     - `curl http://localhost:8000/api/library/progress` - Processing progress
    - Should return database statistics or connection error
 
 3. **Full Integration Test (requires Plex setup):**
-   - Configure .env with valid Plex token
-   - Run: `mycelium scan` to test Plex connectivity
-   - Run: `mycelium stats` to verify database
+   - Configure YAML config with valid Plex token or set PLEX_TOKEN environment variable
+   - Run: `mycelium scan` to test Plex connectivity and database scanning
+   - Run: `mycelium stats` to verify database and track information
+   - Optional: Run `mycelium process` to test embedding processing (resumable)
 
-4. **Worker Integration Test (for distributed processing):**
+4. **Separated Workflow Test (new feature):**
+   - Start server: `mycelium api`
+   - Test scanning: `curl -X POST http://localhost:8000/api/library/scan`
+   - Test progress: `curl http://localhost:8000/api/library/progress`
+   - Test processing: `curl -X POST http://localhost:8000/api/library/process`
+   - Test stopping: `curl -X POST http://localhost:8000/api/library/process/stop`
+   - Frontend: Use "Scan Library" and "Process Embeddings" buttons separately
+
+5. **Worker Integration Test (for distributed processing):**
    - Start server: `mycelium api`
    - Start worker (separate machine): `mycelium client --server-host your-server-ip`
    - In frontend: Click "Process Embeddings" - should show worker processing
@@ -171,28 +220,33 @@ mycelium/
 │   ├── domain/             # Core business logic and models
 │   ├── application/        # Use cases and services (MyceliumService)
 │   │   ├── job_queue.py    # Worker coordination and task distribution
-│   │   └── workflow_use_cases.py  # Worker-based processing logic
+│   │   └── workflow_use_cases.py  # NEW: Separated workflow use cases
 │   ├── infrastructure/     # External adapters (Plex, CLAP, ChromaDB)
+│   │   └── track_database.py  # NEW: Track metadata database
 │   ├── api/                # FastAPI web API endpoints
 │   ├── client.py           # GPU worker client for distributed processing
 │   ├── main.py             # CLI entry point with Typer
-│   └── config.py           # Configuration management
+│   ├── config.py           # Configuration management
+│   └── config_yaml.py      # NEW: YAML configuration manager
 ├── frontend/               # Next.js frontend  
 │   ├── src/app/            # Next.js app router pages
 │   ├── src/components/     # React components
 │   └── package.json        # Frontend dependencies
-├── .env.example            # Environment configuration template
+├── .env.example            # Environment configuration template (legacy)
+├── config.example.yml      # NEW: YAML configuration template (preferred)
 ├── pyproject.toml          # Python project configuration
 └── requirements.txt        # Python dependencies
 ```
 
 ### Important Files to Check
-- **Always check `src/mycelium/config.py`** after environment changes
-- **Check `frontend/src/components/LibraryStats.tsx`** for API integration
-- **Check `src/mycelium/api/app.py`** for API endpoint changes
+- **Always check `src/mycelium/config.py` and `src/mycelium/config_yaml.py`** after configuration changes
+- **Check `frontend/src/components/LibraryStats.tsx`** for API integration and separated workflow UI
+- **Check `src/mycelium/api/app.py`** for new API endpoints (`/scan`, `/process`, `/progress`)
 - **Check `src/mycelium/main.py`** for CLI command modifications
 - **Check `src/mycelium/application/job_queue.py`** for worker coordination
 - **Check `src/mycelium/client.py`** for GPU worker functionality
+- **Check `src/mycelium/application/workflow_use_cases.py`** for separated workflow logic
+- **Check `src/mycelium/infrastructure/track_database.py`** for track database operations
 
 ## Dependencies and Requirements
 
@@ -227,9 +281,15 @@ mycelium/
 - Check network access for Google Fonts
 
 ### Plex connection issues  
-- Verify PLEX_TOKEN in .env file
+- Verify PLEX_TOKEN in YAML config file or environment variable
 - Check PLEX_URL points to correct server
-- Test with: `mycelium scan`
+- Test with: `mycelium scan` (now saves to database for resumable processing)
+
+### Configuration migration
+- **New users**: Use YAML config at `~/.config/mycelium/config.yml` (preferred)
+- **Existing users**: Environment variables still work for backward compatibility
+- **Migration**: Copy settings from `.env` to `~/.config/mycelium/config.yml`
+- **Priority**: Environment variables override YAML settings
 
 ### Performance Notes
 - **First-time model downloads:** CLAP models (~1GB) download on first use
@@ -237,6 +297,8 @@ mycelium/
 - **Distributed processing:** Workers keep models loaded for efficiency
 - **Database indexing:** ChromaDB operations scale with library size
 - **Worker optimization:** Models loaded once per worker session, not per track
+- **Separated workflow:** Scanning and processing can be done independently and resumed
+- **Database storage:** Track metadata stored in SQLite for faster resumable operations
 
 ## Quick Reference Commands
 
@@ -244,16 +306,24 @@ mycelium/
 # Complete setup from scratch
 pip install -e .                    # 15-45 min, NEVER CANCEL
 cd frontend && npm install          # 1.5 min
+
+# Configuration (choose one method)
+# PREFERRED: YAML configuration
+mkdir -p ~/.config/mycelium && cp config.example.yml ~/.config/mycelium/config.yml
+# LEGACY: Environment variables  
 cp .env.example .env               # Edit with Plex details
 
 # Development workflow  
 cd frontend && npm run dev          # Start frontend
 mycelium api                       # Start backend (separate terminal)
 
-# Library management
-mycelium scan                      # Scan Plex library
-mycelium process                   # Full processing (30+ min, NEVER CANCEL)
+# NEW SEPARATED WORKFLOW (recommended):
+mycelium scan                      # Scan Plex library to database
+mycelium process                   # Process embeddings (resumable, 30+ min, NEVER CANCEL)
 mycelium search-text "jazz piano"  # Test search
+
+# Alternative: Legacy single command
+mycelium process                   # Still works, uses separated workflow internally
 
 # Distributed processing (recommended)
 mycelium client --server-host 192.168.1.100  # Start GPU worker
