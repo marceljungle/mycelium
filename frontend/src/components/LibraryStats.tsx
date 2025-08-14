@@ -278,37 +278,43 @@ export default function LibraryStats() {
       ) : stats ? (
         <div className="space-y-4">
           {/* Track Database Stats */}
-          {stats.track_database_stats && (
-            <div className="bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900 dark:to-cyan-900 p-4 rounded-lg">
-              <div className="grid grid-cols-2 gap-4 mb-3">
-                <div>
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {stats.track_database_stats.total_tracks.toLocaleString()}
-                  </div>
-                  <div className="text-sm text-blue-700 dark:text-blue-300">
-                    Total Tracks
-                  </div>
+          <div className="bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900 dark:to-cyan-900 p-4 rounded-lg">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {stats.track_database_stats?.total_tracks?.toLocaleString() || '0'}
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {stats.track_database_stats.processed_tracks.toLocaleString()}
-                  </div>
-                  <div className="text-sm text-green-700 dark:text-green-300">
-                    Processed
-                  </div>
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  Total Scanned Tracks
                 </div>
               </div>
-
-              {stats.track_database_stats.total_tracks > 0 && (
-                <div className="mt-3">
-                  {renderProgressBar(
-                    stats.track_database_stats.progress_percentage,
-                    "Processing Progress"
-                  )}
+              <div>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {stats.track_database_stats?.processed_tracks?.toLocaleString() || '0'}
                 </div>
-              )}
+                <div className="text-sm text-green-700 dark:text-green-300">
+                  Processed Tracks
+                </div>
+              </div>
             </div>
-          )}
+
+            {stats.track_database_stats && stats.track_database_stats.total_tracks > 0 && (
+              <div className="mt-3">
+                {renderProgressBar(
+                  stats.track_database_stats.progress_percentage || 0,
+                  "Processing Progress"
+                )}
+              </div>
+            )}
+            
+            {(!stats.track_database_stats || stats.track_database_stats.total_tracks === 0) && (
+              <div className="text-center py-2">
+                <p className="text-sm text-blue-600 dark:text-blue-400">
+                  📖 No tracks scanned yet. Use &quot;Scan Library&quot; below to get started.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Vector Database Stats */}
           <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 p-4 rounded-lg">
