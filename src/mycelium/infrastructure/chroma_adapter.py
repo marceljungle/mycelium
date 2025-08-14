@@ -27,6 +27,12 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         self.batch_size = batch_size
         
         # Initialize ChromaDB client and collection
+        # Ensure directory exists (db_path is a directory path for Chroma's storage)
+        try:
+            Path(db_path).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Best-effort; Chroma may create it if this fails
+            pass
         self.client = chromadb.PersistentClient(path=db_path)
         
         # Use 'get_or_create_collection' for idempotency

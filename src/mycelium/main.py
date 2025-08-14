@@ -202,7 +202,8 @@ def scan() -> None:
             music_library_name=config.plex.music_library_name,
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id
+            model_id=config.clap.model_id,
+            track_db_path=config.database.get_db_path()
         )
         scan_library(service)
     except Exception as e:
@@ -222,7 +223,8 @@ def process() -> None:
             music_library_name=config.plex.music_library_name,
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id
+            model_id=config.clap.model_id,
+            track_db_path=config.database.get_db_path()
         )
         process_library(service)
     except Exception as e:
@@ -245,7 +247,8 @@ def search_text(
             music_library_name=config.plex.music_library_name,
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id
+            model_id=config.clap.model_id,
+            track_db_path=config.database.get_db_path()
         )
         search_by_text(service, query, results)
     except Exception as e:
@@ -268,7 +271,8 @@ def search_audio(
             music_library_name=config.plex.music_library_name,
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id
+            model_id=config.clap.model_id,
+            track_db_path=config.database.get_db_path()
         )
         search_by_audio(service, filepath, results)
     except Exception as e:
@@ -288,7 +292,8 @@ def stats() -> None:
             music_library_name=config.plex.music_library_name,
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id
+            model_id=config.clap.model_id,
+            track_db_path=config.database.get_db_path()
         )
         show_stats(service)
     except Exception as e:

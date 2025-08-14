@@ -140,7 +140,8 @@ class MyceliumConfig:
         
         # Load YAML config if it exists
         config_data = {}
-        if config_path.exists():
+        config_exists = config_path.exists()
+        if config_exists:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f) or {}
         
@@ -192,7 +193,7 @@ class MyceliumConfig:
             file=log_file
         )
         
-        return cls(
+        cfg = cls(
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
@@ -201,6 +202,18 @@ class MyceliumConfig:
             client=client_config,
             logging=logging_config
         )
+
+        # If no config file existed, create one with current values for convenience
+        if not config_exists:
+            # Ensure config directory exists
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                cfg.save_to_yaml(config_path)
+            except Exception:
+                # Best-effort; ignore failures to avoid blocking startup
+                pass
+        
+        return cfg
     
     def save_to_yaml(self, config_path: Optional[Path] = None) -> None:
         """Save configuration to YAML file."""

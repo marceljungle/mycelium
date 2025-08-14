@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from ..domain.models import Track
+from ..config_yaml import get_user_data_dir
 
 
 @dataclass
@@ -51,7 +52,10 @@ class StoredTrack:
 class TrackDatabase:
     """SQLite database for managing track metadata and processing state."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: Optional[str]):
+        # Default to user data directory if path is not provided
+        if not db_path:
+            db_path = str(get_user_data_dir() / "mycelium_tracks.db")
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()

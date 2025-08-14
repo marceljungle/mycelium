@@ -69,10 +69,10 @@ service = MyceliumService(
     plex_url=config.plex.url,
     plex_token=config.plex.token,
     music_library_name=config.plex.music_library_name,
-    db_path=config.chroma.db_path,
+    db_path=config.chroma.get_db_path(),
     collection_name=config.chroma.collection_name,
     model_id=config.clap.model_id,
-    track_db_path=config.database.db_path
+    track_db_path=config.database.get_db_path()
 )
 
 # Initialize job queue service
