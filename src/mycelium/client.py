@@ -82,7 +82,7 @@ class MyceliumClient:
 
         # Add visual indicator for queue fullness
         if queue_percent >= 90:
-            print("  📦 Queue nearly full - download worker will start discarding jobs")
+            print("  📦 Queue nearly full - download workers will pause fetching new jobs")
         elif queue_percent >= 70:
             print("  ⚠️  Queue getting full")
         elif queue_percent >= 50:
@@ -220,6 +220,13 @@ class MyceliumClient:
         
         while not self.stop_download_thread.is_set():
             try:
+                # If the processing queue is full, pause fetching new jobs
+                if self.download_queue.full():
+                    print("Download worker: Queue full, pausing job fetch")
+                    self._log_queue_status("queue full - pausing fetch")
+                    time.sleep(1)
+                    continue
+
                 # Get next job from server
                 job = self.get_job()
                 
@@ -245,8 +252,8 @@ class MyceliumClient:
                             print(f"Download worker: Queued job {task_id} for processing")
                             self._log_queue_status("after queuing")
                         except:
-                            # Queue is full, clean up the file
-                            print(f"Download worker: Queue full, discarding job {task_id}")
+                            # Queue remained full; clean up the downloaded temp file
+                            print(f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
                             try:
                                 os.unlink(audio_file)
                             except:
