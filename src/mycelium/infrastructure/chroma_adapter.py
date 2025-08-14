@@ -1,5 +1,6 @@
 """ChromaDB integration for storing and searching embeddings."""
 
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -8,6 +9,8 @@ from tqdm import tqdm
 
 from ..domain.models import Track, TrackEmbedding, SearchResult
 from ..domain.repositories import EmbeddingRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ChromaEmbeddingRepository(EmbeddingRepository):
@@ -33,7 +36,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             metadata={"hnsw:space": "cosine"}
         )
         
-        print(f"Collection '{collection_name}' ready. Current elements: {self.collection.count()}")
+        logger.info(f"Collection '{collection_name}' ready. Current elements: {self.collection.count()}")
     
     def save_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
         """Save track embeddings to ChromaDB."""
@@ -69,8 +72,8 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
                 metadatas=metadata_batch
             )
 
-        print("Indexing completed!")
-        print(f"Total elements in collection '{self.collection_name}': {self.collection.count()}")
+        logger.info("Indexing completed!")
+        logger.info(f"Total elements in collection '{self.collection_name}': {self.collection.count()}")
     
     def search_by_embedding(self, embedding: List[float], n_results: int = 10) -> List[SearchResult]:
         """Search for similar tracks by embedding."""
