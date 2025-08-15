@@ -1,5 +1,6 @@
 """CLAP model integration for generating embeddings."""
 
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -22,10 +23,11 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
+        self.logger = logging.getLogger(__name__)
         
         # Setup device with MPS support for Apple Silicon
         self.device = self._get_best_device()
-        print(f"Using device: {self.device}")
+        self.logger.info(f"Using device: {self.device}")
         
         # Load model and processor
         self.model = ClapModel.from_pretrained(model_id).to(self.device)
@@ -38,9 +40,9 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             try:
                 self.model.half()
                 torch.backends.mps.enabled = True
-                print("MPS half precision enabled for optimal performance")
+                self.logger.info("MPS half precision enabled for optimal performance")
             except RuntimeError as e:
-                print(f"MPS half precision not supported, using FP32: {e}")
+                self.logger.warning(f"MPS half precision not supported, using FP32: {e}")
                 # Fallback to FP32 if half precision fails
 
         self.model.eval()
@@ -97,13 +99,13 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
                 # Device-specific monitoring
                 if self.device == "mps":
-                    print(f"MPS memory used: {torch.mps.current_allocated_memory() / 1024 ** 2:.1f} MB")
-                    print(f"Audio features device: {audio_features.device}")
-                    print(f"Audio features dtype: {audio_features.dtype}")
+                    self.logger.debug(f"MPS memory used: {torch.mps.current_allocated_memory() / 1024 ** 2:.1f} MB")
+                    self.logger.debug(f"Audio features device: {audio_features.device}")
+                    self.logger.debug(f"Audio features dtype: {audio_features.dtype}")
                 elif self.device == "cuda":
-                    print(f"CUDA memory used: {torch.cuda.memory_allocated() / 1024 ** 2:.1f} MB")
-                    print(f"Audio features device: {audio_features.device}")
-                    print(f"Audio features dtype: {audio_features.dtype}")
+                    self.logger.debug(f"CUDA memory used: {torch.cuda.memory_allocated() / 1024 ** 2:.1f} MB")
+                    self.logger.debug(f"Audio features device: {audio_features.device}")
+                    self.logger.debug(f"Audio features dtype: {audio_features.dtype}")
 
                 mean_embedding = torch.mean(audio_features, dim=0)
                 normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
@@ -111,7 +113,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             return normalized_embedding.cpu().numpy().tolist()
 
         except Exception as e:
-            print(f"Error generating embeddings for {filepath}: {e}")
+            self.logger.error(f"Error generating embeddings for {filepath}: {e}", exc_info=True)
             return None
     
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
@@ -143,7 +145,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             return text_embedding.cpu().numpy().tolist()[0]
 
         except Exception as e:
-            print(f"Error processing text '{text}': {e}")
+            self.logger.error(f"Error processing text '{text}': {e}", exc_info=True)
             return None
     
     def generate_embedding_from_file(self, filepath: Path) -> List[float]:

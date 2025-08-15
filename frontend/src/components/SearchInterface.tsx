@@ -66,12 +66,14 @@ export default function SearchInterface() {
       });
 
       if (!response.ok) {
-        throw new Error('Audio search failed. Make sure the Mycelium API is running.');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Audio search failed. Please check the server logs for details.');
       }
 
       const data = await response.json();
       setResults(data);
     } catch (err) {
+      console.error('Audio search error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred during audio search');
       setResults([]);
     } finally {

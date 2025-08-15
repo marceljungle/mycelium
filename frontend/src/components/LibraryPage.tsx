@@ -42,25 +42,24 @@ export default function LibraryPage() {
   }, []);
 
   useEffect(() => {
-    // Filter tracks based on search query
-    if (!searchQuery.trim()) {
-      setFilteredTracks(tracks);
+    // Use API search instead of client-side filtering
+    if (searchQuery.trim()) {
+      fetchTracks(searchQuery);
     } else {
-      const query = searchQuery.toLowerCase();
-      const filtered = tracks.filter(track =>
-        track.artist.toLowerCase().includes(query) ||
-        track.album.toLowerCase().includes(query) ||
-        track.title.toLowerCase().includes(query)
-      );
-      setFilteredTracks(filtered);
+      fetchTracks();
     }
-  }, [searchQuery, tracks]);
+  }, [searchQuery]);
 
-  const fetchTracks = async () => {
+  const fetchTracks = async (searchTerm?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/library/tracks?page=1&limit=100`);
+      let url = `${API_BASE_URL}/api/library/tracks?page=1&limit=100`;
+      if (searchTerm && searchTerm.trim()) {
+        url += `&search=${encodeURIComponent(searchTerm.trim())}`;
+      }
+      
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error('Failed to fetch tracks');
       }
@@ -91,21 +90,52 @@ export default function LibraryPage() {
   const getRecommendations = async (track: Track) => {
     setRecommendationsLoading(true);
     setRecommendations([]);
+    setError(null);
+    
     try {
       // Use the correct similar tracks endpoint
       const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=10`);
+      
       if (response.ok) {
         const data = await response.json();
+        
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
           setRecommendations(data);
         } else if (data.status === 'confirmation_required') {
-          // Handle confirmation required case
-          setError('This track needs to be processed first. Processing can be done from the settings.');
+          // Handle confirmation required case - offer processing options
+          const shouldProcess = window.confirm(
+            `This track needs to be processed first. ${data.message}\n\nWould you like to process it now?`
+          );
+          
+          if (shouldProcess) {
+            try {
+              // Try to process on server
+              const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ track_id: track.plex_rating_key })
+              });
+              
+              if (processResponse.ok) {
+                setError('Processing started in background. Please try again in a few moments.');
+              } else {
+                setError('Failed to start processing. Please try again later.');
+              }
+            } catch {
+              setError('Error starting processing. Please check your connection.');
+            }
+          }
+        } else {
+          setError('Unexpected response from server. Please try again.');
         }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.detail || 'Failed to get recommendations. Please try again.');
       }
     } catch (err) {
       console.error('Failed to get recommendations:', err);
+      setError('Error connecting to server. Please check your connection.');
     } finally {
       setRecommendationsLoading(false);
     }
