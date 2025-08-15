@@ -148,7 +148,7 @@ class MyceliumConfig:
         # Load from YAML only - no environment variable fallbacks
         plex_config = PlexConfig(
             url=config_data.get("plex", {}).get("url", "http://localhost:32400"),
-            token=config_data.get("plex", {}).get("token"),
+            token=config_data.get("plex", {}).get("token", "replace_with_your_token"),
             music_library_name=config_data.get("plex", {}).get("music_library_name", "Music")
         )
         
