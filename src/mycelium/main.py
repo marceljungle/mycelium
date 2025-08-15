@@ -60,6 +60,7 @@ def search_by_text(service: MyceliumService, query: str, n_results: int = 10) ->
         logger.info("No results found.")
 
 
+# TODO: this is already implemented in the app.py. And used in the frontend, this shoudln't be needed
 def search_by_audio(service: MyceliumService, filepath: str, n_results: int = 10) -> None:
     """Search for music similar to an audio file."""
     audio_path = Path(filepath)

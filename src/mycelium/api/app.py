@@ -250,7 +250,7 @@ async def search_by_audio(
         
         try:
             # Search using temporary file
-            results = service.search_similar_by_audio(temp_file_path, n_results)
+            results = service.search_similar_by_audio(Path(temp_file_path), n_results)
             logger.info(f"Audio search completed successfully - found {len(results)} results")
             
             return [
