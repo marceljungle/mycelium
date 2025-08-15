@@ -754,16 +754,48 @@ async def compute_on_server_background(track_id: str):
 async def compute_on_server(request: ComputeOnServerRequest, background_tasks: BackgroundTasks):
     """Compute embedding on server CPU after user confirmation."""
     try:
-        # Add background task
-        background_tasks.add_task(compute_on_server_background, request.track_id)
+        logger.info(f"Starting server-side computation for track {request.track_id}")
         
-        return {
-            "message": "Computation started in background",
-            "track_id": request.track_id,
-            "estimated_time": "unknown"
-        }
+        # For better UX, process synchronously for single tracks (should be fast enough)
+        # Load track info
+        track_info = service.get_track_by_id(request.track_id)
+        if not track_info:
+            logger.warning(f"Track not found for ID: {request.track_id}")
+            raise HTTPException(status_code=404, detail="Track not found")
+        
+        logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
+        
+        # Compute embedding on CPU
+        embedding = service.compute_embedding_cpu(track_info.filepath)
+        
+        if embedding is None or len(embedding) == 0:
+            logger.error(f"Failed to compute embedding for track {request.track_id}")
+            raise HTTPException(status_code=500, detail="Failed to compute embedding")
+        
+        logger.info(f"Successfully computed embedding for track {request.track_id}, size: {len(embedding)}")
+        
+        # Save to database
+        service.save_embedding(request.track_id, embedding)
+        logger.info(f"Successfully computed and saved embedding for track: {request.track_id}")
+        
+        # Verify embedding was saved correctly
+        if service.has_embedding(request.track_id):
+            logger.info(f"Embedding verification successful for track {request.track_id}")
+            return {
+                "message": "Embedding computed and saved successfully",
+                "track_id": request.track_id,
+                "status": "completed"
+            }
+        else:
+            logger.error(f"Embedding verification failed for track {request.track_id} - embedding not found after saving")
+            raise HTTPException(status_code=500, detail="Embedding was computed but verification failed")
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error computing embedding on server for track {request.track_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Server computation failed: {str(e)}")
 
 
 @app.get("/api/queue/task/{task_id}")

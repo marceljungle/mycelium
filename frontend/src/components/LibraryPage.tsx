@@ -110,7 +110,7 @@ export default function LibraryPage() {
           
           if (shouldProcess) {
             try {
-              // Try to process on server
+              // Try to process on server (now synchronous)
               const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -118,14 +118,25 @@ export default function LibraryPage() {
               });
               
               if (processResponse.ok) {
-                setError('Processing started in background. Please try again in a few moments.');
+                const processResult = await processResponse.json();
+                if (processResult.status === 'completed') {
+                  // Processing completed successfully, try getting recommendations again
+                  await getRecommendations(track);
+                  return;
+                } else {
+                  setError('Processing completed but no recommendations found. Please try again.');
+                }
               } else {
-                setError('Failed to start processing. Please try again later.');
+                const errorData = await processResponse.json().catch(() => ({}));
+                setError(errorData.detail || 'Failed to process track. Please try again later.');
               }
             } catch {
-              setError('Error starting processing. Please check your connection.');
+              setError('Error processing track. Please check your connection.');
             }
           }
+        } else if (data.status === 'processing') {
+          // Handle worker processing case - show message and suggest retry
+          setError(`${data.message}\n\nClick the track again in a few moments to check if processing is complete.`);
         } else {
           setError('Unexpected response from server. Please try again.');
         }

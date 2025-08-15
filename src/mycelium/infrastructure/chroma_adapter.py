@@ -146,18 +146,36 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         track = track_embedding.track
         
         logger.info(f"Saving embedding to ChromaDB for track {track.plex_rating_key}: {track.artist} - {track.title}")
+        logger.info(f"Collection count before save: {self.collection.count()}")
         
-        self.collection.add(
-            ids=[track.plex_rating_key],
-            embeddings=[track_embedding.embedding],
-            metadatas=[{
-                "filepath": str(track.filepath),
-                "artist": track.artist,
-                "album": track.album,
-                "title": track.title
-            }]
-        )
+        # Check if embedding already exists, if so, update it
+        existing = self.collection.get(ids=[track.plex_rating_key])
+        if existing['ids']:
+            logger.info(f"Updating existing embedding for track {track.plex_rating_key}")
+            self.collection.update(
+                ids=[track.plex_rating_key],
+                embeddings=[track_embedding.embedding],
+                metadatas=[{
+                    "filepath": str(track.filepath),
+                    "artist": track.artist,
+                    "album": track.album,
+                    "title": track.title
+                }]
+            )
+        else:
+            logger.info(f"Adding new embedding for track {track.plex_rating_key}")
+            self.collection.add(
+                ids=[track.plex_rating_key],
+                embeddings=[track_embedding.embedding],
+                metadatas=[{
+                    "filepath": str(track.filepath),
+                    "artist": track.artist,
+                    "album": track.album,
+                    "title": track.title
+                }]
+            )
         
+        logger.info(f"Collection count after save: {self.collection.count()}")
         logger.info(f"Successfully saved embedding to ChromaDB for track {track.plex_rating_key}")
         
         # Verify the embedding was saved
@@ -166,6 +184,8 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             logger.info(f"Embedding verification successful for track {track.plex_rating_key}")
         else:
             logger.error(f"Embedding verification failed for track {track.plex_rating_key}")
+            # Also log the full verification result for debugging
+            logger.error(f"Verification result: {verification}")
     
     def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
         """Get embedding for a specific track."""
