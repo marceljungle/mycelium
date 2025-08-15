@@ -196,7 +196,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             )
             if result['embeddings'] is not None and len(result['embeddings']) > 0:
                 embedding = result['embeddings'][0]
-                logger.debug(f"Retrieved embedding for track {track_id}, size: {len(embedding) if embedding else 0}")
+                logger.debug(f"Retrieved embedding for track {track_id}, size: {len(embedding) if embedding is not None else 0}")
                 return embedding
             else:
                 logger.debug(f"No embedding found in ChromaDB for track {track_id}")
