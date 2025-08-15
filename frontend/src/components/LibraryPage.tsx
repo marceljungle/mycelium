@@ -27,19 +27,34 @@ interface LibrarySearchResult {
   distance: number;
 }
 
+interface ProcessingTask {
+  taskId: string;
+  trackId: string;
+  startTime: number;
+}
+
 export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [tracks, setTracks] = useState<Track[]>([]);
   const [filteredTracks, setFilteredTracks] = useState<Track[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [recommendations, setRecommendations] = useState<LibrarySearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
+  const [currentTask, setCurrentTask] = useState<ProcessingTask | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchTracks();
-  }, []);
+    
+    // Cleanup polling on unmount
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [pollInterval]);
 
   useEffect(() => {
     // Use API search instead of client-side filtering
@@ -76,21 +91,91 @@ export default function LibraryPage() {
         processed: true // Assume processed if in the database
       }));
       
-      setTracks(tracksData);
       setFilteredTracks(tracksData);
     } catch {
       setError('Unable to connect to API. Make sure the server is running.');
-      setTracks([]);
       setFilteredTracks([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getRecommendations = async (track: Track) => {
-    setRecommendationsLoading(true);
-    setRecommendations([]);
-    setError(null);
+  const pollTaskStatus = async (taskId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
+      if (response.ok) {
+        const taskStatus = await response.json();
+        
+        if (taskStatus.status === 'completed') {
+          return true; // Task completed successfully
+        } else if (taskStatus.status === 'failed') {
+          setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
+          return false;
+        }
+        // Still in progress, continue polling
+        return false;
+      } else {
+        // Task not found or error - assume it completed
+        return true;
+      }
+    } catch (err) {
+      console.error('Error polling task status:', err);
+      // On error, assume completed and try to get recommendations
+      return true;
+    }
+  };
+
+  const startTaskPolling = async (taskId: string, trackId: string, track: Track) => {
+    // Clear any existing polling
+    if (pollInterval) {
+      clearInterval(pollInterval);
+    }
+
+    const task: ProcessingTask = {
+      taskId,
+      trackId,
+      startTime: Date.now()
+    };
+    setCurrentTask(task);
+    setProcessingState('worker');
+
+    const interval = setInterval(async () => {
+      const completed = await pollTaskStatus(taskId);
+      
+      if (completed) {
+        clearInterval(interval);
+        setPollInterval(null);
+        setCurrentTask(null);
+        setProcessingState('none');
+        
+        // Wait a moment for the embedding to be fully saved
+        setTimeout(() => {
+          // Automatically retry getting recommendations
+          getRecommendations(track, true);
+        }, 1000);
+      }
+      
+      // Stop polling after 5 minutes to prevent infinite polling
+      if (Date.now() - task.startTime > 300000) {
+        clearInterval(interval);
+        setPollInterval(null);
+        setCurrentTask(null);
+        setProcessingState('none');
+        setError('Processing took too long. Please try clicking the track again.');
+      }
+    }, 2000); // Poll every 2 seconds
+    
+    setPollInterval(interval);
+  };
+
+  const getRecommendations = async (track: Track, isRetry: boolean = false) => {
+    if (!isRetry) {
+      setRecommendationsLoading(true);
+      setRecommendations([]);
+      setError(null);
+      setProcessingState('none');
+      setCurrentTask(null);
+    }
     
     try {
       // Use the correct similar tracks endpoint
@@ -102,6 +187,7 @@ export default function LibraryPage() {
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
           setRecommendations(data);
+          setRecommendationsLoading(false);
         } else if (data.status === 'confirmation_required') {
           // Handle confirmation required case - offer processing options
           const shouldProcess = window.confirm(
@@ -109,6 +195,7 @@ export default function LibraryPage() {
           );
           
           if (shouldProcess) {
+            setProcessingState('server');
             try {
               // Try to process on server (now synchronous)
               const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
@@ -121,7 +208,8 @@ export default function LibraryPage() {
                 const processResult = await processResponse.json();
                 if (processResult.status === 'completed') {
                   // Processing completed successfully, try getting recommendations again
-                  await getRecommendations(track);
+                  setProcessingState('none');
+                  await getRecommendations(track, true);
                   return;
                 } else {
                   setError('Processing completed but no recommendations found. Please try again.');
@@ -132,28 +220,44 @@ export default function LibraryPage() {
               }
             } catch {
               setError('Error processing track. Please check your connection.');
+            } finally {
+              setProcessingState('none');
             }
+          } else {
+            setRecommendationsLoading(false);
           }
-        } else if (data.status === 'processing') {
-          // Handle worker processing case - show message and suggest retry
-          setError(`${data.message}\n\nClick the track again in a few moments to check if processing is complete.`);
+        } else if (data.status === 'processing' && data.task_id) {
+          // Handle worker processing case - start polling
+          if (!isRetry) {
+            startTaskPolling(data.task_id, track.plex_rating_key, track);
+          }
         } else {
           setError('Unexpected response from server. Please try again.');
+          setRecommendationsLoading(false);
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
         setError(errorData.detail || 'Failed to get recommendations. Please try again.');
+        setRecommendationsLoading(false);
       }
     } catch (err) {
       console.error('Failed to get recommendations:', err);
       setError('Error connecting to server. Please check your connection.');
-    } finally {
       setRecommendationsLoading(false);
+      setProcessingState('none');
     }
   };
 
   const handleTrackSelect = (track: Track) => {
+    // Clear any existing polling when selecting a new track
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      setPollInterval(null);
+    }
+    
     setSelectedTrack(track);
+    setCurrentTask(null);
+    setProcessingState('none');
     getRecommendations(track);
   };
 
@@ -212,7 +316,7 @@ export default function LibraryPage() {
                 {error}
               </p>
               <button
-                onClick={fetchTracks}
+                onClick={() => fetchTracks()}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
               >
                 Retry
@@ -270,8 +374,38 @@ export default function LibraryPage() {
                 Select a track to see recommendations
               </p>
             </div>
-          ) : recommendationsLoading ? (
+          ) : recommendationsLoading || processingState !== 'none' ? (
             <div className="space-y-3">
+              <div className="text-center py-4">
+                {processingState === 'worker' && currentTask ? (
+                  <div>
+                    <div className="text-2xl mb-2">⚙️</div>
+                    <p className="text-blue-600 dark:text-blue-400 font-medium">
+                      Processing with AI worker...
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      This will complete automatically when ready
+                    </p>
+                  </div>
+                ) : processingState === 'server' ? (
+                  <div>
+                    <div className="text-2xl mb-2">🖥️</div>
+                    <p className="text-purple-600 dark:text-purple-400 font-medium">
+                      Processing on server...
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Computing audio signature
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-2xl mb-2">🔍</div>
+                    <p className="text-gray-600 dark:text-gray-400 font-medium">
+                      Finding similar tracks...
+                    </p>
+                  </div>
+                )}
+              </div>
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 h-16 rounded-lg"></div>
               ))}
