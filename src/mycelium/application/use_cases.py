@@ -135,7 +135,12 @@ class MusicSearchUseCase:
         
         if embedding is None:
             self.logger.error(f"No embedding found for track ID: {track_id}")
+            # Try to check if the embedding exists using has_embedding
+            has_emb = self.embedding_repository.has_embedding(track_id)
+            self.logger.error(f"Double-check has_embedding for track {track_id}: {has_emb}")
             return []
+        
+        self.logger.info(f"Found embedding for track {track_id}, size: {len(embedding)}")
         
         # Search for similar tracks
         results = self.embedding_repository.search_by_embedding(embedding, n_results + 1)
@@ -146,4 +151,5 @@ class MusicSearchUseCase:
             if result.track.plex_rating_key != track_id
         ][:n_results]
         
+        self.logger.info(f"Found {len(results)} similar tracks for track {track_id}")
         return results

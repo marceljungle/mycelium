@@ -594,6 +594,8 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
     try:
+        logger.info(f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
+        
         task_result = TaskResult(
             task_id=request.task_id,
             track_id=request.track_id,
@@ -603,16 +605,22 @@ async def submit_result(request: TaskResultRequest):
         )
         
         success = job_queue.submit_result(task_result)
+        logger.info(f"Task result submission: success={success}")
         
         if success and request.embedding:
             # Save embedding to ChromaDB
+            logger.info(f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
             service.save_embedding(request.track_id, request.embedding)
+            logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
+        elif request.error_message:
+            logger.error(f"Worker task failed for track {request.track_id}: {request.error_message}")
         
         return TaskResultResponse(
             success=success,
             message="Result submitted successfully" if success else "Task not found"
         )
     except Exception as e:
+        logger.error(f"Error submitting worker result for task {request.task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -649,7 +657,10 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
     
     try:
         # Check if embedding already exists
-        if service.has_embedding(track_id):
+        has_emb = service.has_embedding(track_id)
+        logger.info(f"Embedding check for track {track_id}: {has_emb}")
+        
+        if has_emb:
             logger.info(f"Embedding exists for track {track_id}, performing similarity search")
             # Perform similarity search
             results = service.search_similar_by_track_id(track_id, n_results)
@@ -674,33 +685,18 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
         active_workers = job_queue.get_active_workers()
         if active_workers:
             logger.info(f"Found {len(active_workers)} active workers, creating task")
-            # Create task and wait for completion
+            # Create task for worker processing
             download_url = f"http://{config.api.host}:{config.api.port}/download_track/{track_id}"
             task = job_queue.create_task(track_id, download_url)
             
-            # Wait for task completion (with timeout)
-            completed_task = job_queue.wait_for_task_completion(task.task_id, timeout_seconds=300)
-            if completed_task and completed_task.status.value == "success":
-                logger.info(f"Worker task completed successfully for track {track_id}")
-                # Task completed successfully, perform search
-                results = service.search_similar_by_track_id(track_id, n_results)
-                return [
-                    SearchResultResponse(
-                        track=TrackResponse(
-                            artist=result.track.artist,
-                            album=result.track.album,
-                            title=result.track.title,
-                            filepath=str(result.track.filepath),
-                            plex_rating_key=result.track.plex_rating_key
-                        ),
-                        similarity_score=result.similarity_score,
-                        distance=result.distance
-                    )
-                    for result in results
-                ]
-            else:
-                logger.error(f"Worker task failed or timed out for track {track_id}")
-                raise HTTPException(status_code=500, detail="Task failed or timed out")
+            logger.info(f"Created worker task {task.task_id} for track {track_id}")
+            # Return processing response instead of blocking
+            return WorkerProcessingResponse(
+                status="processing",
+                message="Processing has been sent to a worker. Please try again in a few moments.",
+                track_id=track_id,
+                task_id=task.task_id
+            )
         
         logger.info(f"No active workers available for track {track_id}")
         # No active workers - return confirmation required
@@ -721,18 +717,34 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 async def compute_on_server_background(track_id: str):
     """Background task for server-side computation."""
     try:
+        logger.info(f"Starting server-side computation for track {track_id}")
+        
         # Load track info
         track_info = service.get_track_by_id(track_id)
         if not track_info:
             logger.warning(f"Track not found for ID: {track_id}")
             return
         
+        logger.info(f"Computing embedding for track {track_id}: {track_info.artist} - {track_info.title}")
+        
         # Compute embedding on CPU
         embedding = service.compute_embedding_cpu(track_info.filepath)
+        
+        if embedding is None or len(embedding) == 0:
+            logger.error(f"Failed to compute embedding for track {track_id}")
+            return
+        
+        logger.info(f"Successfully computed embedding for track {track_id}, size: {len(embedding)}")
         
         # Save to database
         service.save_embedding(track_id, embedding)
         logger.info(f"Successfully computed and saved embedding for track: {track_id}")
+        
+        # Verify embedding was saved correctly
+        if service.has_embedding(track_id):
+            logger.info(f"Embedding verification successful for track {track_id}")
+        else:
+            logger.error(f"Embedding verification failed for track {track_id} - embedding not found after saving")
         
     except Exception as e:
         logger.error(f"Error computing embedding on server for track {track_id}: {e}", exc_info=True)
@@ -752,6 +764,27 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/queue/task/{task_id}")
+async def get_task_status(task_id: str):
+    """Get status of a specific task."""
+    try:
+        task = job_queue.get_task_status(task_id)
+        if task:
+            return {
+                "task_id": task.task_id,
+                "status": task.status.value,
+                "track_id": task.track_id,
+                "started_at": task.started_at.isoformat() if task.started_at else None,
+                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                "error_message": task.error_message
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Task not found")
+    except Exception as e:
+        logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
 
 
 @app.get("/api/queue/stats", response_model=QueueStatsResponse)
