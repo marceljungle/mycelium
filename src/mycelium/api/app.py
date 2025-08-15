@@ -578,8 +578,10 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
         task = job_queue.get_next_job(worker_id)
         if task is None:
             # No job available - return 204 No Content
+            logger.debug(f"No job available for worker {worker_id}")
             return None
         
+        logger.info(f"Assigning task {task.task_id} to worker {worker_id} for track {task.track_id}")
         return JobRequest(
             task_id=task.task_id,
             task_type=task.task_type,
@@ -587,6 +589,7 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
             download_url=task.download_url
         )
     except Exception as e:
+        logger.error(f"Error getting job for worker {worker_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

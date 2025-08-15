@@ -102,19 +102,25 @@ export default function LibraryPage() {
 
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
     try {
+      console.log(`Polling task status for task_id: ${taskId}`);
       const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
       if (response.ok) {
         const taskStatus = await response.json();
+        console.log(`Task status response:`, taskStatus);
         
         if (taskStatus.status === 'success') {
+          console.log(`Task ${taskId} completed successfully`);
           return true; // Task completed successfully
         } else if (taskStatus.status === 'failed') {
+          console.error(`Task ${taskId} failed:`, taskStatus.error_message);
           setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
           return false;
         }
+        console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
         // Still in progress, continue polling
         return false;
       } else {
+        console.warn(`Task status request failed with status ${response.status}, assuming task completed`);
         // Task not found or error - assume it completed
         return true;
       }
@@ -126,6 +132,8 @@ export default function LibraryPage() {
   };
 
   const startTaskPolling = async (taskId: string, trackId: string, track: Track) => {
+    console.log(`Starting task polling for task_id: ${taskId}, track_id: ${trackId}`);
+    
     // Clear any existing polling
     if (pollInterval) {
       clearInterval(pollInterval);
@@ -143,6 +151,7 @@ export default function LibraryPage() {
       const completed = await pollTaskStatus(taskId);
       
       if (completed) {
+        console.log(`Task ${taskId} completed, clearing polling and retrying recommendations`);
         clearInterval(interval);
         setPollInterval(null);
         setCurrentTask(null);
@@ -150,13 +159,16 @@ export default function LibraryPage() {
         
         // Wait a moment for the embedding to be fully saved
         setTimeout(() => {
+          console.log(`Retrying recommendations for track after task completion`);
           // Automatically retry getting recommendations
           getRecommendations(track, true);
         }, 1000);
       }
       
       // Stop polling after 5 minutes to prevent infinite polling
-      if (Date.now() - task.startTime > 300000) {
+      const elapsed = Date.now() - task.startTime;
+      if (elapsed > 300000) {
+        console.warn(`Task ${taskId} polling timeout after ${elapsed}ms`);
         clearInterval(interval);
         setPollInterval(null);
         setCurrentTask(null);
