@@ -331,3 +331,53 @@ class TrackDatabase:
                 )
                 for row in rows
             ]
+    
+    def search_tracks(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[StoredTrack]:
+        """Search tracks by artist, album, or title."""
+        query = """
+            SELECT plex_rating_key, artist, album, title, filepath, added_at, last_scanned,
+                   embedding_processed, embedding_processed_at
+            FROM tracks 
+            WHERE artist LIKE ? OR album LIKE ? OR title LIKE ?
+            ORDER BY artist, album, title
+        """
+        
+        search_pattern = f"%{search_query}%"
+        params = [search_pattern, search_pattern, search_pattern]
+        
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            
+            return [
+                StoredTrack(
+                    plex_rating_key=row["plex_rating_key"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                    embedding_processed=bool(row["embedding_processed"]),
+                    embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
+                )
+                for row in rows
+            ]
+    
+    def count_search_tracks(self, search_query: str) -> int:
+        """Count tracks matching search query."""
+        query = """
+            SELECT COUNT(*) as count
+            FROM tracks 
+            WHERE artist LIKE ? OR album LIKE ? OR title LIKE ?
+        """
+        
+        search_pattern = f"%{search_query}%"
+        params = [search_pattern, search_pattern, search_pattern]
+        
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(query, params).fetchone()
+            return result[0]

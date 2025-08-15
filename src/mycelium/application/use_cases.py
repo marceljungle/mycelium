@@ -1,5 +1,6 @@
 """Use cases for the Mycelium application."""
 
+import logging
 from pathlib import Path
 from typing import List
 
@@ -28,12 +29,13 @@ class EmbeddingGenerationUseCase:
     ):
         self.embedding_generator = embedding_generator
         self.batch_size = batch_size
+        self.logger = logging.getLogger(__name__)
     
     def execute(self, tracks: List[Track]) -> List[TrackEmbedding]:
         """Generate embeddings for a list of tracks."""
         track_embeddings = []
         
-        print(f"Generating embeddings for {len(tracks)} tracks...")
+        self.logger.info(f"Generating embeddings for {len(tracks)} tracks...")
         
         for i in range(0, len(tracks), self.batch_size):
             batch_tracks = tracks[i:i + self.batch_size]
@@ -43,13 +45,13 @@ class EmbeddingGenerationUseCase:
                 if embedding:
                     track_embeddings.append(TrackEmbedding(track=track, embedding=embedding))
                 else:
-                    print(f"Failed to generate embedding for: {track.display_name}")
+                    self.logger.warning(f"Failed to generate embedding for: {track.display_name}")
             
             # Periodic progress update
             if i % (self.batch_size * 10) == 0 and i > 0:
-                print(f"Processed {len(track_embeddings)} tracks so far...")
+                self.logger.info(f"Processed {len(track_embeddings)} tracks so far...")
         
-        print(f"Generated embeddings for {len(track_embeddings)} tracks")
+        self.logger.info(f"Generated embeddings for {len(track_embeddings)} tracks")
         return track_embeddings
 
 
@@ -74,6 +76,7 @@ class MusicSearchUseCase:
     ):
         self.embedding_repository = embedding_repository
         self.embedding_generator = embedding_generator
+        self.logger = logging.getLogger(__name__)
     
     def search_by_audio_file(
         self, 
@@ -82,13 +85,13 @@ class MusicSearchUseCase:
         exclude_self: bool = True
     ) -> List[SearchResult]:
         """Find similar songs to an audio file."""
-        print(f"Searching for songs similar to: {filepath.name}")
+        self.logger.info(f"Searching for songs similar to: {filepath.name}")
         
         # Generate embedding for the query audio
         query_embedding = self.embedding_generator.generate_embedding(filepath)
         
         if query_embedding is None:
-            print("Could not generate embedding for the query.")
+            self.logger.error("Could not generate embedding for the query.")
             return []
         
         # Search in the database
@@ -109,13 +112,13 @@ class MusicSearchUseCase:
     
     def search_by_text(self, query_text: str, n_results: int = 10) -> List[SearchResult]:
         """Find songs that match a text description."""
-        print(f"Searching for songs matching: '{query_text}'")
+        self.logger.info(f"Searching for songs matching: '{query_text}'")
         
         # Generate embedding for the text query
         text_embedding = self.embedding_generator.generate_text_embedding(query_text)
         
         if text_embedding is None:
-            print("Could not generate embedding for the text query.")
+            self.logger.error("Could not generate embedding for the text query.")
             return []
         
         # Search in the database
@@ -125,13 +128,13 @@ class MusicSearchUseCase:
     
     def search_by_track_id(self, track_id: str, n_results: int = 10) -> List[SearchResult]:
         """Find songs similar to a track identified by its ID."""
-        print(f"Searching for songs similar to track ID: {track_id}")
+        self.logger.info(f"Searching for songs similar to track ID: {track_id}")
         
         # Get the embedding for this track
         embedding = self.embedding_repository.get_embedding_by_track_id(track_id)
         
         if embedding is None:
-            print(f"No embedding found for track ID: {track_id}")
+            self.logger.error(f"No embedding found for track ID: {track_id}")
             return []
         
         # Search for similar tracks

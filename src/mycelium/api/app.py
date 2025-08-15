@@ -1,5 +1,6 @@
 """FastAPI application for Mycelium web interface."""
 
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -19,8 +20,11 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig
+from ..config import MyceliumConfig, setup_logging
 from ..domain.worker import TaskResult
+
+# Setup logger for this module
+logger = logging.getLogger(__name__)
 
 
 # Pydantic models for API
@@ -67,6 +71,7 @@ class ConfigRequest(BaseModel):
     chroma: Dict[str, Any]
     clap: Dict[str, Any]
     logging: Dict[str, Any]
+    database: Optional[Dict[str, Any]] = None
 
 
 class TracksListResponse(BaseModel):
@@ -80,9 +85,15 @@ class TracksListResponse(BaseModel):
 # Initialize configuration and service
 config = MyceliumConfig.from_env()
 
+# Setup logging
+setup_logging(config.logging.level)
+
 # Validate Plex token
 if not config.plex.token:
-    raise ValueError("PLEX_TOKEN environment variable is required")
+    logger.error("PLEX_TOKEN is required but not found in configuration")
+    raise ValueError("PLEX_TOKEN is required in configuration file")
+
+logger.info("Initializing Mycelium service...")
 
 # Initialize the main service
 service = MyceliumService(
@@ -218,12 +229,15 @@ async def search_by_audio(
     n_results: int = Form(10, description="Number of results to return")
 ):
     """Search for music tracks by audio file."""
+    logger.info(f"Audio search request received - filename: {audio.filename}, content_type: {audio.content_type}")
+    
     try:
         # Validate file type
         if not audio.content_type or not any(
             audio.content_type.startswith(mime) 
             for mime in ["audio/", "application/octet-stream"]
         ):
+            logger.warning(f"Invalid file type: {audio.content_type}")
             raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
         
         # Create temporary file to store upload
@@ -232,9 +246,12 @@ async def search_by_audio(
             temp_file.write(content)
             temp_file_path = temp_file.name
         
+        logger.info(f"Audio file saved to temporary location: {temp_file_path}")
+        
         try:
             # Search using temporary file
             results = service.search_similar_by_audio(temp_file_path, n_results)
+            logger.info(f"Audio search completed successfully - found {len(results)} results")
             
             return [
                 SearchResultResponse(
@@ -254,26 +271,43 @@ async def search_by_audio(
             # Clean up temporary file
             try:
                 os.unlink(temp_file_path)
-            except OSError:
-                pass
+                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+            except OSError as e:
+                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
                 
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Audio search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Audio search failed: {str(e)}")
 
 
 @app.get("/api/library/tracks", response_model=TracksListResponse)
 async def get_library_tracks(
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
-    limit: int = Query(50, ge=1, le=200, description="Number of tracks per page")
+    limit: int = Query(50, ge=1, le=200, description="Number of tracks per page"),
+    search: Optional[str] = Query(None, description="Search query for filtering tracks")
 ):
-    """Get tracks from the library with pagination."""
+    """Get tracks from the library with pagination and optional search."""
+    logger.info(f"Library tracks request - page: {page}, limit: {limit}, search: {search}")
+    
     try:
-        offset = (page - 1) * limit
-        tracks = service.get_all_tracks(limit=limit, offset=offset)
+        if search and search.strip():
+            # Use search functionality
+            logger.info(f"Performing library search for: '{search.strip()}'")
+            tracks = service.search_tracks_in_database(search.strip(), limit=limit, offset=(page - 1) * limit)
+            total_count = service.count_tracks_in_database(search.strip())
+        else:
+            # Regular pagination
+            offset = (page - 1) * limit
+            tracks = service.get_all_tracks(limit=limit, offset=offset)
+            
+            # Get total count for pagination info
+            stats = service.get_database_stats()
+            total_count = stats.get("track_database_stats", {}).get("total_tracks", 0)
         
-        # Get total count for pagination info
-        stats = service.get_database_stats()
-        total_count = stats.get("track_database_stats", {}).get("total_tracks", 0)
+        logger.info(f"Retrieved {len(tracks)} tracks from database")
         
         return TracksListResponse(
             tracks=[
@@ -291,13 +325,15 @@ async def get_library_tracks(
             limit=limit
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error getting library tracks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get library tracks: {str(e)}")
 
 
 @app.get("/api/config")
 async def get_config():
     """Get current configuration."""
     try:
+        logger.info("Configuration get request received")
         # Return current configuration as dict
         config_dict = {
             "plex": {
@@ -327,38 +363,57 @@ async def get_config():
             },
             "logging": {
                 "level": config.logging.level
+            },
+            "database": {
+                "db_path": config.database.db_path
             }
         }
+        logger.info("Configuration retrieved successfully")
         return config_dict
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to get configuration: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get configuration: {str(e)}")
 
 
 @app.post("/api/config")
 async def save_config(config_request: ConfigRequest):
     """Save configuration to YAML file."""
     try:
+        logger.info("Configuration save request received")
         # Import the YAML config manager
-        from ..config_yaml import MyceliumConfigYAML
+        from ..config_yaml import MyceliumConfig as ConfigYAML
         
-        # Create new config object with updated values
-        yaml_config = MyceliumConfigYAML(
-            plex=config_request.plex,
-            api=config_request.api,
-            client=config_request.client,
-            chroma=config_request.chroma,
-            clap=config_request.clap,
-            logging=config_request.logging
+        # Create new config object with updated values - map the fields correctly
+        from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, ClientConfig, LoggingConfig
+        
+        plex_config = PlexConfig(**config_request.plex)
+        clap_config = CLAPConfig(**config_request.clap)
+        chroma_config = ChromaConfig(**config_request.chroma)
+        database_config = DatabaseConfig(**(config_request.database or {}))
+        api_config = APIConfig(**config_request.api)
+        client_config = ClientConfig(**config_request.client)
+        logging_config = LoggingConfig(**config_request.logging)
+        
+        yaml_config = ConfigYAML(
+            plex=plex_config,
+            clap=clap_config,
+            chroma=chroma_config,
+            database=database_config,
+            api=api_config,
+            client=client_config,
+            logging=logging_config
         )
         
         # Save to default YAML location
         yaml_config.save_to_yaml()
+        logger.info("Configuration saved successfully to YAML file")
         
         return {
             "message": "Configuration saved successfully. Restart the server to apply changes.",
             "status": "success"
         }
     except Exception as e:
+        logger.error(f"Failed to save configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
 
 
@@ -590,9 +645,12 @@ async def download_track(track_id: str):
 @app.get("/similar/by_track/{track_id}")
 async def get_similar_tracks(track_id: str, n_results: int = Query(10, description="Number of results")):
     """Find tracks similar to a given track."""
+    logger.info(f"Similar tracks request for track_id: {track_id}")
+    
     try:
         # Check if embedding already exists
         if service.has_embedding(track_id):
+            logger.info(f"Embedding exists for track {track_id}, performing similarity search")
             # Perform similarity search
             results = service.search_similar_by_track_id(track_id, n_results)
             return [
@@ -610,9 +668,12 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
                 for result in results
             ]
         
+        logger.info(f"No embedding found for track {track_id}, checking for workers")
+        
         # Check if there are active workers
         active_workers = job_queue.get_active_workers()
         if active_workers:
+            logger.info(f"Found {len(active_workers)} active workers, creating task")
             # Create task and wait for completion
             download_url = f"http://{config.api.host}:{config.api.port}/download_track/{track_id}"
             task = job_queue.create_task(track_id, download_url)
@@ -620,6 +681,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             # Wait for task completion (with timeout)
             completed_task = job_queue.wait_for_task_completion(task.task_id, timeout_seconds=300)
             if completed_task and completed_task.status.value == "success":
+                logger.info(f"Worker task completed successfully for track {track_id}")
                 # Task completed successfully, perform search
                 results = service.search_similar_by_track_id(track_id, n_results)
                 return [
@@ -637,8 +699,10 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
                     for result in results
                 ]
             else:
+                logger.error(f"Worker task failed or timed out for track {track_id}")
                 raise HTTPException(status_code=500, detail="Task failed or timed out")
         
+        logger.info(f"No active workers available for track {track_id}")
         # No active workers - return confirmation required
         return ConfirmationRequiredResponse(
             status="confirmation_required",
@@ -646,8 +710,12 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             track_id=track_id
         )
     
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in similar tracks endpoint for track {track_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Similar tracks search failed: {str(e)}")
 
 
 async def compute_on_server_background(track_id: str):
@@ -656,6 +724,7 @@ async def compute_on_server_background(track_id: str):
         # Load track info
         track_info = service.get_track_by_id(track_id)
         if not track_info:
+            logger.warning(f"Track not found for ID: {track_id}")
             return
         
         # Compute embedding on CPU
@@ -663,9 +732,10 @@ async def compute_on_server_background(track_id: str):
         
         # Save to database
         service.save_embedding(track_id, embedding)
+        logger.info(f"Successfully computed and saved embedding for track: {track_id}")
         
     except Exception as e:
-        print(f"Error computing embedding on server: {e}")
+        logger.error(f"Error computing embedding on server for track {track_id}: {e}", exc_info=True)
 
 
 @app.post("/compute/on_server")

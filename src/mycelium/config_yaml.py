@@ -134,7 +134,7 @@ class MyceliumConfig:
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumConfig":
-        """Load configuration from YAML file with environment variable fallbacks."""
+        """Load configuration from YAML file only."""
         if config_path is None:
             config_path = get_config_file_path()
         
@@ -145,51 +145,51 @@ class MyceliumConfig:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f) or {}
         
-        # Apply environment variable overrides
+        # Load from YAML only - no environment variable fallbacks
         plex_config = PlexConfig(
-            url=os.environ.get("PLEX_URL", config_data.get("plex", {}).get("url", "http://localhost:32400")),
-            token=os.environ.get("PLEX_TOKEN", config_data.get("plex", {}).get("token")),
-            music_library_name=os.environ.get("PLEX_MUSIC_LIBRARY", config_data.get("plex", {}).get("music_library_name", "Music"))
+            url=config_data.get("plex", {}).get("url", "http://localhost:32400"),
+            token=config_data.get("plex", {}).get("token"),
+            music_library_name=config_data.get("plex", {}).get("music_library_name", "Music")
         )
         
         clap_config = CLAPConfig(
-            model_id=os.environ.get("CLAP_MODEL_ID", config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech")),
-            target_sr=int(os.environ.get("CLAP_TARGET_SR", config_data.get("clap", {}).get("target_sr", 48000))),
-            chunk_duration_s=int(os.environ.get("CLAP_CHUNK_DURATION", config_data.get("clap", {}).get("chunk_duration_s", 10))),
-            batch_size=int(os.environ.get("CLAP_BATCH_SIZE", config_data.get("clap", {}).get("batch_size", 16)))
+            model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
+            target_sr=config_data.get("clap", {}).get("target_sr", 48000),
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
+            batch_size=config_data.get("clap", {}).get("batch_size", 16)
         )
         
         chroma_config = ChromaConfig(
-            db_path=os.environ.get("CHROMA_DB_PATH", config_data.get("chroma", {}).get("db_path")),
-            collection_name=os.environ.get("COLLECTION_NAME", config_data.get("chroma", {}).get("collection_name", "my_music_library")),
-            batch_size=int(os.environ.get("CHROMA_BATCH_SIZE", config_data.get("chroma", {}).get("batch_size", 1000)))
+            db_path=config_data.get("chroma", {}).get("db_path"),
+            collection_name=config_data.get("chroma", {}).get("collection_name", "my_music_library"),
+            batch_size=config_data.get("chroma", {}).get("batch_size", 1000)
         )
         
         database_config = DatabaseConfig(
-            db_path=os.environ.get("DATABASE_PATH", config_data.get("database", {}).get("db_path"))
+            db_path=config_data.get("database", {}).get("db_path")
         )
         
         api_config = APIConfig(
-            host=os.environ.get("API_HOST", config_data.get("api", {}).get("host", "0.0.0.0")),
-            port=int(os.environ.get("API_PORT", config_data.get("api", {}).get("port", 8000))),
-            reload=os.environ.get("API_RELOAD", str(config_data.get("api", {}).get("reload", False))).lower() == "true"
+            host=config_data.get("api", {}).get("host", "0.0.0.0"),
+            port=config_data.get("api", {}).get("port", 8000),
+            reload=config_data.get("api", {}).get("reload", False)
         )
         
         client_config = ClientConfig(
-            server_host=os.environ.get("CLIENT_SERVER_HOST", config_data.get("client", {}).get("server_host", "localhost")),
-            server_port=int(os.environ.get("CLIENT_SERVER_PORT", config_data.get("client", {}).get("server_port", 8000))),
-            model_id=os.environ.get("CLIENT_MODEL_ID", config_data.get("client", {}).get("model_id", "laion/clap-htsat-unfused"))
+            server_host=config_data.get("client", {}).get("server_host", "localhost"),
+            server_port=config_data.get("client", {}).get("server_port", 8000),
+            model_id=config_data.get("client", {}).get("model_id", "laion/clap-htsat-unfused")
         )
         
         # Handle logging configuration with default log file path
         logging_data = config_data.get("logging", {})
-        log_file = os.environ.get("LOG_FILE", logging_data.get("file"))
+        log_file = logging_data.get("file")
         if log_file is None:
             log_file = str(get_user_log_dir() / "mycelium.log")
         
         logging_config = LoggingConfig(
-            level=os.environ.get("LOG_LEVEL", logging_data.get("level", "INFO")),
-            format=os.environ.get("LOG_FORMAT", logging_data.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")),
+            level=logging_data.get("level", "INFO"),
+            format=logging_data.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
             file=log_file
         )
         
@@ -235,7 +235,7 @@ class MyceliumConfig:
     
     @classmethod
     def from_env(cls) -> "MyceliumConfig":
-        """Create configuration from environment variables (backward compatibility)."""
+        """Create configuration from YAML file only (renamed from from_env for compatibility)."""
         return cls.load_from_yaml()
 
     def setup_logging(self) -> None:

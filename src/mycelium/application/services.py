@@ -216,6 +216,15 @@ class MyceliumService:
         stored_tracks = self.track_database.get_all_tracks(limit=limit, offset=offset)
         return [stored_track.to_track() for stored_track in stored_tracks]
     
+    def search_tracks_in_database(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
+        """Search tracks in the database by artist, album, or title."""
+        stored_tracks = self.track_database.search_tracks(search_query, limit=limit, offset=offset)
+        return [stored_track.to_track() for stored_track in stored_tracks]
+    
+    def count_tracks_in_database(self, search_query: str) -> int:
+        """Count tracks matching search query in the database."""
+        return self.track_database.count_search_tracks(search_query)
+    
     def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""
         return self.embedding_repository.has_embedding(track_id)
