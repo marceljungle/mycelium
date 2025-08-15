@@ -180,7 +180,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         
         # Verify the embedding was saved
         verification = self.collection.get(ids=[track.plex_rating_key], include=['embeddings'])
-        if verification['embeddings'] and len(verification['embeddings']) > 0:
+        if verification['embeddings'] is not None and len(verification['embeddings']) > 0:
             logger.info(f"Embedding verification successful for track {track.plex_rating_key}")
         else:
             logger.error(f"Embedding verification failed for track {track.plex_rating_key}")
@@ -194,7 +194,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
                 ids=[track_id],
                 include=['embeddings']
             )
-            if result['embeddings'] and len(result['embeddings']) > 0:
+            if result['embeddings'] is not None and len(result['embeddings']) > 0:
                 embedding = result['embeddings'][0]
                 logger.debug(f"Retrieved embedding for track {track_id}, size: {len(embedding) if embedding else 0}")
                 return embedding
