@@ -106,7 +106,7 @@ export default function LibraryPage() {
       if (response.ok) {
         const taskStatus = await response.json();
         
-        if (taskStatus.status === 'completed') {
+        if (taskStatus.status === 'success') {
           return true; // Task completed successfully
         } else if (taskStatus.status === 'failed') {
           setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
@@ -227,8 +227,10 @@ export default function LibraryPage() {
             setRecommendationsLoading(false);
           }
         } else if (data.status === 'processing' && data.task_id) {
-          // Handle worker processing case - start polling
+          // Handle worker processing case - start polling immediately
           if (!isRetry) {
+            // Immediately set processing state to show worker processing UI
+            setRecommendationsLoading(false);
             startTaskPolling(data.task_id, track.plex_rating_key, track);
           }
         } else {
