@@ -691,12 +691,14 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking
-            return WorkerProcessingResponse(
+            response = WorkerProcessingResponse(
                 status="processing",
                 message="Processing has been sent to a worker. Please try again in a few moments.",
                 track_id=track_id,
                 task_id=task.task_id
             )
+            logger.info(f"Returning worker processing response: {response.model_dump()}")
+            return response
         
         logger.info(f"No active workers available for track {track_id}")
         # No active workers - return confirmation required

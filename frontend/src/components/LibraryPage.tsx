@@ -226,15 +226,21 @@ export default function LibraryPage() {
           } else {
             setRecommendationsLoading(false);
           }
-        } else if (data.status === 'processing' && data.task_id) {
+        } else if (data.status === 'processing') {
           // Handle worker processing case - start polling immediately
-          if (!isRetry) {
+          if (!isRetry && data.task_id) {
+            console.log('Starting worker processing with task_id:', data.task_id);
             // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
             startTaskPolling(data.task_id, track.plex_rating_key, track);
+          } else if (!data.task_id) {
+            console.error('Worker processing response missing task_id:', data);
+            setError('Worker processing started but missing task ID. Please try again.');
+            setRecommendationsLoading(false);
           }
         } else {
-          setError('Unexpected response from server. Please try again.');
+          console.error('Unexpected response from server:', data);
+          setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
           setRecommendationsLoading(false);
         }
       } else {
