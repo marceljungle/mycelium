@@ -69,8 +69,10 @@ class WorkerProcessingResponse(BaseModel):
     """Response when worker processing is initiated."""
     status: str
     message: str
-    track_id: str
+    track_id: Optional[str] = None
     task_id: Optional[str] = None
+    tasks_created: Optional[int] = None
+    active_workers: Optional[int] = None
 
 
 class NoWorkersResponse(BaseModel):
