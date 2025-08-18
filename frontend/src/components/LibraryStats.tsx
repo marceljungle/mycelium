@@ -1,227 +1,25 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../config/api';
-
-interface LibraryStats {
-  total_embeddings: number;
-  collection_name: string;
-  database_path: string;
-  track_database_stats?: {
-    total_tracks: number;
-    processed_tracks: number;
-    unprocessed_tracks: number;
-    progress_percentage: number;
-    is_processing?: boolean;
-    latest_session?: Record<string, unknown>;
-  };
-}
-
-interface ProgressInfo {
-  stage: string;
-  current?: number;
-  total?: number;
-  processed?: number;
-  failed?: number;
-  current_track?: string;
-  result?: Record<string, unknown>;
-}
+import { useProcessing } from '../contexts/ProcessingContext';
 
 export default function LibraryStats() {
-  const [stats, setStats] = useState<LibraryStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [scanLoading, setScanLoading] = useState(false);
-  const [processLoading, setProcessLoading] = useState(false);
-  const [operationMessage, setOperationMessage] = useState<string | null>(null);
-  const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
-
-  const fetchStats = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/stats`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch library stats');
-      }
-      const data = await response.json();
-      setStats(data);
-      setError(null);
-    } catch {
-      setError('Unable to connect to API');
-      setStats(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const fetchProgress = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/progress`);
-      if (response.ok) {
-        const data = await response.json();
-        if (stats) {
-          setStats(prev => prev ? { ...prev, track_database_stats: data } : null);
-        }
-
-        // Only update processing state if we haven't explicitly stopped
-        if (data.is_processing && !processLoading && !operationMessage?.includes('Stop signal sent')) {
-          setProcessLoading(true);
-          setProgressInfo({ stage: 'processing' });
-        } else if (!data.is_processing && processLoading && !operationMessage?.includes('Stop signal sent')) {
-          setProcessLoading(false);
-          setProgressInfo(null);
-          if (operationMessage?.includes('started')) {
-            setOperationMessage('✅ Processing completed! Check the progress above for details.');
-          }
-        }
-      }
-    } catch {
-      // Ignore progress fetch errors
-    }
-  }, [stats, processLoading, operationMessage]);
-
-  const scanLibrary = async () => {
-    setScanLoading(true);
-    setOperationMessage(null);
-    setProgressInfo(null);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/scan`, {
-        method: 'POST',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to scan library');
-      }
-      const data = await response.json();
-      setOperationMessage(
-        `✅ Scan completed! Found ${data.total_tracks} total tracks ` +
-        `(${data.new_tracks} new, ${data.updated_tracks} updated)`
-      );
-      // Refresh stats after scanning
-      await fetchStats();
-      await fetchProgress();
-    } catch {
-      setOperationMessage('❌ Failed to scan library. Make sure the API server is running and Plex is accessible.');
-    } finally {
-      setScanLoading(false);
-    }
-  };
-
-  const processEmbeddings = async () => {
-    setProcessLoading(true);
-    setOperationMessage(null);
-    setProgressInfo({ stage: 'starting' });
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/process`, {
-        method: 'POST',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to start processing');
-      }
-      const data = await response.json();
-
-      if (data.status === 'already_running') {
-        setOperationMessage('⚠️ Processing is already in progress');
-        setProcessLoading(false);
-        setProgressInfo(null);
-        return;
-      }
-
-      if (data.status === 'worker_processing_started') {
-        setOperationMessage(`🚀 Worker processing started! Created ${data.tasks_created} tasks for ${data.active_workers} workers. Progress will be updated automatically.`);
-        // Don't set processLoading to false - let the progress monitoring handle it
-        return;
-      }
-
-      if (data.status === 'no_workers' && data.confirmation_required) {
-        setOperationMessage('⚠️ No client workers detected. Server processing will use local hardware.');
-        setShowConfirmation(true);
-        setProcessLoading(false);
-        setProgressInfo(null);
-        return;
-      }
-
-      // Handle other status types
-      if (data.status === 'server_started') {
-        setOperationMessage('🚀 Server processing started! Progress will be updated automatically.');
-        return;
-      }
-
-      // Default success case (backward compatibility)
-      setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
-
-    } catch {
-      setOperationMessage('❌ Failed to start processing. Make sure the API server is running.');
-      setProcessLoading(false);
-      setProgressInfo(null);
-    }
-  };
-
-  const processOnServer = async () => {
-    setProcessLoading(true);
-    setShowConfirmation(false);
-    setOperationMessage(null);
-    setProgressInfo({ stage: 'starting' });
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/process/server`, {
-        method: 'POST',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to start server processing');
-      }
-      const data = await response.json();
-
-      if (data.status === 'already_running') {
-        setOperationMessage('⚠️ Processing is already in progress');
-        setProcessLoading(false);
-        setProgressInfo(null);
-        return;
-      }
-
-      setOperationMessage('🖥️ Server processing started! This may take longer on low-power hardware. Progress will be updated automatically.');
-
-    } catch {
-      setOperationMessage('❌ Failed to start server processing. Make sure the API server is running.');
-      setProcessLoading(false);
-      setProgressInfo(null);
-    }
-  };
-
-  const cancelConfirmation = () => {
-    setShowConfirmation(false);
-    setOperationMessage(null);
-  };
-
-  const stopProcessing = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/library/process/stop`, {
-        method: 'POST',
-      });
-      if (response.ok) {
-        // Clear progress info and processing state immediately when stop is requested
-        setProgressInfo(null);
-        setProcessLoading(false);
-        setOperationMessage('🛑 Stop signal sent. Processing will finish current track and stop.');
-      }
-    } catch {
-      setOperationMessage('❌ Failed to send stop signal.');
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-    fetchProgress();
-
-    // Refresh stats and progress every 5 seconds
-    const interval = setInterval(() => {
-      fetchStats();
-      fetchProgress();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Use the global processing context instead of local state
+  const {
+    stats,
+    statsLoading: loading,
+    statsError: error,
+    processLoading,
+    scanLoading,
+    operationMessage,
+    progressInfo,
+    showConfirmation,
+    fetchStats,
+    scanLibrary,
+    processEmbeddings,
+    processOnServer,
+    stopProcessing,
+    cancelConfirmation,
+  } = useProcessing();
 
   if (loading) {
     return (
