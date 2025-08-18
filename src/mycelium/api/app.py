@@ -502,7 +502,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
 async def stop_processing():
     """Stop the current embedding processing."""
     try:
-        result = service.stop_processing()
+        service.stop_processing()
         
         # Also check for worker processing
         if service.has_active_worker_processing():

@@ -115,9 +115,7 @@ class MyceliumService:
         
         # Stop worker-based processing if available
         if hasattr(self, 'worker_processing'):
-            return self.stop_worker_processing()
-        
-        return {"cleared_tasks": 0, "message": "Server processing stop requested"}
+            self.stop_worker_processing()
     
     def reset_processing_stop_flag(self) -> None:
         """Reset the stop flag for new processing session."""
