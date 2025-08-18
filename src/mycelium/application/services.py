@@ -300,3 +300,9 @@ class MyceliumService:
         if not hasattr(self, 'worker_processing'):
             return False
         return self.worker_processing.job_queue.has_active_processing()
+    
+    def cleanup_stale_worker_tasks(self) -> int:
+        """Clean up stale worker tasks and return count of cleaned tasks."""
+        if not hasattr(self, 'worker_processing'):
+            return 0
+        return self.worker_processing.job_queue.cleanup_stale_tasks()

@@ -541,6 +541,19 @@ async def can_resume_processing():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/library/cleanup_stale_tasks")
+async def cleanup_stale_tasks():
+    """Clean up stale worker tasks that are stuck due to inactive workers."""
+    try:
+        cleaned_count = service.cleanup_stale_worker_tasks()
+        return {
+            "message": f"Cleaned up {cleaned_count} stale tasks",
+            "cleaned_tasks": cleaned_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/library/process/legacy")
 async def process_library_legacy():
     """Run the full library processing workflow (scan, generate embeddings, index) - legacy method."""

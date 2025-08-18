@@ -149,11 +149,40 @@ class JobQueueService:
             # Clear the pending tasks list
             self._pending_tasks.clear()
             
-            return cleared_count
+            # Also clean up any stale in-progress tasks from inactive workers
+            stale_cleaned = self._cleanup_stale_tasks()
+            
+            return cleared_count + stale_cleaned
+
+    def _cleanup_stale_tasks(self) -> int:
+        """Clean up tasks assigned to inactive workers. Returns number of tasks cleaned up."""
+        active_worker_ids = {w.id for w in self._workers.values() if w.is_active}
+        cleaned_count = 0
+        
+        for task in self._tasks.values():
+            # Mark IN_PROGRESS tasks from inactive workers as failed
+            if (task.status == TaskStatus.IN_PROGRESS and 
+                task.assigned_worker_id and 
+                task.assigned_worker_id not in active_worker_ids):
+                
+                task.status = TaskStatus.FAILED
+                task.error_message = "Worker became inactive during processing"
+                task.completed_at = datetime.now()
+                cleaned_count += 1
+        
+        return cleaned_count
+
+    def cleanup_stale_tasks(self) -> int:
+        """Public method to clean up stale tasks. Returns number of tasks cleaned up."""
+        with self._lock:
+            return self._cleanup_stale_tasks()
 
     def has_active_processing(self) -> bool:
         """Check if there are any tasks currently being processed or pending."""
         with self._lock:
+            # Clean up stale in-progress tasks from inactive workers first
+            self._cleanup_stale_tasks()
+            
             return len(self._pending_tasks) > 0 or any(
                 t.status == TaskStatus.IN_PROGRESS for t in self._tasks.values()
             )
