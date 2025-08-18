@@ -123,10 +123,15 @@ class MyceliumService:
         """Reset the stop flag for new processing session."""
         self.resumable_processing.reset_stop_flag()
     
+    def is_processing_active(self) -> bool:
+        """Check if any processing is currently active (server or worker)."""
+        return self._processing_in_progress or self.has_active_worker_processing()
+    
     def get_processing_progress(self) -> Dict[str, Any]:
         """Get current processing progress and statistics."""
         stats = self.progress_tracker.get_current_stats()
-        stats["is_processing"] = self._processing_in_progress
+        # Processing is active if either server-side processing is running OR workers have active tasks
+        stats["is_processing"] = self.is_processing_active()
         return stats
     
     def can_resume_processing(self) -> bool:

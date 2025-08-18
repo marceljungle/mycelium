@@ -438,7 +438,7 @@ async def process_library():
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
         # Check if processing is already running
-        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+        if service.is_processing_active():
             return {
                 "status": "already_running",
                 "message": "Processing is already in progress"
@@ -481,7 +481,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
     """Process embeddings on server after user confirmation."""
     try:
         # Check if processing is already running
-        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+        if service.is_processing_active():
             return {
                 "message": "Processing is already in progress",
                 "status": "already_running"
