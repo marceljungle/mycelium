@@ -149,10 +149,11 @@ class JobQueueService:
             # Clear the pending tasks list
             self._pending_tasks.clear()
             
-            # Also clean up any stale in-progress tasks from inactive workers
-            stale_cleaned = self._cleanup_stale_tasks()
+            # When stopping, clean up ALL in-progress tasks, not just from inactive workers
+            # This ensures processing state is properly cleared even if workers are still active
+            in_progress_cleaned = self._cleanup_all_in_progress_tasks()
             
-            return cleared_count + stale_cleaned
+            return cleared_count + in_progress_cleaned
 
     def _cleanup_stale_tasks(self) -> int:
         """Clean up tasks assigned to inactive workers. Returns number of tasks cleaned up."""
@@ -167,6 +168,20 @@ class JobQueueService:
                 
                 task.status = TaskStatus.FAILED
                 task.error_message = "Worker became inactive during processing"
+                task.completed_at = datetime.now()
+                cleaned_count += 1
+        
+        return cleaned_count
+
+    def _cleanup_all_in_progress_tasks(self) -> int:
+        """Clean up ALL in-progress tasks when stopping processing. Returns number of tasks cleaned up."""
+        cleaned_count = 0
+        
+        for task in self._tasks.values():
+            # Mark ALL IN_PROGRESS tasks as failed when explicitly stopping
+            if task.status == TaskStatus.IN_PROGRESS:
+                task.status = TaskStatus.FAILED
+                task.error_message = "Processing stopped by user request"
                 task.completed_at = datetime.now()
                 cleaned_count += 1
         
