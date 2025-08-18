@@ -1,5 +1,6 @@
 """ChromaDB integration for storing and searching embeddings."""
 
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -8,6 +9,8 @@ from tqdm import tqdm
 
 from ..domain.models import Track, TrackEmbedding, SearchResult
 from ..domain.repositories import EmbeddingRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ChromaEmbeddingRepository(EmbeddingRepository):
@@ -24,6 +27,12 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         self.batch_size = batch_size
         
         # Initialize ChromaDB client and collection
+        # Ensure directory exists (db_path is a directory path for Chroma's storage)
+        try:
+            Path(db_path).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Best-effort; Chroma may create it if this fails
+            pass
         self.client = chromadb.PersistentClient(path=db_path)
         
         # Use 'get_or_create_collection' for idempotency
@@ -33,7 +42,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             metadata={"hnsw:space": "cosine"}
         )
         
-        print(f"Collection '{collection_name}' ready. Current elements: {self.collection.count()}")
+        logger.info(f"Collection '{collection_name}' ready. Current elements: {self.collection.count()}")
     
     def save_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
         """Save track embeddings to ChromaDB."""
@@ -69,8 +78,8 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
                 metadatas=metadata_batch
             )
 
-        print("Indexing completed!")
-        print(f"Total elements in collection '{self.collection_name}': {self.collection.count()}")
+        logger.info("Indexing completed!")
+        logger.info(f"Total elements in collection '{self.collection_name}': {self.collection.count()}")
     
     def search_by_embedding(self, embedding: List[float], n_results: int = 10) -> List[SearchResult]:
         """Search for similar tracks by embedding."""
@@ -125,24 +134,58 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         """Check if an embedding exists for a track."""
         try:
             result = self.collection.get(ids=[track_id])
-            return len(result['ids']) > 0
-        except Exception:
+            exists = len(result['ids']) > 0
+            logger.debug(f"Checking embedding for track {track_id}: exists={exists}")
+            return exists
+        except Exception as e:
+            logger.error(f"Error checking embedding for track {track_id}: {e}")
             return False
     
     def save_embedding(self, track_embedding: TrackEmbedding) -> None:
         """Save a single track embedding to ChromaDB."""
         track = track_embedding.track
         
-        self.collection.add(
-            ids=[track.plex_rating_key],
-            embeddings=[track_embedding.embedding],
-            metadatas=[{
-                "filepath": str(track.filepath),
-                "artist": track.artist,
-                "album": track.album,
-                "title": track.title
-            }]
-        )
+        logger.info(f"Saving embedding to ChromaDB for track {track.plex_rating_key}: {track.artist} - {track.title}")
+        logger.info(f"Collection count before save: {self.collection.count()}")
+        
+        # Check if embedding already exists, if so, update it
+        existing = self.collection.get(ids=[track.plex_rating_key])
+        if existing['ids']:
+            logger.info(f"Updating existing embedding for track {track.plex_rating_key}")
+            self.collection.update(
+                ids=[track.plex_rating_key],
+                embeddings=[track_embedding.embedding],
+                metadatas=[{
+                    "filepath": str(track.filepath),
+                    "artist": track.artist,
+                    "album": track.album,
+                    "title": track.title
+                }]
+            )
+        else:
+            logger.info(f"Adding new embedding for track {track.plex_rating_key}")
+            self.collection.add(
+                ids=[track.plex_rating_key],
+                embeddings=[track_embedding.embedding],
+                metadatas=[{
+                    "filepath": str(track.filepath),
+                    "artist": track.artist,
+                    "album": track.album,
+                    "title": track.title
+                }]
+            )
+        
+        logger.info(f"Collection count after save: {self.collection.count()}")
+        logger.info(f"Successfully saved embedding to ChromaDB for track {track.plex_rating_key}")
+        
+        # Verify the embedding was saved
+        verification = self.collection.get(ids=[track.plex_rating_key], include=['embeddings'])
+        if verification['embeddings'] is not None and len(verification['embeddings']) > 0:
+            logger.info(f"Embedding verification successful for track {track.plex_rating_key}")
+        else:
+            logger.error(f"Embedding verification failed for track {track.plex_rating_key}")
+            # Also log the full verification result for debugging
+            logger.error(f"Verification result: {verification}")
     
     def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
         """Get embedding for a specific track."""
@@ -151,8 +194,13 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
                 ids=[track_id],
                 include=['embeddings']
             )
-            if result['embeddings'] and len(result['embeddings']) > 0:
-                return result['embeddings'][0]
-            return None
-        except Exception:
+            if result['embeddings'] is not None and len(result['embeddings']) > 0:
+                embedding = result['embeddings'][0]
+                logger.debug(f"Retrieved embedding for track {track_id}, size: {len(embedding) if embedding is not None else 0}")
+                return embedding
+            else:
+                logger.debug(f"No embedding found in ChromaDB for track {track_id}")
+                return None
+        except Exception as e:
+            logger.error(f"Error retrieving embedding for track {track_id}: {e}")
             return None

@@ -1,6 +1,13 @@
 'use client';
 
-export default function Header() {
+import Navigation, { Section } from './Navigation';
+
+interface HeaderProps {
+  activeSection: Section;
+  onSectionChange: (section: Section) => void;
+}
+
+export default function Header({ activeSection, onSectionChange }: HeaderProps) {
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm">
       <div className="container mx-auto px-4 py-4">
@@ -12,26 +19,7 @@ export default function Header() {
             </h1>
           </div>
           
-          <nav className="hidden md:flex items-center space-x-6">
-            <a 
-              href="#" 
-              className="text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"
-            >
-              Search
-            </a>
-            <a 
-              href="#" 
-              className="text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"
-            >
-              Library
-            </a>
-            <a 
-              href="#" 
-              className="text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"
-            >
-              Settings
-            </a>
-          </nav>
+          <Navigation activeSection={activeSection} onSectionChange={onSectionChange} />
           
           <div className="flex items-center space-x-2">
             <button className="p-2 text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 rounded-lg">

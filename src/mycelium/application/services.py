@@ -1,5 +1,6 @@
 """Application services for orchestrating business logic."""
 
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -38,6 +39,8 @@ class MyceliumService:
         model_id: str = "laion/larger_clap_music_and_speech",
         track_db_path: str = "./mycelium_tracks.db"
     ):
+        self.logger = logging.getLogger(__name__)
+        
         # Initialize repositories and adapters
         self.plex_repository = PlexMusicRepository(
             plex_url=plex_url,
@@ -171,22 +174,22 @@ class MyceliumService:
     # Updated full_library_processing (now separated into scan and process)
     def full_library_processing(self) -> None:
         """Complete workflow: scan library to database, then process embeddings."""
-        print("Starting full library processing with separated workflow...")
+        self.logger.info("Starting full library processing with separated workflow...")
         
         # Step 1: Scan library to database
-        print("\n=== Scanning Plex Library to Database ===")
+        self.logger.info("=== Scanning Plex Library to Database ===")
         scan_result = self.scan_library_to_database()
-        print(f"Scan completed: {scan_result['total_tracks']} total, {scan_result['new_tracks']} new, {scan_result['updated_tracks']} updated")
+        self.logger.info(f"Scan completed: {scan_result['total_tracks']} total, {scan_result['new_tracks']} new, {scan_result['updated_tracks']} updated")
         
         # Step 2: Process embeddings from database
-        print("\n=== Processing Embeddings from Database ===")
+        self.logger.info("=== Processing Embeddings from Database ===")
         process_result = self.process_embeddings_from_database()
-        print(f"Processing completed: {process_result['processed']} processed, {process_result['failed']} failed")
+        self.logger.info(f"Processing completed: {process_result['processed']} processed, {process_result['failed']} failed")
         
-        print("\n=== Processing Complete ===")
-        print(f"Total tracks in database: {scan_result['total_tracks']}")
-        print(f"Embeddings processed: {process_result['processed']}")
-        print(f"Embeddings in vector database: {self.embedding_repository.get_embedding_count()}")
+        self.logger.info("=== Processing Complete ===")
+        self.logger.info(f"Total tracks in database: {scan_result['total_tracks']}")
+        self.logger.info(f"Embeddings processed: {process_result['processed']}")
+        self.logger.info(f"Embeddings in vector database: {self.embedding_repository.get_embedding_count()}")
     
     def get_database_stats(self) -> dict:
         """Get statistics about the current databases."""
@@ -207,6 +210,20 @@ class MyceliumService:
         
         # Fallback to Plex API
         return self.plex_repository.get_track_by_id(track_id)
+    
+    def get_all_tracks(self, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
+        """Get all tracks from the database with optional pagination."""
+        stored_tracks = self.track_database.get_all_tracks(limit=limit, offset=offset)
+        return [stored_track.to_track() for stored_track in stored_tracks]
+    
+    def search_tracks_in_database(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
+        """Search tracks in the database by artist, album, or title."""
+        stored_tracks = self.track_database.search_tracks(search_query, limit=limit, offset=offset)
+        return [stored_track.to_track() for stored_track in stored_tracks]
+    
+    def count_tracks_in_database(self, search_query: str) -> int:
+        """Count tracks matching search query in the database."""
+        return self.track_database.count_search_tracks(search_query)
     
     def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""

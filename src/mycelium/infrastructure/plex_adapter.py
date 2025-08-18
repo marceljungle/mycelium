@@ -1,5 +1,6 @@
 """Plex integration for accessing music library."""
 
+import logging
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -23,6 +24,7 @@ class PlexMusicRepository(PlexRepository):
         self.plex_url = plex_url or os.environ.get("PLEX_URL", "http://localhost:32400")
         self.plex_token = plex_token or os.environ.get("PLEX_TOKEN")
         self.music_library_name = music_library_name
+        self.logger = logging.getLogger(__name__)
         
         if not self.plex_token:
             raise ValueError("PLEX_TOKEN must be provided either as parameter or environment variable")
@@ -32,7 +34,7 @@ class PlexMusicRepository(PlexRepository):
         try:
             plex = PlexServer(self.plex_url, self.plex_token)
             music_lib = plex.library.section(self.music_library_name)
-            print(f"Connected to Plex. Scanning library '{self.music_library_name}'...")
+            self.logger.info(f"Connected to Plex. Scanning library '{self.music_library_name}'...")
         except Exception as e:
             raise ConnectionError(f"Error connecting to Plex server: {e}")
 
@@ -57,9 +59,9 @@ class PlexMusicRepository(PlexRepository):
                                 )
                                 all_tracks.append(track_obj)
                             else:
-                                print(f"WARNING: File not found, skipping: {filepath}")
+                                self.logger.warning(f"File not found, skipping: {filepath}")
             except Exception as e:
-                print(f"Error processing artist {artist.title}: {e}. Continuing...")
+                self.logger.error(f"Error processing artist {artist.title}: {e}. Continuing...", exc_info=True)
 
         return all_tracks
     
@@ -84,5 +86,5 @@ class PlexMusicRepository(PlexRepository):
             return None
             
         except Exception as e:
-            print(f"Error getting track {track_id}: {e}")
+            self.logger.error(f"Error getting track {track_id}: {e}", exc_info=True)
             return None

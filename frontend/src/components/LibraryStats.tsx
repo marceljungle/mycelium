@@ -46,7 +46,7 @@ export default function LibraryStats() {
       const data = await response.json();
       setStats(data);
       setError(null);
-    } catch (_err) {
+    } catch {
       setError('Unable to connect to API');
       setStats(null);
     } finally {
@@ -75,7 +75,7 @@ export default function LibraryStats() {
           }
         }
       }
-    } catch (_err) {
+    } catch {
       // Ignore progress fetch errors
     }
   }, [stats, processLoading, operationMessage]);
@@ -100,7 +100,7 @@ export default function LibraryStats() {
       // Refresh stats after scanning
       await fetchStats();
       await fetchProgress();
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to scan library. Make sure the API server is running and Plex is accessible.');
     } finally {
       setScanLoading(false);
@@ -151,7 +151,7 @@ export default function LibraryStats() {
       // Default success case (backward compatibility)
       setOperationMessage('🚀 Processing started! Progress will be updated automatically.');
 
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to start processing. Make sure the API server is running.');
       setProcessLoading(false);
       setProgressInfo(null);
@@ -182,7 +182,7 @@ export default function LibraryStats() {
 
       setOperationMessage('🖥️ Server processing started! This may take longer on low-power hardware. Progress will be updated automatically.');
 
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to start server processing. Make sure the API server is running.');
       setProcessLoading(false);
       setProgressInfo(null);
@@ -205,7 +205,7 @@ export default function LibraryStats() {
         setProcessLoading(false);
         setOperationMessage('🛑 Stop signal sent. Processing will finish current track and stop.');
       }
-    } catch (_err) {
+    } catch {
       setOperationMessage('❌ Failed to send stop signal.');
     }
   };
@@ -221,7 +221,7 @@ export default function LibraryStats() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, []); // Remove fetchStats and fetchProgress from dependencies to prevent multiple intervals
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -278,37 +278,43 @@ export default function LibraryStats() {
       ) : stats ? (
         <div className="space-y-4">
           {/* Track Database Stats */}
-          {stats.track_database_stats && (
-            <div className="bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900 dark:to-cyan-900 p-4 rounded-lg">
-              <div className="grid grid-cols-2 gap-4 mb-3">
-                <div>
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {stats.track_database_stats.total_tracks.toLocaleString()}
-                  </div>
-                  <div className="text-sm text-blue-700 dark:text-blue-300">
-                    Total Tracks
-                  </div>
+          <div className="bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900 dark:to-cyan-900 p-4 rounded-lg">
+            <div className="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {stats.track_database_stats?.total_tracks?.toLocaleString() || '0'}
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {stats.track_database_stats.processed_tracks.toLocaleString()}
-                  </div>
-                  <div className="text-sm text-green-700 dark:text-green-300">
-                    Processed
-                  </div>
+                <div className="text-sm text-blue-700 dark:text-blue-300">
+                  Total Scanned Tracks
                 </div>
               </div>
-
-              {stats.track_database_stats.total_tracks > 0 && (
-                <div className="mt-3">
-                  {renderProgressBar(
-                    stats.track_database_stats.progress_percentage,
-                    "Processing Progress"
-                  )}
+              <div>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {stats.track_database_stats?.processed_tracks?.toLocaleString() || '0'}
                 </div>
-              )}
+                <div className="text-sm text-green-700 dark:text-green-300">
+                  Processed Tracks
+                </div>
+              </div>
             </div>
-          )}
+
+            {stats.track_database_stats && stats.track_database_stats.total_tracks > 0 && (
+              <div className="mt-3">
+                {renderProgressBar(
+                  stats.track_database_stats.progress_percentage || 0,
+                  "Processing Progress"
+                )}
+              </div>
+            )}
+            
+            {(!stats.track_database_stats || stats.track_database_stats.total_tracks === 0) && (
+              <div className="text-center py-2">
+                <p className="text-sm text-blue-600 dark:text-blue-400">
+                  📖 No tracks scanned yet. Use &quot;Scan Library&quot; below to get started.
+                </p>
+              </div>
+            )}
+          </div>
 
           {/* Vector Database Stats */}
           <div className="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 p-4 rounded-lg">

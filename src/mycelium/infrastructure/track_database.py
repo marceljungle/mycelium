@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from ..domain.models import Track
+from ..config_yaml import get_user_data_dir
 
 
 @dataclass
@@ -51,7 +52,10 @@ class StoredTrack:
 class TrackDatabase:
     """SQLite database for managing track metadata and processing state."""
     
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: Optional[str]):
+        # Default to user data directory if path is not provided
+        if not db_path:
+            db_path = str(get_user_data_dir() / "mycelium_tracks.db")
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_database()
@@ -296,3 +300,84 @@ class TrackDatabase:
                     embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
                 )
             return None
+    
+    def get_all_tracks(self, limit: Optional[int] = None, offset: int = 0) -> List[StoredTrack]:
+        """Get all tracks from the database with optional pagination."""
+        query = """
+            SELECT plex_rating_key, artist, album, title, filepath, added_at, last_scanned,
+                   embedding_processed, embedding_processed_at
+            FROM tracks 
+            ORDER BY artist, album, title
+        """
+        
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query).fetchall()
+            
+            return [
+                StoredTrack(
+                    plex_rating_key=row["plex_rating_key"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                    embedding_processed=bool(row["embedding_processed"]),
+                    embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
+                )
+                for row in rows
+            ]
+    
+    def search_tracks(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[StoredTrack]:
+        """Search tracks by artist, album, or title."""
+        query = """
+            SELECT plex_rating_key, artist, album, title, filepath, added_at, last_scanned,
+                   embedding_processed, embedding_processed_at
+            FROM tracks 
+            WHERE artist LIKE ? OR album LIKE ? OR title LIKE ?
+            ORDER BY artist, album, title
+        """
+        
+        search_pattern = f"%{search_query}%"
+        params = [search_pattern, search_pattern, search_pattern]
+        
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            
+            return [
+                StoredTrack(
+                    plex_rating_key=row["plex_rating_key"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                    embedding_processed=bool(row["embedding_processed"]),
+                    embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
+                )
+                for row in rows
+            ]
+    
+    def count_search_tracks(self, search_query: str) -> int:
+        """Count tracks matching search query."""
+        query = """
+            SELECT COUNT(*) as count
+            FROM tracks 
+            WHERE artist LIKE ? OR album LIKE ? OR title LIKE ?
+        """
+        
+        search_pattern = f"%{search_query}%"
+        params = [search_pattern, search_pattern, search_pattern]
+        
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(query, params).fetchone()
+            return result[0]
