@@ -220,25 +220,6 @@ class ProcessingProgressUseCase:
                 latest_session.get("is_resumable", False) and
                 latest_session.get("completed_at") is None)
 
-
-class DatabaseMaintenanceUseCase:
-    """Use case for database maintenance operations."""
-
-    def __init__(self, track_database: TrackDatabase):
-        self.track_database = track_database
-
-    def cleanup_old_tracks(self, days_old: int = 30) -> int:
-        """Remove tracks that haven't been scanned in specified days."""
-        from datetime import timedelta
-        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
-        return self.track_database.cleanup_old_tracks(cutoff_date)
-
-    def reset_processing_state(self) -> int:
-        """Reset all tracks to unprocessed state (for reprocessing)."""
-        # This would require additional database methods
-        pass
-
-
 class WorkerBasedProcessingUseCase:
     """Use case for processing embeddings using client workers."""
 
@@ -301,7 +282,7 @@ class WorkerBasedProcessingUseCase:
         for stored_track in unprocessed_tracks:
             try:
                 download_url = f"http://{self.api_host}:{self.api_port}/download_track/{stored_track.plex_rating_key}"
-                task = self.job_queue.create_task(stored_track.plex_rating_key, download_url)
+                self.job_queue.create_task(stored_track.plex_rating_key, download_url)
                 tasks_created += 1
             except Exception as e:
                 print(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")

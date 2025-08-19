@@ -1,10 +1,10 @@
 """Plex integration for accessing music library."""
 
 import logging
-import os
 from pathlib import Path
 from typing import List, Optional
 
+from plexapi.audio import Artist
 from plexapi.server import PlexServer
 from tqdm import tqdm
 
@@ -14,21 +14,18 @@ from ..domain.repositories import PlexRepository
 
 class PlexMusicRepository(PlexRepository):
     """Implementation of PlexRepository for accessing Plex music library."""
-    
+
     def __init__(
         self,
         plex_url: str = None,
         plex_token: str = None,
         music_library_name: str = "Music"
     ):
-        self.plex_url = plex_url or os.environ.get("PLEX_URL", "http://localhost:32400")
-        self.plex_token = plex_token or os.environ.get("PLEX_TOKEN")
+        self.plex_url = plex_url
+        self.plex_token = plex_token
         self.music_library_name = music_library_name
         self.logger = logging.getLogger(__name__)
-        
-        if not self.plex_token:
-            raise ValueError("PLEX_TOKEN must be provided either as parameter or environment variable")
-    
+
     def get_all_tracks(self) -> List[Track]:
         """Get all tracks from the Plex music library."""
         try:
@@ -41,12 +38,12 @@ class PlexMusicRepository(PlexRepository):
         all_tracks = []
 
         # Hierarchical iteration for better robustness and memory efficiency
-        artists = music_lib.all()
+        artists = music_lib.all(libtype='artist')
+        artists: List[Artist]
         for artist in tqdm(artists, desc="Processing Artists"):
             try:
                 for album in artist.albums():
                     for track in album.tracks():
-                        # track.iterParts() handles multiple versions of a file
                         for part in track.iterParts():
                             filepath = Path(part.file)
                             if filepath.exists():

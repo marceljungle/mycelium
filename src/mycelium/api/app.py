@@ -724,42 +724,6 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
         raise HTTPException(status_code=500, detail=f"Similar tracks search failed: {str(e)}")
 
 
-async def compute_on_server_background(track_id: str):
-    """Background task for server-side computation."""
-    try:
-        logger.info(f"Starting server-side computation for track {track_id}")
-        
-        # Load track info
-        track_info = service.get_track_by_id(track_id)
-        if not track_info:
-            logger.warning(f"Track not found for ID: {track_id}")
-            return
-        
-        logger.info(f"Computing embedding for track {track_id}: {track_info.artist} - {track_info.title}")
-        
-        # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(track_info.filepath)
-        
-        if embedding is None or len(embedding) == 0:
-            logger.error(f"Failed to compute embedding for track {track_id}")
-            return
-        
-        logger.info(f"Successfully computed embedding for track {track_id}, size: {len(embedding)}")
-        
-        # Save to database
-        service.save_embedding(track_id, embedding)
-        logger.info(f"Successfully computed and saved embedding for track: {track_id}")
-        
-        # Verify embedding was saved correctly
-        if service.has_embedding(track_id):
-            logger.info(f"Embedding verification successful for track {track_id}")
-        else:
-            logger.error(f"Embedding verification failed for track {track_id} - embedding not found after saving")
-        
-    except Exception as e:
-        logger.error(f"Error computing embedding on server for track {track_id}: {e}", exc_info=True)
-
-
 @app.post("/compute/on_server")
 async def compute_on_server(request: ComputeOnServerRequest, background_tasks: BackgroundTasks):
     """Compute embedding on server CPU after user confirmation."""
@@ -776,7 +740,7 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
         
         # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(track_info.filepath)
+        embedding = service.compute_embedding_cpu(os.fspath(track_info.filepath))
         
         if embedding is None or len(embedding) == 0:
             logger.error(f"Failed to compute embedding for track {request.track_id}")
@@ -787,18 +751,6 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         # Save to database
         service.save_embedding(request.track_id, embedding)
         logger.info(f"Successfully computed and saved embedding for track: {request.track_id}")
-        
-        # Verify embedding was saved correctly
-        if service.has_embedding(request.track_id):
-            logger.info(f"Embedding verification successful for track {request.track_id}")
-            return {
-                "message": "Embedding computed and saved successfully",
-                "track_id": request.track_id,
-                "status": "completed"
-            }
-        else:
-            logger.error(f"Embedding verification failed for track {request.track_id} - embedding not found after saving")
-            raise HTTPException(status_code=500, detail="Embedding was computed but verification failed")
         
     except HTTPException:
         # Re-raise HTTP exceptions as they are

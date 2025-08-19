@@ -23,6 +23,11 @@ class EmbeddingRepository(ABC):
     def save_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
         """Save track embeddings to storage."""
         pass
+
+    @abstractmethod
+    def save_embedding(self, track_embedding: TrackEmbedding) -> None:
+        """Save track embeddings to storage."""
+        pass
     
     @abstractmethod
     def search_by_embedding(self, embedding: List[float], n_results: int = 10) -> List[SearchResult]:
@@ -30,13 +35,18 @@ class EmbeddingRepository(ABC):
         pass
     
     @abstractmethod
-    def search_by_text(self, query: str, n_results: int = 10) -> List[SearchResult]:
-        """Search for tracks by text description."""
-        pass
-    
-    @abstractmethod
     def get_embedding_count(self) -> int:
         """Get the total number of embeddings stored."""
+        pass
+
+    @abstractmethod
+    def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
+        """Get embedding for a specific track by its ID."""
+        pass
+
+    @abstractmethod
+    def has_embedding(self, track_id: str) -> Optional[List[float]]:
+        """Get embedding for a specific track by its ID."""
         pass
 
 

@@ -14,7 +14,6 @@ from mycelium.application.workflow_use_cases import (
     SeparatedLibraryScanUseCase,
     ResumableEmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
-    DatabaseMaintenanceUseCase,
     WorkerBasedProcessingUseCase
 )
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
@@ -77,7 +76,6 @@ class MyceliumService:
             self.track_database
         )
         self.progress_tracker = ProcessingProgressUseCase(self.track_database)
-        self.database_maintenance = DatabaseMaintenanceUseCase(self.track_database)
         
         # Processing state tracking
         self._processing_in_progress = False
@@ -247,7 +245,7 @@ class MyceliumService:
     
     def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
         """Compute embedding on CPU (fallback)."""
-        return self.embedding_generator.generate_embedding_from_file(Path(audio_filepath))
+        return self.embedding_generator.generate_embedding(Path(audio_filepath))
     
     def initialize_worker_processing(self, job_queue_service, api_host: str = "localhost", api_port: int = 8000):
         """Initialize worker-based processing use case."""

@@ -264,18 +264,8 @@ class TrackDatabase:
             if row:
                 return dict(row)
             return None
-    
-    def cleanup_old_tracks(self, cutoff_date: datetime) -> int:
-        """Remove tracks that haven't been scanned since cutoff_date."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "DELETE FROM tracks WHERE last_scanned < ?",
-                (cutoff_date,)
-            )
-            deleted_count = cursor.rowcount
-            conn.commit()
-            return deleted_count
-    
+
+
     def get_track_by_id(self, plex_rating_key: str) -> Optional[StoredTrack]:
         """Get a specific track by Plex rating key."""
         with sqlite3.connect(self.db_path) as conn:
