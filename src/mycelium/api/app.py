@@ -384,7 +384,7 @@ async def save_config(config_request: ConfigRequest):
         plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
         chroma_config = ChromaConfig(**config_request.chroma)
-        database_config = DatabaseConfig(**(config_request.database or {}))
+        database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
         client_config = ClientConfig(**config_request.client)
         logging_config = LoggingConfig(**config_request.logging)

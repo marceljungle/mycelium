@@ -37,7 +37,7 @@ class MyceliumService:
         plex_token: str = None,
         music_library_name: str = "Music",
         collection_name: str = "my_music_library",
-        model_id: str = "laion/clap-htsat-unfused"
+        model_id: str = "laion/larger_clap_music_and_speech"
     ):
         self.logger = logging.getLogger(__name__)
         

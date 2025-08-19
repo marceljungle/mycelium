@@ -90,7 +90,7 @@ def run_server_mode(config: MyceliumConfig) -> None:
 def run_client_mode(
         server_host: str = "localhost",
         server_port: int = 8000,
-        model_id: str = "laion/clap-htsat-unfused"
+        model_id: str = "laion/larger_clap_music_and_speech"
 ) -> None:
     """Run client mode (GPU worker)."""
     logger.info("Starting Mycelium Client...")
