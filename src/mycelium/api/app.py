@@ -16,7 +16,7 @@ from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
     ConfirmationRequiredResponse, ComputeOnServerRequest,
-    QueueStatsResponse, WorkerProcessingResponse, NoWorkersResponse
+    WorkerProcessingResponse, NoWorkersResponse
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService

@@ -4,67 +4,8 @@ import logging
 from pathlib import Path
 from typing import List
 
-from ..domain.models import Track, TrackEmbedding, SearchResult
-from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
-
-
-class LibraryScanUseCase:
-    """Use case for scanning the Plex music library."""
-    
-    def __init__(self, plex_repository: PlexRepository):
-        self.plex_repository = plex_repository
-    
-    def execute(self) -> List[Track]:
-        """Scan the Plex music library and return all tracks."""
-        return self.plex_repository.get_all_tracks()
-
-
-class EmbeddingGenerationUseCase:
-    """Use case for generating embeddings for tracks."""
-    
-    def __init__(
-        self, 
-        embedding_generator: EmbeddingGenerator,
-        batch_size: int = 16
-    ):
-        self.embedding_generator = embedding_generator
-        self.batch_size = batch_size
-        self.logger = logging.getLogger(__name__)
-    
-    def execute(self, tracks: List[Track]) -> List[TrackEmbedding]:
-        """Generate embeddings for a list of tracks."""
-        track_embeddings = []
-        
-        self.logger.info(f"Generating embeddings for {len(tracks)} tracks...")
-        
-        for i in range(0, len(tracks), self.batch_size):
-            batch_tracks = tracks[i:i + self.batch_size]
-            
-            for track in batch_tracks:
-                embedding = self.embedding_generator.generate_embedding(track.filepath)
-                if embedding:
-                    track_embeddings.append(TrackEmbedding(track=track, embedding=embedding))
-                else:
-                    self.logger.warning(f"Failed to generate embedding for: {track.display_name}")
-            
-            # Periodic progress update
-            if i % (self.batch_size * 10) == 0 and i > 0:
-                self.logger.info(f"Processed {len(track_embeddings)} tracks so far...")
-        
-        self.logger.info(f"Generated embeddings for {len(track_embeddings)} tracks")
-        return track_embeddings
-
-
-class EmbeddingIndexingUseCase:
-    """Use case for indexing embeddings in the vector database."""
-    
-    def __init__(self, embedding_repository: EmbeddingRepository):
-        self.embedding_repository = embedding_repository
-    
-    def execute(self, embeddings: List[TrackEmbedding]) -> None:
-        """Index embeddings in the vector database."""
-        self.embedding_repository.save_embeddings(embeddings)
-
+from ..domain.models import SearchResult
+from ..domain.repositories import EmbeddingRepository, EmbeddingGenerator
 
 class MusicSearchUseCase:
     """Use case for searching music by similarity."""

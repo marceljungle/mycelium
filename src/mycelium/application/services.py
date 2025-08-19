@@ -5,9 +5,6 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from mycelium.application.use_cases import (
-    LibraryScanUseCase,
-    EmbeddingGenerationUseCase,
-    EmbeddingIndexingUseCase,
     MusicSearchUseCase
 )
 from mycelium.application.workflow_use_cases import (
@@ -55,13 +52,9 @@ class MyceliumService:
         )
         
         self.track_database = TrackDatabase(track_db_path)
-        
-        # Initialize legacy use cases (for backward compatibility)
-        self.library_scan = LibraryScanUseCase(self.plex_repository)
-        self.embedding_generation = EmbeddingGenerationUseCase(self.embedding_generator)
-        self.embedding_indexing = EmbeddingIndexingUseCase(self.embedding_repository)
+
         self.music_search = MusicSearchUseCase(
-            self.embedding_repository, 
+            self.embedding_repository,
             self.embedding_generator
         )
         
