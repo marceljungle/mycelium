@@ -213,12 +213,6 @@ class ProcessingProgressUseCase:
             "latest_session": latest_session
         }
 
-    def can_resume_processing(self) -> bool:
-        """Check if there's a resumable processing session."""
-        latest_session = self.track_database.get_latest_processing_session()
-        return (latest_session and
-                latest_session.get("is_resumable", False) and
-                latest_session.get("completed_at") is None)
 
 class WorkerBasedProcessingUseCase:
     """Use case for processing embeddings using client workers."""

@@ -79,8 +79,7 @@ class MyceliumService:
         
         # Processing state tracking
         self._processing_in_progress = False
-    
-    # New separated workflow methods
+
     def scan_library_to_database(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan the Plex library and store metadata to database."""
         return self.separated_scan.execute(progress_callback)
@@ -129,25 +128,7 @@ class MyceliumService:
         # Processing is active if either server-side processing is running OR workers have active tasks
         stats["is_processing"] = self.is_processing_active()
         return stats
-    
-    def can_resume_processing(self) -> bool:
-        """Check if processing can be resumed."""
-        return self.progress_tracker.can_resume_processing()
-    
-    # Legacy methods (maintained for backward compatibility)
-    def scan_library(self) -> List[Track]:
-        """Scan the Plex music library (legacy method)."""
-        return self.library_scan.execute()
-    
-    def generate_embeddings(self, tracks: List[Track]) -> List[TrackEmbedding]:
-        """Generate embeddings for tracks (legacy method)."""
-        return self.embedding_generation.execute(tracks)
-    
-    def index_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
-        """Index embeddings in the vector database (legacy method)."""
-        self.embedding_indexing.execute(embeddings)
-    
-    
+
     def search_similar_by_audio(
         self, 
         filepath: Path, 
@@ -171,27 +152,7 @@ class MyceliumService:
     ) -> List[SearchResult]:
         """Search for tracks similar to a given track ID."""
         return self.music_search.search_by_track_id(track_id, n_results)
-    
-    # Updated full_library_processing (now separated into scan and process)
-    def full_library_processing(self) -> None:
-        """Complete workflow: scan library to database, then process embeddings."""
-        self.logger.info("Starting full library processing with separated workflow...")
-        
-        # Step 1: Scan library to database
-        self.logger.info("=== Scanning Plex Library to Database ===")
-        scan_result = self.scan_library_to_database()
-        self.logger.info(f"Scan completed: {scan_result['total_tracks']} total, {scan_result['new_tracks']} new, {scan_result['updated_tracks']} updated")
-        
-        # Step 2: Process embeddings from database
-        self.logger.info("=== Processing Embeddings from Database ===")
-        process_result = self.process_embeddings_from_database()
-        self.logger.info(f"Processing completed: {process_result['processed']} processed, {process_result['failed']} failed")
-        
-        self.logger.info("=== Processing Complete ===")
-        self.logger.info(f"Total tracks in database: {scan_result['total_tracks']}")
-        self.logger.info(f"Embeddings processed: {process_result['processed']}")
-        self.logger.info(f"Embeddings in vector database: {self.embedding_repository.get_embedding_count()}")
-    
+
     def get_database_stats(self) -> dict:
         """Get statistics about the current databases."""
         processing_stats = self.get_processing_progress()

@@ -92,7 +92,8 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         """Get the total number of embeddings stored."""
         return self.collection.count()
     
-    def _parse_search_results(self, results: dict) -> List[SearchResult]:
+    @staticmethod
+    def _parse_search_results(results: dict) -> List[SearchResult]:
         """Parse ChromaDB results into SearchResult objects."""
         search_results = []
         

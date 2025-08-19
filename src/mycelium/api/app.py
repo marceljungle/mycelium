@@ -142,14 +142,11 @@ async def root():
             "process_on_server": "/api/library/process/server",
             "stop_processing": "/api/library/process/stop",
             "processing_progress": "/api/library/progress",
-            "can_resume": "/api/library/can_resume",
-            "process_legacy": "/api/library/process/legacy",
             "worker_register": "/workers/register",
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
             "similar_by_track": "/similar/by_track/{track_id}",
-            "compute_on_server": "/compute/on_server",
-            "queue_stats": "/api/queue/stats"
+            "compute_on_server": "/compute/on_server"
         }
     }
 
@@ -522,45 +519,6 @@ async def get_processing_progress():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.get("/api/library/can_resume")
-async def can_resume_processing():
-    """Check if processing can be resumed."""
-    try:
-        can_resume = service.can_resume_processing()
-        return {"can_resume": can_resume}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/library/cleanup_stale_tasks")
-async def cleanup_stale_tasks():
-    """Clean up stale worker tasks that are stuck due to inactive workers."""
-    try:
-        cleaned_count = service.cleanup_stale_worker_tasks()
-        return {
-            "message": f"Cleaned up {cleaned_count} stale tasks",
-            "cleaned_tasks": cleaned_count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/library/process/legacy")
-async def process_library_legacy():
-    """Run the full library processing workflow (scan, generate embeddings, index) - legacy method."""
-    try:
-        # This is a long-running operation, in production you'd want to run this async
-        service.full_library_processing()
-        stats = service.get_database_stats()
-        return {
-            "message": "Library processing completed successfully (legacy workflow)",
-            "stats": stats
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # Worker Coordination API
 @app.post("/workers/register", response_model=WorkerRegistrationResponse)
 async def register_worker(request: WorkerRegistrationRequest):
@@ -779,17 +737,6 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
-
-
-@app.get("/api/queue/stats", response_model=QueueStatsResponse)
-async def get_queue_stats():
-    """Get job queue statistics."""
-    try:
-        stats = job_queue.get_queue_stats()
-        return QueueStatsResponse(**stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     uvicorn.run(
