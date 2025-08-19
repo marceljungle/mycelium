@@ -3,7 +3,6 @@
 import logging
 import subprocess
 import threading
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -34,14 +33,42 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend():
-    """Run the frontend development server."""
+def run_frontend(config: MyceliumConfig):
+    """Run the frontend server."""
     frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-    if frontend_dir.exists():
-        logger.info("Starting frontend development server...")
-        subprocess.run(["npm", "run", "dev"], cwd=frontend_dir)
-    else:
+    if not frontend_dir.exists():
         logger.warning("Frontend directory not found. Skipping frontend server.")
+        return
+
+    if config.api.reload:
+        build_dir = frontend_dir / ".next"
+        build_id = build_dir / "BUILD_ID"
+
+        should_build = not (build_dir.exists() and build_id.exists())
+
+        if should_build:
+            logger.info("Building frontend for production...")
+            try:
+                subprocess.run(["npm", "run", "build"], cwd=frontend_dir, check=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Frontend build failed with exit code {e.returncode}")
+                return
+        else:
+            logger.info("Reusing existing production build.")
+
+        logger.info("Starting frontend in production...")
+        try:
+            subprocess.run(["npm", "run", "start"], cwd=frontend_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Frontend start failed with exit code {e.returncode}")
+            return
+    else:
+        logger.info("Starting frontend development server...")
+        try:
+            subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Frontend dev server failed with exit code {e.returncode}")
+            return
 
 
 def run_server_mode(config: MyceliumConfig) -> None:
@@ -55,7 +82,7 @@ def run_server_mode(config: MyceliumConfig) -> None:
 
     # Start frontend (this will run in the main thread)
     try:
-        run_frontend()
+        run_frontend(config)
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
 
