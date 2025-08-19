@@ -29,8 +29,8 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         self.logger.info(f"Selected device: {self.device}")
 
         ## Lazy loading. Model is not loaded on instantiation.
-        self.model: Optional[ClapModel] = None
-        self.processor: Optional[ClapProcessor] = None
+        self._model: Optional[ClapModel] = None
+        self._processor: Optional[ClapProcessor] = None
 
         self.use_half = self._can_use_half_precision()
         if self.use_half:
@@ -40,16 +40,16 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
     def _load_model_if_needed(self):
         """Loads the model and processor on the first call that needs them."""
-        if self.model is None or self.processor is None:
+        if self._model is None or self._processor is None:
             self.logger.info(f"Loading model '{self.model_id}' to device '{self.device}'...")
-            self.model = ClapModel.from_pretrained(self.model_id).to(self.device)
-            self.processor = ClapProcessor.from_pretrained(self.model_id)
+            self._model = ClapModel.from_pretrained(self.model_id).to(self.device)
+            self._processor = ClapProcessor.from_pretrained(self.model_id)
 
             ## Apply.half() to the model only if using half precision.
             if self.use_half:
-                self.model.half()
+                self._model.half()
 
-            self.model.eval()
+            self._model.eval()
             self.logger.info("Model loaded successfully.")
 
     def _get_best_device(self) -> str:
@@ -74,13 +74,26 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 return False
         return False
 
+    def _get_processor(self) -> ClapProcessor:
+        """Return a ready-to-use processor with a non-optional type."""
+        self._load_model_if_needed()
+        assert self._processor is not None
+        return self._processor
+
+    def _get_model(self) -> ClapModel:
+        """Return a ready-to-use model with a non-optional type."""
+        self._load_model_if_needed()
+        assert self._model is not None
+        return self._model
+
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
         try:
-            self._load_model_if_needed()
+            processor = self._get_processor()
+            model = self._get_model()
 
             waveform, _ = librosa.load(str(filepath), sr=self.target_sr, mono=True)
-            chunk_len = self.chunk_duration_s * self.target_sr
-            chunks = [waveform[i:i + chunk_len] for i in range(0, len(waveform), chunk_len)]
+            chunk_size = self.chunk_duration_s * self.target_sr
+            chunks = [waveform[i:i + chunk_size] for i in range(0, len(waveform), chunk_size)]
 
             if len(chunks) > 1 and len(chunks[-1]) < self.target_sr:
                 chunks.pop(-1)
@@ -88,7 +101,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 self.logger.warning(f"File {filepath} is too short to process.")
                 return None
 
-            inputs = self.processor(
+            inputs = processor(
                 audios=chunks,
                 sampling_rate=self.target_sr,
                 return_tensors="pt",
@@ -98,7 +111,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                audio_features = self.model.get_audio_features(**inputs)
+                audio_features = model.get_audio_features(**inputs)
                 mean_embedding = torch.mean(audio_features, dim=0)
                 normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
 
@@ -110,9 +123,10 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
         try:
-            self._load_model_if_needed()
+            processor = self._get_processor()
+            model = self._get_model()
 
-            inputs = self.processor(
+            inputs = processor(
                 text=[text],
                 return_tensors="pt",
                 padding=True
@@ -121,7 +135,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                text_features = self.model.get_text_features(**inputs)
+                text_features = model.get_text_features(**inputs)
                 text_embedding = torch.nn.functional.normalize(text_features, p=2, dim=-1)
 
             return text_embedding.cpu().numpy().tolist()
