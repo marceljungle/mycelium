@@ -358,9 +358,6 @@ async def get_config():
             },
             "logging": {
                 "level": config.logging.level
-            },
-            "database": {
-                "db_path": config.database.db_path
             }
         }
         logger.info("Configuration retrieved successfully")
