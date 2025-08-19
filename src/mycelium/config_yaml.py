@@ -232,11 +232,6 @@ class MyceliumConfig:
         
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, indent=2)
-    
-    @classmethod
-    def from_env(cls) -> "MyceliumConfig":
-        """Create configuration from YAML file only (renamed from from_env for compatibility)."""
-        return cls.load_from_yaml()
 
     def setup_logging(self) -> None:
         """Setup logging configuration."""

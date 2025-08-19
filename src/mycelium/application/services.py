@@ -31,13 +31,13 @@ class MyceliumService:
     
     def __init__(
         self,
+        db_path: str,
+        track_db_path: str,
         plex_url: str = None,
         plex_token: str = None,
         music_library_name: str = "Music",
-        db_path: str = "./music_vector_db",
         collection_name: str = "my_music_library",
-        model_id: str = "laion/larger_clap_music_and_speech",
-        track_db_path: str = "./mycelium_tracks.db"
+        model_id: str = "laion/clap-htsat-unfused"
     ):
         self.logger = logging.getLogger(__name__)
         

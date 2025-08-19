@@ -83,15 +83,10 @@ class TracksListResponse(BaseModel):
 
 
 # Initialize configuration and service
-config = MyceliumConfig.from_env()
+config = MyceliumConfig.load_from_yaml()
 
 # Setup logging
 setup_logging(config.logging.level)
-
-# Validate Plex token
-if not config.plex.token:
-    logger.error("PLEX_TOKEN is required but not found in configuration")
-    raise ValueError("PLEX_TOKEN is required in configuration file")
 
 logger.info("Initializing Mycelium service...")
 
