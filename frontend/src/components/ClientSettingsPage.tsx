@@ -8,6 +8,10 @@ interface ClientConfigData {
     server_host: string;
     server_port: number;
   };
+  client_api: {
+    host: string;
+    port: number;
+  };
   clap: {
     model_id: string;
     target_sr: number;
@@ -41,6 +45,7 @@ export default function ClientSettingsPage() {
       const configData = await response.json();
       const clientConfig: ClientConfigData = {
         client: configData.client,
+        client_api: configData.client_api,
         clap: configData.clap,
         logging: configData.logging
       };
@@ -68,6 +73,7 @@ export default function ClientSettingsPage() {
 
       const updatedConfig = {
         client: config.client,
+        client_api: config.client_api,
         clap: config.clap,
         logging: config.logging
       };
@@ -185,6 +191,42 @@ export default function ClientSettingsPage() {
                     onChange={(e) => updateConfig('client', 'server_port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="8000"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Client API Server Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🔌 Client API Server
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Configure the local API server for client configuration management.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Host
+                  </label>
+                  <input
+                    type="text"
+                    value={config.client_api.host}
+                    onChange={(e) => updateConfig('client_api', 'host', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="localhost"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Port
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client_api.port}
+                    onChange={(e) => updateConfig('client_api', 'port', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="3001"
                   />
                 </div>
               </div>

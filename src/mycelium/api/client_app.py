@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class ConfigRequest(BaseModel):
     """Request model for updating client configuration."""
     client: Dict[str, Any]
+    client_api: Dict[str, Any]
     clap: Dict[str, Any]
     logging: Dict[str, Any]
 
@@ -64,6 +65,10 @@ async def get_config():
                 "server_host": config.client.server_host,
                 "server_port": config.client.server_port
             },
+            "client_api": {
+                "host": config.client_api.host,
+                "port": config.client_api.port
+            },
             "clap": {
                 "model_id": config.clap.model_id,
                 "target_sr": config.clap.target_sr,
@@ -87,15 +92,17 @@ async def save_config(config_request: ConfigRequest):
         logger.info("Client configuration save request received")
         
         # Create new config object with updated values
-        from ..client_config_yaml import CLAPConfig, ClientConfig, LoggingConfig
+        from ..client_config_yaml import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig
         
         clap_config = CLAPConfig(**config_request.clap)
         client_config = ClientConfig(**config_request.client)
+        client_api_config = ClientAPIConfig(**config_request.client_api)
         logging_config = LoggingConfig(**config_request.logging)
         
         yaml_config = MyceliumClientConfig(
             clap=clap_config,
             client=client_config,
+            client_api=client_api_config,
             logging=logging_config
         )
         

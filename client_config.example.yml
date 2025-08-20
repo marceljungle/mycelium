@@ -12,6 +12,11 @@ client:
   server_host: localhost
   server_port: 8000
 
+# Client API server configuration for local configuration management
+client_api:
+  host: localhost
+  port: 3001
+
 # Logging configuration
 logging:
   level: INFO

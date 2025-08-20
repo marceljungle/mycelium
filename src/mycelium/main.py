@@ -35,7 +35,7 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_port: int = None):
+def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_host: str = None, client_api_port: int = None):
     """Run the frontend server."""
     frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if not frontend_dir.exists():
@@ -47,8 +47,8 @@ def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_p
     if client_mode:
         env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'client'
         # In client mode, point to the local client API instead of the server
-        if client_api_port:
-            env['NEXT_PUBLIC_API_URL'] = f"http://localhost:{client_api_port}"
+        if client_api_host and client_api_port:
+            env['NEXT_PUBLIC_API_URL'] = f"http://{client_api_host}:{client_api_port}"
             env['NEXT_PUBLIC_API_PORT'] = str(client_api_port)
 
     if config.api.reload:
@@ -98,13 +98,15 @@ def run_server_mode(config: MyceliumConfig) -> None:
         logger.info("Shutting down server...")
 
 
-def run_client_api(client_config: MyceliumClientConfig, client_api_port: int = 3001) -> None:
+def run_client_api(client_config: MyceliumClientConfig) -> None:
     """Run the minimal client API server for configuration."""
-    logger.info(f"Starting client API server on port {client_api_port}")
+    host = client_config.client_api.host
+    port = client_config.client_api.port
+    logger.info(f"Starting client API server on {host}:{port}")
     uvicorn.run(
         "mycelium.api.client_app:app",
-        host="localhost",
-        port=client_api_port,
+        host=host,
+        port=port,
         reload=False
     )
 
@@ -137,12 +139,14 @@ def run_client_mode(
         logging=client_config.logging  # Use client config
     )
 
-    client_api_port = 3001
+    # Extract client API configuration
+    client_api_host = client_config.client_api.host
+    client_api_port = client_config.client_api.port
     
     # Start client API server in a separate thread
     client_api_thread = threading.Thread(
         target=run_client_api,
-        args=(client_config, client_api_port)
+        args=(client_config,)
     )
     client_api_thread.daemon = True
     client_api_thread.start()
@@ -157,7 +161,7 @@ def run_client_mode(
     
     # Start frontend in client mode (this will run in the main thread)
     try:
-        run_frontend(temp_server_config, client_mode=True, client_api_port=client_api_port)
+        run_frontend(temp_server_config, client_mode=True, client_api_host=client_api_host, client_api_port=client_api_port)
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 

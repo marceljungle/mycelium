@@ -70,6 +70,13 @@ class ClientConfig:
 
 
 @dataclass
+class ClientAPIConfig:
+    """Configuration for client API server."""
+    host: str = "localhost"
+    port: int = 3001
+
+
+@dataclass
 class LoggingConfig:
     """Configuration for logging system."""
     level: str = "INFO"
@@ -82,6 +89,7 @@ class MyceliumClientConfig:
     """Client-specific configuration class containing only settings relevant to GPU workers."""
     clap: CLAPConfig
     client: ClientConfig
+    client_api: ClientAPIConfig
     logging: LoggingConfig
 
     @classmethod
@@ -109,6 +117,11 @@ class MyceliumClientConfig:
             server_port=config_data.get("client", {}).get("server_port", 8000)
         )
         
+        client_api_config = ClientAPIConfig(
+            host=config_data.get("client_api", {}).get("host", "localhost"),
+            port=config_data.get("client_api", {}).get("port", 3001)
+        )
+        
         # Handle logging configuration with default log file path
         logging_data = config_data.get("logging", {})
         log_file = logging_data.get("file")
@@ -124,6 +137,7 @@ class MyceliumClientConfig:
         cfg = cls(
             clap=clap_config,
             client=client_config,
+            client_api=client_api_config,
             logging=logging_config
         )
 
@@ -147,6 +161,7 @@ class MyceliumClientConfig:
         config_dict = {
             "clap": asdict(self.clap), 
             "client": asdict(self.client),
+            "client_api": asdict(self.client_api),
             "logging": asdict(self.logging)
         }
         
