@@ -141,7 +141,7 @@ def client(
         run_client_mode(
             server_host=final_host,
             server_port=final_port,
-            model_id=config.client.model_id
+            model_id=config.clap.model_id
         )
     except Exception as e:
         typer.echo(f"Client error: {e}", err=True)

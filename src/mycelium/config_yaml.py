@@ -104,7 +104,6 @@ class ClientConfig:
     """Configuration for client worker connections."""
     server_host: str = "localhost"
     server_port: int = 8000
-    model_id: str = "laion/larger_clap_music_and_speech"
 
 
 @dataclass
@@ -168,8 +167,7 @@ class MyceliumConfig:
         
         client_config = ClientConfig(
             server_host=config_data.get("client", {}).get("server_host", "localhost"),
-            server_port=config_data.get("client", {}).get("server_port", 8000),
-            model_id=config_data.get("client", {}).get("model_id", "laion/larger_clap_music_and_speech")
+            server_port=config_data.get("client", {}).get("server_port", 8000)
         )
         
         # Handle logging configuration with default log file path

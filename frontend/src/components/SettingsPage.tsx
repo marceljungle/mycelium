@@ -17,7 +17,6 @@ interface ConfigData {
   client: {
     server_host: string;
     server_port: number;
-    model_id: string;
   };
   chroma: {
     collection_name: string;
@@ -279,19 +278,6 @@ export default function SettingsPage() {
                     onChange={(e) => updateConfig('client', 'server_port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model ID
-                  </label>
-                  <select
-                    value={config.client.model_id}
-                    onChange={(e) => updateConfig('client', 'model_id', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused</option>
-                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech</option>
-                  </select>
                 </div>
               </div>
             </div>

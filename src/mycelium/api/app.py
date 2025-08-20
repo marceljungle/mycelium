@@ -340,8 +340,7 @@ async def get_config():
             },
             "client": {
                 "server_host": config.client.server_host,
-                "server_port": config.client.server_port,
-                "model_id": config.client.model_id
+                "server_port": config.client.server_port
             },
             "chroma": {
                 "collection_name": config.chroma.collection_name,
