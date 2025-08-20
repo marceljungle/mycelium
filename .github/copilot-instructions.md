@@ -268,6 +268,7 @@ mycelium/
 - **Configuration**: YAML-only at `~/.config/mycelium/config.yml` (auto-generated on first run)
 - **Data storage**: Platform-specific directories (see config for paths)
 - **Setup**: Edit the auto-generated config file with your Plex token
+- **Note**: Environment variable support has been removed (despite README mentioning it)
 
 ### Performance Notes
 - **First-time model downloads:** CLAP models (~1GB) download on first use
