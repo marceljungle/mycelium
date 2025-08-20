@@ -5,16 +5,12 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from mycelium.application.use_cases import (
-    LibraryScanUseCase,
-    EmbeddingGenerationUseCase,
-    EmbeddingIndexingUseCase,
     MusicSearchUseCase
 )
 from mycelium.application.workflow_use_cases import (
     SeparatedLibraryScanUseCase,
     ResumableEmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
-    DatabaseMaintenanceUseCase,
     WorkerBasedProcessingUseCase
 )
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
@@ -31,13 +27,13 @@ class MyceliumService:
     
     def __init__(
         self,
+        db_path: str,
+        track_db_path: str,
         plex_url: str = None,
         plex_token: str = None,
         music_library_name: str = "Music",
-        db_path: str = "./music_vector_db",
         collection_name: str = "my_music_library",
-        model_id: str = "laion/larger_clap_music_and_speech",
-        track_db_path: str = "./mycelium_tracks.db"
+        model_id: str = "laion/larger_clap_music_and_speech"
     ):
         self.logger = logging.getLogger(__name__)
         
@@ -56,13 +52,9 @@ class MyceliumService:
         )
         
         self.track_database = TrackDatabase(track_db_path)
-        
-        # Initialize legacy use cases (for backward compatibility)
-        self.library_scan = LibraryScanUseCase(self.plex_repository)
-        self.embedding_generation = EmbeddingGenerationUseCase(self.embedding_generator)
-        self.embedding_indexing = EmbeddingIndexingUseCase(self.embedding_repository)
+
         self.music_search = MusicSearchUseCase(
-            self.embedding_repository, 
+            self.embedding_repository,
             self.embedding_generator
         )
         
@@ -77,12 +69,10 @@ class MyceliumService:
             self.track_database
         )
         self.progress_tracker = ProcessingProgressUseCase(self.track_database)
-        self.database_maintenance = DatabaseMaintenanceUseCase(self.track_database)
         
         # Processing state tracking
         self._processing_in_progress = False
-    
-    # New separated workflow methods
+
     def scan_library_to_database(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan the Plex library and store metadata to database."""
         return self.separated_scan.execute(progress_callback)
@@ -115,38 +105,23 @@ class MyceliumService:
         
         # Stop worker-based processing if available
         if hasattr(self, 'worker_processing'):
-            return self.stop_worker_processing()
-        
-        return {"cleared_tasks": 0, "message": "Server processing stop requested"}
+            self.stop_worker_processing()
     
     def reset_processing_stop_flag(self) -> None:
         """Reset the stop flag for new processing session."""
         self.resumable_processing.reset_stop_flag()
     
+    def is_processing_active(self) -> bool:
+        """Check if any processing is currently active (server or worker)."""
+        return self._processing_in_progress or self.has_active_worker_processing()
+    
     def get_processing_progress(self) -> Dict[str, Any]:
         """Get current processing progress and statistics."""
         stats = self.progress_tracker.get_current_stats()
-        stats["is_processing"] = self._processing_in_progress
+        # Processing is active if either server-side processing is running OR workers have active tasks
+        stats["is_processing"] = self.is_processing_active()
         return stats
-    
-    def can_resume_processing(self) -> bool:
-        """Check if processing can be resumed."""
-        return self.progress_tracker.can_resume_processing()
-    
-    # Legacy methods (maintained for backward compatibility)
-    def scan_library(self) -> List[Track]:
-        """Scan the Plex music library (legacy method)."""
-        return self.library_scan.execute()
-    
-    def generate_embeddings(self, tracks: List[Track]) -> List[TrackEmbedding]:
-        """Generate embeddings for tracks (legacy method)."""
-        return self.embedding_generation.execute(tracks)
-    
-    def index_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
-        """Index embeddings in the vector database (legacy method)."""
-        self.embedding_indexing.execute(embeddings)
-    
-    
+
     def search_similar_by_audio(
         self, 
         filepath: Path, 
@@ -170,27 +145,7 @@ class MyceliumService:
     ) -> List[SearchResult]:
         """Search for tracks similar to a given track ID."""
         return self.music_search.search_by_track_id(track_id, n_results)
-    
-    # Updated full_library_processing (now separated into scan and process)
-    def full_library_processing(self) -> None:
-        """Complete workflow: scan library to database, then process embeddings."""
-        self.logger.info("Starting full library processing with separated workflow...")
-        
-        # Step 1: Scan library to database
-        self.logger.info("=== Scanning Plex Library to Database ===")
-        scan_result = self.scan_library_to_database()
-        self.logger.info(f"Scan completed: {scan_result['total_tracks']} total, {scan_result['new_tracks']} new, {scan_result['updated_tracks']} updated")
-        
-        # Step 2: Process embeddings from database
-        self.logger.info("=== Processing Embeddings from Database ===")
-        process_result = self.process_embeddings_from_database()
-        self.logger.info(f"Processing completed: {process_result['processed']} processed, {process_result['failed']} failed")
-        
-        self.logger.info("=== Processing Complete ===")
-        self.logger.info(f"Total tracks in database: {scan_result['total_tracks']}")
-        self.logger.info(f"Embeddings processed: {process_result['processed']}")
-        self.logger.info(f"Embeddings in vector database: {self.embedding_repository.get_embedding_count()}")
-    
+
     def get_database_stats(self) -> dict:
         """Get statistics about the current databases."""
         processing_stats = self.get_processing_progress()
@@ -244,7 +199,7 @@ class MyceliumService:
     
     def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
         """Compute embedding on CPU (fallback)."""
-        return self.embedding_generator.generate_embedding_from_file(Path(audio_filepath))
+        return self.embedding_generator.generate_embedding(Path(audio_filepath))
     
     def initialize_worker_processing(self, job_queue_service, api_host: str = "localhost", api_port: int = 8000):
         """Initialize worker-based processing use case."""
@@ -295,3 +250,9 @@ class MyceliumService:
         if not hasattr(self, 'worker_processing'):
             return False
         return self.worker_processing.job_queue.has_active_processing()
+    
+    def cleanup_stale_worker_tasks(self) -> int:
+        """Clean up stale worker tasks and return count of cleaned tasks."""
+        if not hasattr(self, 'worker_processing'):
+            return 0
+        return self.worker_processing.job_queue.cleanup_stale_tasks()

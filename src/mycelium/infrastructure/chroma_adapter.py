@@ -18,7 +18,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
     
     def __init__(
         self,
-        db_path: str = "./music_vector_db",
+        db_path: str,
         collection_name: str = "my_music_library",
         batch_size: int = 1000
     ):
@@ -27,15 +27,13 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         self.batch_size = batch_size
         
         # Initialize ChromaDB client and collection
-        # Ensure directory exists (db_path is a directory path for Chroma's storage)
         try:
             Path(db_path).mkdir(parents=True, exist_ok=True)
         except Exception:
-            # Best-effort; Chroma may create it if this fails
+            logger.error(f"Failed to create database directory at {db_path}. Please check permissions.")
             pass
         self.client = chromadb.PersistentClient(path=db_path)
-        
-        # Use 'get_or_create_collection' for idempotency
+
         # Specify 'cosine' distance metric for normalized embeddings
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
@@ -88,19 +86,14 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             n_results=n_results
         )
         
-        return self._parse_search_results(results)
-    
-    def search_by_text(self, query: str, n_results: int = 10) -> List[SearchResult]:
-        """Search for tracks by text description."""
-        # This method would need the CLAP model to generate text embeddings
-        # For now, it's a placeholder that would be implemented in the service layer
-        raise NotImplementedError("Text search should be implemented in the service layer")
+        return self._parse_search_results(results.copy())
     
     def get_embedding_count(self) -> int:
         """Get the total number of embeddings stored."""
         return self.collection.count()
     
-    def _parse_search_results(self, results: dict) -> List[SearchResult]:
+    @staticmethod
+    def _parse_search_results(results: dict) -> List[SearchResult]:
         """Parse ChromaDB results into SearchResult objects."""
         search_results = []
         
@@ -177,15 +170,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         
         logger.info(f"Collection count after save: {self.collection.count()}")
         logger.info(f"Successfully saved embedding to ChromaDB for track {track.plex_rating_key}")
-        
-        # Verify the embedding was saved
-        verification = self.collection.get(ids=[track.plex_rating_key], include=['embeddings'])
-        if verification['embeddings'] is not None and len(verification['embeddings']) > 0:
-            logger.info(f"Embedding verification successful for track {track.plex_rating_key}")
-        else:
-            logger.error(f"Embedding verification failed for track {track.plex_rating_key}")
-            # Also log the full verification result for debugging
-            logger.error(f"Verification result: {verification}")
+
     
     def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
         """Get embedding for a specific track."""

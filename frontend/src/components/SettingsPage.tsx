@@ -17,7 +17,6 @@ interface ConfigData {
   client: {
     server_host: string;
     server_port: number;
-    model_id: string;
   };
   chroma: {
     collection_name: string;
@@ -66,22 +65,22 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     if (!config) return;
-    
+
     setSaving(true);
     setError(null);
     setSuccessMessage(null);
-    
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to save configuration');
       }
-      
+
       const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
       setSuccessMessage(result.message || 'Configuration saved successfully! Restart the server to apply changes.');
@@ -106,7 +105,7 @@ export default function SettingsPage() {
 
   const updateConfig = (section: keyof ConfigData, key: string, value: string | number | boolean) => {
     if (!config) return;
-    
+
     setConfig(prev => ({
       ...prev!,
       [section]: {
@@ -200,7 +199,7 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Get your token from{' '}
-                    <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" 
+                    <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
                        target="_blank" rel="noopener noreferrer"
                        className="text-purple-600 dark:text-purple-400 hover:underline">
                       Plex support
@@ -280,19 +279,6 @@ export default function SettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model ID
-                  </label>
-                  <select
-                    value={config.client.model_id}
-                    onChange={(e) => updateConfig('client', 'model_id', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused</option>
-                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech</option>
-                  </select>
-                </div>
               </div>
             </div>
 
@@ -312,7 +298,8 @@ export default function SettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
-                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused</option>
+                    <option value="laion/larger_clap_music">CLAP Music (If your library is mostly instrumental/electronic)</option>
+                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused (Trained with general sounds, not only music)</option>
                   </select>
                 </div>
                 <div>
@@ -323,17 +310,6 @@ export default function SettingsPage() {
                     type="number"
                     value={config.clap.target_sr}
                     onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Batch Size
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.batch_size}
-                    onChange={(e) => updateConfig('clap', 'batch_size', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>

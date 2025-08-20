@@ -16,7 +16,7 @@ from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
     ConfirmationRequiredResponse, ComputeOnServerRequest,
-    QueueStatsResponse, WorkerProcessingResponse, NoWorkersResponse
+    WorkerProcessingResponse, NoWorkersResponse
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
@@ -83,15 +83,10 @@ class TracksListResponse(BaseModel):
 
 
 # Initialize configuration and service
-config = MyceliumConfig.from_env()
+config = MyceliumConfig.load_from_yaml()
 
 # Setup logging
 setup_logging(config.logging.level)
-
-# Validate Plex token
-if not config.plex.token:
-    logger.error("PLEX_TOKEN is required but not found in configuration")
-    raise ValueError("PLEX_TOKEN is required in configuration file")
 
 logger.info("Initializing Mycelium service...")
 
@@ -147,14 +142,11 @@ async def root():
             "process_on_server": "/api/library/process/server",
             "stop_processing": "/api/library/process/stop",
             "processing_progress": "/api/library/progress",
-            "can_resume": "/api/library/can_resume",
-            "process_legacy": "/api/library/process/legacy",
             "worker_register": "/workers/register",
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
             "similar_by_track": "/similar/by_track/{track_id}",
-            "compute_on_server": "/compute/on_server",
-            "queue_stats": "/api/queue/stats"
+            "compute_on_server": "/compute/on_server"
         }
     }
 
@@ -348,8 +340,7 @@ async def get_config():
             },
             "client": {
                 "server_host": config.client.server_host,
-                "server_port": config.client.server_port,
-                "model_id": config.client.model_id
+                "server_port": config.client.server_port
             },
             "chroma": {
                 "collection_name": config.chroma.collection_name,
@@ -358,14 +349,10 @@ async def get_config():
             "clap": {
                 "model_id": config.clap.model_id,
                 "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s,
-                "batch_size": config.clap.batch_size
+                "chunk_duration_s": config.clap.chunk_duration_s
             },
             "logging": {
                 "level": config.logging.level
-            },
-            "database": {
-                "db_path": config.database.db_path
             }
         }
         logger.info("Configuration retrieved successfully")
@@ -389,7 +376,7 @@ async def save_config(config_request: ConfigRequest):
         plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
         chroma_config = ChromaConfig(**config_request.chroma)
-        database_config = DatabaseConfig(**(config_request.database or {}))
+        database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
         client_config = ClientConfig(**config_request.client)
         logging_config = LoggingConfig(**config_request.logging)
@@ -438,7 +425,7 @@ async def process_library():
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
         # Check if processing is already running
-        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+        if service.is_processing_active():
             return {
                 "status": "already_running",
                 "message": "Processing is already in progress"
@@ -481,7 +468,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
     """Process embeddings on server after user confirmation."""
     try:
         # Check if processing is already running
-        if hasattr(service, '_processing_in_progress') and service._processing_in_progress:
+        if service.is_processing_active():
             return {
                 "message": "Processing is already in progress",
                 "status": "already_running"
@@ -502,7 +489,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
 async def stop_processing():
     """Stop the current embedding processing."""
     try:
-        result = service.stop_processing()
+        service.stop_processing()
         
         # Also check for worker processing
         if service.has_active_worker_processing():
@@ -529,32 +516,6 @@ async def get_processing_progress():
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/library/can_resume")
-async def can_resume_processing():
-    """Check if processing can be resumed."""
-    try:
-        can_resume = service.can_resume_processing()
-        return {"can_resume": can_resume}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/library/process/legacy")
-async def process_library_legacy():
-    """Run the full library processing workflow (scan, generate embeddings, index) - legacy method."""
-    try:
-        # This is a long-running operation, in production you'd want to run this async
-        service.full_library_processing()
-        stats = service.get_database_stats()
-        return {
-            "message": "Library processing completed successfully (legacy workflow)",
-            "stats": stats
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 # Worker Coordination API
 @app.post("/workers/register", response_model=WorkerRegistrationResponse)
@@ -719,42 +680,6 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
         raise HTTPException(status_code=500, detail=f"Similar tracks search failed: {str(e)}")
 
 
-async def compute_on_server_background(track_id: str):
-    """Background task for server-side computation."""
-    try:
-        logger.info(f"Starting server-side computation for track {track_id}")
-        
-        # Load track info
-        track_info = service.get_track_by_id(track_id)
-        if not track_info:
-            logger.warning(f"Track not found for ID: {track_id}")
-            return
-        
-        logger.info(f"Computing embedding for track {track_id}: {track_info.artist} - {track_info.title}")
-        
-        # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(track_info.filepath)
-        
-        if embedding is None or len(embedding) == 0:
-            logger.error(f"Failed to compute embedding for track {track_id}")
-            return
-        
-        logger.info(f"Successfully computed embedding for track {track_id}, size: {len(embedding)}")
-        
-        # Save to database
-        service.save_embedding(track_id, embedding)
-        logger.info(f"Successfully computed and saved embedding for track: {track_id}")
-        
-        # Verify embedding was saved correctly
-        if service.has_embedding(track_id):
-            logger.info(f"Embedding verification successful for track {track_id}")
-        else:
-            logger.error(f"Embedding verification failed for track {track_id} - embedding not found after saving")
-        
-    except Exception as e:
-        logger.error(f"Error computing embedding on server for track {track_id}: {e}", exc_info=True)
-
-
 @app.post("/compute/on_server")
 async def compute_on_server(request: ComputeOnServerRequest, background_tasks: BackgroundTasks):
     """Compute embedding on server CPU after user confirmation."""
@@ -771,7 +696,7 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
         
         # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(track_info.filepath)
+        embedding = service.compute_embedding_cpu(os.fspath(track_info.filepath))
         
         if embedding is None or len(embedding) == 0:
             logger.error(f"Failed to compute embedding for track {request.track_id}")
@@ -782,18 +707,6 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         # Save to database
         service.save_embedding(request.track_id, embedding)
         logger.info(f"Successfully computed and saved embedding for track: {request.track_id}")
-        
-        # Verify embedding was saved correctly
-        if service.has_embedding(request.track_id):
-            logger.info(f"Embedding verification successful for track {request.track_id}")
-            return {
-                "message": "Embedding computed and saved successfully",
-                "track_id": request.track_id,
-                "status": "completed"
-            }
-        else:
-            logger.error(f"Embedding verification failed for track {request.track_id} - embedding not found after saving")
-            raise HTTPException(status_code=500, detail="Embedding was computed but verification failed")
         
     except HTTPException:
         # Re-raise HTTP exceptions as they are
@@ -822,17 +735,6 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
-
-
-@app.get("/api/queue/stats", response_model=QueueStatsResponse)
-async def get_queue_stats():
-    """Get job queue statistics."""
-    try:
-        stats = job_queue.get_queue_stats()
-        return QueueStatsResponse(**stats)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 if __name__ == "__main__":
     uvicorn.run(

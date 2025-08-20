@@ -117,7 +117,7 @@ api:
 client:
   server_host: localhost
   server_port: 8000
-  model_id: laion/clap-htsat-unfused
+  model_id: laion/larger_clap_music_and_speech
 
 # Logging configuration
 logging:

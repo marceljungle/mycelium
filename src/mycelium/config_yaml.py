@@ -68,34 +68,27 @@ class CLAPConfig:
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
     chunk_duration_s: int = 10
-    batch_size: int = 16
 
 
 @dataclass
 class ChromaConfig:
     """Configuration for ChromaDB."""
-    db_path: Optional[str] = None  # Will use user data dir if None
     collection_name: str = "my_music_library"
     batch_size: int = 1000
 
     def get_db_path(self) -> str:
-        """Get the actual database path, using user data dir if not specified."""
-        if self.db_path is None:
-            return str(get_user_data_dir() / "music_vector_db")
-        return self.db_path
+        """Get the actual database path for ChromaDB."""
+        return str(get_user_data_dir() / "music_vector_db")
 
 
 @dataclass
 class DatabaseConfig:
     """Configuration for track metadata database."""
-    db_path: Optional[str] = None  # Will use user data dir if None
-    
+
     def get_db_path(self) -> str:
-        """Get the actual database path, using user data dir if not specified."""
-        if self.db_path is None:
-            return str(get_user_data_dir() / "mycelium_tracks.db")
-        return self.db_path
-    
+        """Get the actual database path for track metadata."""
+        return str(get_user_data_dir() / "mycelium_tracks.db")
+
 
 @dataclass
 class APIConfig:
@@ -110,7 +103,6 @@ class ClientConfig:
     """Configuration for client worker connections."""
     server_host: str = "localhost"
     server_port: int = 8000
-    model_id: str = "laion/clap-htsat-unfused"
 
 
 @dataclass
@@ -155,19 +147,15 @@ class MyceliumConfig:
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
-            batch_size=config_data.get("clap", {}).get("batch_size", 16)
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10)
         )
         
         chroma_config = ChromaConfig(
-            db_path=config_data.get("chroma", {}).get("db_path"),
             collection_name=config_data.get("chroma", {}).get("collection_name", "my_music_library"),
             batch_size=config_data.get("chroma", {}).get("batch_size", 1000)
         )
         
-        database_config = DatabaseConfig(
-            db_path=config_data.get("database", {}).get("db_path")
-        )
+        database_config = DatabaseConfig()
         
         api_config = APIConfig(
             host=config_data.get("api", {}).get("host", "0.0.0.0"),
@@ -177,8 +165,7 @@ class MyceliumConfig:
         
         client_config = ClientConfig(
             server_host=config_data.get("client", {}).get("server_host", "localhost"),
-            server_port=config_data.get("client", {}).get("server_port", 8000),
-            model_id=config_data.get("client", {}).get("model_id", "laion/clap-htsat-unfused")
+            server_port=config_data.get("client", {}).get("server_port", 8000)
         )
         
         # Handle logging configuration with default log file path
@@ -232,11 +219,6 @@ class MyceliumConfig:
         
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, indent=2)
-    
-    @classmethod
-    def from_env(cls) -> "MyceliumConfig":
-        """Create configuration from YAML file only (renamed from from_env for compatibility)."""
-        return cls.load_from_yaml()
 
     def setup_logging(self) -> None:
         """Setup logging configuration."""

@@ -34,7 +34,7 @@ class MyceliumClient:
         self,
         server_host: str = "localhost",
         server_port: int = 8000,
-        model_id: str = "laion/clap-htsat-unfused",
+        model_id: str = "laion/larger_clap_music_and_speech",
         poll_interval: int = 5,
         download_queue_size: int = 15,
         download_workers: int = 10
@@ -434,7 +434,7 @@ class MyceliumClient:
 def run_client(
     server_host: str = "localhost",
     server_port: int = 8000,
-    model_id: str = "laion/clap-htsat-unfused",
+    model_id: str = "laion/larger_clap_music_and_speech",
     download_queue_size: int = 15,
     download_workers: int = 10
 ):

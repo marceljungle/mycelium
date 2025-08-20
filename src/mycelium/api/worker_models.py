@@ -55,16 +55,6 @@ class ComputeOnServerRequest(BaseModel):
     track_id: str
 
 
-class QueueStatsResponse(BaseModel):
-    """Response model for queue statistics."""
-    active_workers: int
-    pending_tasks: int
-    in_progress_tasks: int
-    completed_tasks: int
-    failed_tasks: int
-    total_tasks: int
-
-
 class WorkerProcessingResponse(BaseModel):
     """Response when worker processing is initiated."""
     status: str
