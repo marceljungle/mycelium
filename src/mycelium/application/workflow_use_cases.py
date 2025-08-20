@@ -1,5 +1,5 @@
 """New use cases for separated scanning and processing workflow."""
-
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -10,6 +10,7 @@ from ..domain.models import TrackEmbedding
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
 from ..infrastructure.track_database import TrackDatabase
 
+logger = logging.getLogger(__name__)
 
 class SeparatedLibraryScanUseCase:
     """Use case for scanning and storing track metadata."""
@@ -20,7 +21,7 @@ class SeparatedLibraryScanUseCase:
 
     def execute(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan the Plex music library and store track metadata."""
-        print("Starting library scan...")
+        logger.info("Starting library scan...")
 
         # Start scan session
         session_id = self.track_database.start_scan_session()
@@ -28,7 +29,7 @@ class SeparatedLibraryScanUseCase:
         try:
             # Get all tracks from Plex
             tracks = self.plex_repository.get_all_tracks()
-            print(f"Found {len(tracks)} tracks in Plex library")
+            logger.info(f"Found {len(tracks)} tracks in Plex library")
 
             if progress_callback:
                 progress_callback({"stage": "scanning", "current": len(tracks), "total": len(tracks)})
@@ -53,7 +54,7 @@ class SeparatedLibraryScanUseCase:
                 "scan_timestamp": scan_timestamp.isoformat()
             }
 
-            print(f"Scan completed: {stats['total']} total, {stats['new']} new, {stats['updated']} updated")
+            logger.info(f"Scan completed: {stats['total']} total, {stats['new']} new, {stats['updated']} updated")
 
             if progress_callback:
                 progress_callback({"stage": "complete", "result": result})
@@ -61,7 +62,7 @@ class SeparatedLibraryScanUseCase:
             return result
 
         except Exception as e:
-            print(f"Scan failed: {e}")
+            logger.error(f"Scan failed: {e}")
             raise
 
 
@@ -85,13 +86,13 @@ class ResumableEmbeddingProcessingUseCase:
             max_tracks: Optional[int] = None
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
-        print("Starting embedding processing...")
+        logger.info("Starting embedding processing...")
 
         # Get unprocessed tracks
         unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
 
         if not unprocessed_tracks:
-            print("No unprocessed tracks found")
+            logger.info("No unprocessed tracks found")
             return {
                 "processed": 0,
                 "failed": 0,
@@ -99,7 +100,7 @@ class ResumableEmbeddingProcessingUseCase:
                 "message": "No tracks to process"
             }
 
-        print(f"Found {len(unprocessed_tracks)} unprocessed tracks")
+        logger.info(f"Found {len(unprocessed_tracks)} unprocessed tracks")
 
         # Start processing session
         session_id = self.track_database.start_processing_session(len(unprocessed_tracks))
@@ -111,7 +112,7 @@ class ResumableEmbeddingProcessingUseCase:
             # Process tracks with progress bar
             for i, stored_track in enumerate(tqdm(unprocessed_tracks, desc="Processing embeddings")):
                 if self._should_stop:
-                    print("Processing stopped by user request")
+                    logger.info("Processing stopped by user request")
                     break
 
                 try:
@@ -143,11 +144,11 @@ class ResumableEmbeddingProcessingUseCase:
                                 "current_track": track.display_name
                             })
                     else:
-                        print(f"Failed to generate embedding for: {track.display_name}")
+                        logger.warning(f"Failed to generate embedding for: {track.display_name}")
                         failed_count += 1
 
                 except Exception as e:
-                    print(f"Error processing track {stored_track.plex_rating_key}: {e}")
+                    logger.error(f"Error processing track {stored_track.plex_rating_key}: {e}")
                     failed_count += 1
 
                 # Update session progress periodically
@@ -170,7 +171,7 @@ class ResumableEmbeddingProcessingUseCase:
                 "stopped": self._should_stop
             }
 
-            print(f"Processing completed: {processed_count} processed, {failed_count} failed")
+            logger.info(f"Processing completed: {processed_count} processed, {failed_count} failed")
 
             if progress_callback:
                 progress_callback({"stage": "complete", "result": result})
@@ -178,13 +179,13 @@ class ResumableEmbeddingProcessingUseCase:
             return result
 
         except Exception as e:
-            print(f"Processing failed: {e}")
+            logger.info(f"Processing failed: {e}")
             raise
 
     def stop(self) -> None:
         """Request to stop processing."""
         self._should_stop = True
-        print("Stop requested - will finish current track and stop")
+        logger.info("Stop requested - will finish current track and stop")
 
     def reset_stop_flag(self) -> None:
         """Reset the stop flag for a new processing session."""
@@ -277,7 +278,7 @@ class WorkerBasedProcessingUseCase:
                 self.job_queue.create_task(stored_track.plex_rating_key, download_url)
                 tasks_created += 1
             except Exception as e:
-                print(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
+                logger.error(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
                 continue
 
         return {
