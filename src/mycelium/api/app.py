@@ -22,7 +22,7 @@ from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
 from ..config import MyceliumConfig, setup_logging
 from ..config_yaml import MyceliumConfig as ConfigYAML
-from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, ClientConfig, LoggingConfig
+from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult
 
 # Setup logger for this module

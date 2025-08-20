@@ -12,8 +12,8 @@ import uvicorn
 from typing_extensions import Annotated
 
 from mycelium.client import run_client
-from mycelium.config_yaml import MyceliumConfig
 from mycelium.client_config_yaml import MyceliumClientConfig
+from mycelium.config_yaml import MyceliumConfig
 
 app = typer.Typer(
     name="mycelium",
@@ -24,7 +24,7 @@ app = typer.Typer(
 logger = logging.getLogger(__name__)
 
 
-def run_api(config: MyceliumConfig) -> None:
+def run_server_api(config: MyceliumConfig) -> None:
     """Run the FastAPI server."""
     logger.info(f"Starting API server on {config.api.host}:{config.api.port}")
     uvicorn.run(
@@ -35,7 +35,8 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_host: str = None, client_api_port: int = None):
+def run_frontend(server_config: MyceliumConfig = None,
+                 client_config: MyceliumClientConfig = None):
     """Run the frontend server."""
     frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if not frontend_dir.exists():
@@ -44,42 +45,19 @@ def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_h
 
     # Set environment variable for client mode
     env = dict(os.environ)
-    if client_mode:
+    if client_config:
         env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'client'
-        # In client mode, point to the local client API instead of the server
-        if client_api_host and client_api_port:
-            env['NEXT_PUBLIC_API_URL'] = f"http://{client_api_host}:{client_api_port}"
-            env['NEXT_PUBLIC_API_PORT'] = str(client_api_port)
-
-    if config.api.reload:
-        build_dir = frontend_dir / ".next"
-        build_id = build_dir / "BUILD_ID"
-
-        should_build = not (build_dir.exists() and build_id.exists())
-
-        if should_build:
-            logger.info("Building frontend for production...")
-            try:
-                subprocess.run(["npm", "run", "build"], cwd=frontend_dir, check=True, env=env)
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Frontend build failed with exit code {e.returncode}")
-                return
-        else:
-            logger.info("Reusing existing production build.")
-
-        logger.info("Starting frontend in production...")
-        try:
-            subprocess.run(["npm", "run", "start"], cwd=frontend_dir, check=True, env=env)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Frontend start failed with exit code {e.returncode}")
-            return
+        env['NEXT_PUBLIC_API_PORT'] = str(client_config.client_api.port)
     else:
-        logger.info("Starting frontend development server...")
-        try:
-            subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True, env=env)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Frontend dev server failed with exit code {e.returncode}")
-            return
+        env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'server'
+        env['NEXT_PUBLIC_API_PORT'] = str(server_config.api.port)
+
+    logger.info("Starting frontend development server...")
+    try:
+        subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True, env=env)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Frontend dev server failed with exit code {e.returncode}")
+        return
 
 
 def run_server_mode(config: MyceliumConfig) -> None:
@@ -87,13 +65,13 @@ def run_server_mode(config: MyceliumConfig) -> None:
     logger.info("Starting Mycelium Server...")
 
     # Start API server in a separate thread
-    api_thread = threading.Thread(target=run_api, args=(config,))
+    api_thread = threading.Thread(target=run_server_api, args=(config,))
     api_thread.daemon = True
     api_thread.start()
 
     # Start frontend (this will run in the main thread)
     try:
-        run_frontend(config, client_mode=False)
+        run_frontend(server_config=config)
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
 
@@ -118,31 +96,14 @@ def run_client_mode(
 ) -> None:
     """Run client mode (GPU worker + Client API + Frontend)."""
     logger.info("Starting Mycelium Client...")
-    
+
     # Load client-specific config
     client_config = MyceliumClientConfig.load_from_yaml()
-    
+
     # Override client config with provided values
     client_config.client.server_host = server_host
     client_config.client.server_port = server_port
-    client_config.clap.model_id = model_id
-    
-    # Create a temporary server config for frontend setup (contains only needed values)
-    # This is used only for frontend configuration, not for actual server operations
-    from mycelium.config_yaml import PlexConfig, APIConfig, ChromaConfig, DatabaseConfig
-    temp_server_config = MyceliumConfig(
-        plex=PlexConfig(),  # Placeholder, not used
-        api=APIConfig(),  # Placeholder, not used  
-        chroma=ChromaConfig(),  # Placeholder, not used
-        database=DatabaseConfig(),  # Placeholder, not used
-        clap=client_config.clap,  # Use client config
-        logging=client_config.logging  # Use client config
-    )
 
-    # Extract client API configuration
-    client_api_host = client_config.client_api.host
-    client_api_port = client_config.client_api.port
-    
     # Start client API server in a separate thread
     client_api_thread = threading.Thread(
         target=run_client_api,
@@ -150,7 +111,7 @@ def run_client_mode(
     )
     client_api_thread.daemon = True
     client_api_thread.start()
-    
+
     # Start client worker in a separate thread
     client_thread = threading.Thread(
         target=run_client, 
@@ -158,10 +119,10 @@ def run_client_mode(
     )
     client_thread.daemon = True
     client_thread.start()
-    
+
     # Start frontend in client mode (this will run in the main thread)
     try:
-        run_frontend(temp_server_config, client_mode=True, client_api_host=client_api_host, client_api_port=client_api_port)
+        run_frontend(client_config=client_config)
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 
