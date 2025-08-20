@@ -27,20 +27,15 @@ Mycelium is a Python-based music recommendation system with AI-powered embedding
    - **TIMEOUT: Use 3+ minutes minimum**
    - **NEVER CANCEL:** Wait for completion even if it appears slow
 
-3. **Setup configuration (YAML recommended):**
+3. **Setup configuration (YAML only):**
    ```bash
-   # Preferred: YAML configuration
+   # Copy example configuration
    mkdir -p ~/.config/mycelium
    cp config.example.yml ~/.config/mycelium/config.yml
    # Edit ~/.config/mycelium/config.yml and add your Plex token
-   
-   # Alternative: Environment variables (legacy)
-   cp .env.example .env
-   # Edit .env and add your Plex token
    ```
-   - **YAML config**: `~/.config/mycelium/config.yml` (preferred method)
-   - **Environment variables**: Still supported for backward compatibility
-   - **Priority**: Environment variables > YAML config > defaults
+   - **YAML config**: `~/.config/mycelium/config.yml` (only configuration method)
+   - **Auto-generation**: Config file is created automatically with defaults if it doesn't exist
 
 ### Build and Test
 1. **Build frontend:**
@@ -55,10 +50,10 @@ Mycelium is a Python-based music recommendation system with AI-powered embedding
 
 2. **Run development servers:**
    ```bash
-   # Backend API (requires dependencies installed)
-   mycelium api --host localhost --port 8000
+   # Backend API + Frontend (requires dependencies installed)
+   mycelium server --host localhost --port 8000
    
-   # Frontend dev server (in separate terminal)
+   # Or run frontend separately in development mode
    cd frontend
    npm run dev
    ```
@@ -70,36 +65,18 @@ Mycelium is a Python-based music recommendation system with AI-powered embedding
 **All CLI commands require Python dependencies installed successfully:**
 
 ```bash
-# NEW SEPARATED WORKFLOW (Recommended):
-# 1. Scan Plex library (save metadata to database)
-mycelium scan
-
-# 2. Process embeddings (from database, resumable)
-mycelium process
-# **NEVER CANCEL:** Takes 30+ minutes for large libraries
-
-# LEGACY WORKFLOW (Still supported):
-# Process entire library (scan + generate embeddings + index)
-mycelium process  # Uses new separated workflow internally
+# Start server mode (API + Frontend combined)
+mycelium server
+# Optional: Override config settings
+mycelium server --host 0.0.0.0 --port 8080 --reload
 
 # Start GPU worker for distributed processing (on powerful machines)
-mycelium client --server-host your-server-ip
+mycelium client --server-host your-server-ip --server-port 8000
 # **RECOMMENDED:** Run on machines with GPUs for fast CLAP processing
 
-# Search by text
-mycelium search-text "upbeat 80s synthpop"
-
-# Search by audio file  
-mycelium search-audio /path/to/audio.mp3
-
-# Show database statistics
-mycelium stats
-
-# Start API server only
-mycelium api
-
-# Start server mode (API + Frontend)
-mycelium server
+# Note: All other operations (scan, process, search, stats) are now done via:
+# 1. Web interface at http://localhost:3000 (when server is running)
+# 2. API endpoints (when server is running)
 ```
 
 ### Distributed Worker Architecture
@@ -122,7 +99,7 @@ Mycelium now prioritizes distributed GPU workers over server processing:
    ```
 
 ### API Endpoints
-**New Separated Workflow Endpoints:**
+**Web interface and API endpoints (available when server is running):**
 
 ```bash
 # Library Operations
@@ -131,17 +108,21 @@ POST /api/library/process           # Process embeddings from database (resumabl
 POST /api/library/process/server    # Force processing on server (with confirmation)
 POST /api/library/process/stop      # Stop current processing operation
 GET /api/library/progress           # Get processing progress and statistics
-GET /api/library/can_resume         # Check if processing can be resumed
 GET /api/library/stats              # Get database and library statistics
 
-# Legacy Endpoints (still supported)
-POST /api/library/process/legacy    # Old workflow (scan + process combined)
+# Search Operations
+POST /api/search/text               # Search by text description
+POST /api/search/audio              # Search by audio file upload
+GET /api/search/text?q=query        # Search by text (GET method)
 
 # Worker Coordination  
 POST /workers/register              # Register a worker with the server
 GET /workers/get_job                # Get next job for a worker
 POST /workers/submit_result         # Submit completed job result
-GET /api/queue/stats                # Get job queue statistics
+
+# Configuration
+GET /api/config                     # Get current configuration
+POST /api/config                    # Update configuration
 ```
 
 ## Validation Scenarios
@@ -159,7 +140,7 @@ GET /api/queue/stats                # Get job queue statistics
      - Three feature cards at bottom (Semantic Search, AI-Powered, Plex Integration)
 
 2. **Backend API Test (when dependencies work):**
-   - Start API: `mycelium api`
+   - Start server: `mycelium server`
    - Test endpoints: 
      - `curl http://localhost:8000/api/library/stats` - Database statistics
      - `curl -X POST http://localhost:8000/api/library/scan` - Scan library
@@ -167,21 +148,20 @@ GET /api/queue/stats                # Get job queue statistics
    - Should return database statistics or connection error
 
 3. **Full Integration Test (requires Plex setup):**
-   - Configure YAML config with valid Plex token or set PLEX_TOKEN environment variable
-   - Run: `mycelium scan` to test Plex connectivity and database scanning
-   - Run: `mycelium stats` to verify database and track information
-   - Optional: Run `mycelium process` to test embedding processing (resumable)
+   - Configure YAML config with valid Plex token at `~/.config/mycelium/config.yml`
+   - Start server: `mycelium server`
+   - Use web interface at http://localhost:3000 to test scanning and processing
+   - Optional: Test API endpoints directly with curl
 
-4. **Separated Workflow Test (new feature):**
-   - Start server: `mycelium api`
-   - Test scanning: `curl -X POST http://localhost:8000/api/library/scan`
-   - Test progress: `curl http://localhost:8000/api/library/progress`
-   - Test processing: `curl -X POST http://localhost:8000/api/library/process`
-   - Test stopping: `curl -X POST http://localhost:8000/api/library/process/stop`
-   - Frontend: Use "Scan Library" and "Process Embeddings" buttons separately
+4. **Web Interface Test (primary method):**
+   - Start server: `mycelium server`
+   - Test scanning: Use "Scan Library" button in web interface
+   - Test progress: Monitor progress in web interface
+   - Test processing: Use "Process Embeddings" button in web interface
+   - Test search: Use search functionality in web interface
 
 5. **Worker Integration Test (for distributed processing):**
-   - Start server: `mycelium api`
+   - Start server: `mycelium server`
    - Start worker (separate machine): `mycelium client --server-host your-server-ip`
    - In frontend: Click "Process Embeddings" - should show worker processing
    - Without workers: Should show confirmation dialog for server processing
@@ -232,20 +212,19 @@ mycelium/
 │   ├── src/app/            # Next.js app router pages
 │   ├── src/components/     # React components
 │   └── package.json        # Frontend dependencies
-├── .env.example            # Environment configuration template (legacy)
-├── config.example.yml      # NEW: YAML configuration template (preferred)
+├── config.example.yml      # YAML configuration template
 ├── pyproject.toml          # Python project configuration
 └── requirements.txt        # Python dependencies
 ```
 
 ### Important Files to Check
 - **Always check `src/mycelium/config.py` and `src/mycelium/config_yaml.py`** after configuration changes
-- **Check `frontend/src/components/LibraryStats.tsx`** for API integration and separated workflow UI
-- **Check `src/mycelium/api/app.py`** for new API endpoints (`/scan`, `/process`, `/progress`)
-- **Check `src/mycelium/main.py`** for CLI command modifications
+- **Check `frontend/src/components/LibraryStats.tsx`** for API integration and workflow UI
+- **Check `src/mycelium/api/app.py`** for API endpoints (`/scan`, `/process`, `/progress`)
+- **Check `src/mycelium/main.py`** for CLI command modifications (server, client)
 - **Check `src/mycelium/application/job_queue.py`** for worker coordination
 - **Check `src/mycelium/client.py`** for GPU worker functionality
-- **Check `src/mycelium/application/workflow_use_cases.py`** for separated workflow logic
+- **Check `src/mycelium/application/workflow_use_cases.py`** for workflow logic
 - **Check `src/mycelium/infrastructure/track_database.py`** for track database operations
 
 ## Dependencies and Requirements
@@ -281,15 +260,15 @@ mycelium/
 - Check network access for Google Fonts
 
 ### Plex connection issues  
-- Verify PLEX_TOKEN in YAML config file or environment variable
+- Verify Plex token in YAML config file at `~/.config/mycelium/config.yml`
 - Check PLEX_URL points to correct server
-- Test with: `mycelium scan` (now saves to database for resumable processing)
+- Test with web interface (http://localhost:3000) after starting server with `mycelium server`
 
-### Configuration migration
-- **New users**: Use YAML config at `~/.config/mycelium/config.yml` (preferred)
-- **Existing users**: Environment variables still work for backward compatibility
-- **Migration**: Copy settings from `.env` to `~/.config/mycelium/config.yml`
-- **Priority**: Environment variables override YAML settings
+### Configuration setup
+- **Configuration**: YAML-only at `~/.config/mycelium/config.yml` (auto-generated on first run)
+- **Data storage**: Platform-specific directories (see config for paths)
+- **Setup**: Edit the auto-generated config file with your Plex token
+- **Note**: Environment variable support has been removed (despite README mentioning it)
 
 ### Performance Notes
 - **First-time model downloads:** CLAP models (~1GB) download on first use
@@ -297,7 +276,7 @@ mycelium/
 - **Distributed processing:** Workers keep models loaded for efficiency
 - **Database indexing:** ChromaDB operations scale with library size
 - **Worker optimization:** Models loaded once per worker session, not per track
-- **Separated workflow:** Scanning and processing can be done independently and resumed
+- **Workflow:** Scanning and processing done via web interface or API
 - **Database storage:** Track metadata stored in SQLite for faster resumable operations
 
 ## Quick Reference Commands
@@ -307,29 +286,24 @@ mycelium/
 pip install -e .                    # 15-45 min, NEVER CANCEL
 cd frontend && npm install          # 1.5 min
 
-# Configuration (choose one method)
-# PREFERRED: YAML configuration
+# Configuration setup
 mkdir -p ~/.config/mycelium && cp config.example.yml ~/.config/mycelium/config.yml
-# LEGACY: Environment variables  
-cp .env.example .env               # Edit with Plex details
+# Edit ~/.config/mycelium/config.yml and add your Plex token
 
 # Development workflow  
-cd frontend && npm run dev          # Start frontend
-mycelium api                       # Start backend (separate terminal)
+cd frontend && npm run dev          # Start frontend only
+mycelium server                     # Start backend + frontend (recommended)
 
-# NEW SEPARATED WORKFLOW (recommended):
-mycelium scan                      # Scan Plex library to database
-mycelium process                   # Process embeddings (resumable, 30+ min, NEVER CANCEL)
-mycelium search-text "jazz piano"  # Test search
-
-# Alternative: Legacy single command
-mycelium process                   # Still works, uses separated workflow internally
+# Operations (via web interface at http://localhost:3000):
+# 1. Scan Plex library to database
+# 2. Process embeddings (resumable, 30+ min, NEVER CANCEL)
+# 3. Search for music
 
 # Distributed processing (recommended)
 mycelium client --server-host 192.168.1.100  # Start GPU worker
 
 # Validation
-npm run lint                       # Frontend linting
-npm run build                      # Frontend build test
-mycelium stats                     # Backend health check
+cd frontend && npm run lint         # Frontend linting
+cd frontend && npm run build        # Frontend build test
+mycelium server                     # Start server and test web interface
 ```
