@@ -4,13 +4,20 @@ import { useState } from 'react';
 import SearchInterface from '@/components/SearchInterface';
 import LibraryPage from '@/components/LibraryPage';
 import SettingsPage from '@/components/SettingsPage';
+import ClientPage from '@/components/ClientPage';
 import LibraryStats from '@/components/LibraryStats';
 import Header from '@/components/Header';
 import { Section } from '@/components/Navigation';
 import { ProcessingProvider } from '@/contexts/ProcessingContext';
+import { IS_CLIENT_MODE } from '@/config/api';
 
 export default function Home() {
   const [activeSection, setActiveSection] = useState<Section>('search');
+
+  // If running in client mode, show the client-specific interface
+  if (IS_CLIENT_MODE) {
+    return <ClientPage />;
+  }
 
   const renderContent = () => {
     switch (activeSection) {

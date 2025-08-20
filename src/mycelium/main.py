@@ -1,6 +1,7 @@
 """Main entry point for the Mycelium application."""
 
 import logging
+import os
 import subprocess
 import threading
 from pathlib import Path
@@ -33,12 +34,20 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(config: MyceliumConfig):
+def run_frontend(config: MyceliumConfig, client_mode: bool = False):
     """Run the frontend server."""
     frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if not frontend_dir.exists():
         logger.warning("Frontend directory not found. Skipping frontend server.")
         return
+
+    # Set environment variable for client mode
+    env = dict(os.environ)
+    if client_mode:
+        env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'client'
+        env['NEXT_PUBLIC_API_PORT'] = str(config.client.server_port)
+        # In client mode, we need to point to the server's API
+        env['NEXT_PUBLIC_API_URL'] = f"http://{config.client.server_host}:{config.client.server_port}"
 
     if config.api.reload:
         build_dir = frontend_dir / ".next"
@@ -49,7 +58,7 @@ def run_frontend(config: MyceliumConfig):
         if should_build:
             logger.info("Building frontend for production...")
             try:
-                subprocess.run(["npm", "run", "build"], cwd=frontend_dir, check=True)
+                subprocess.run(["npm", "run", "build"], cwd=frontend_dir, check=True, env=env)
             except subprocess.CalledProcessError as e:
                 logger.error(f"Frontend build failed with exit code {e.returncode}")
                 return
@@ -58,14 +67,14 @@ def run_frontend(config: MyceliumConfig):
 
         logger.info("Starting frontend in production...")
         try:
-            subprocess.run(["npm", "run", "start"], cwd=frontend_dir, check=True)
+            subprocess.run(["npm", "run", "start"], cwd=frontend_dir, check=True, env=env)
         except subprocess.CalledProcessError as e:
             logger.error(f"Frontend start failed with exit code {e.returncode}")
             return
     else:
         logger.info("Starting frontend development server...")
         try:
-            subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True)
+            subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True, env=env)
         except subprocess.CalledProcessError as e:
             logger.error(f"Frontend dev server failed with exit code {e.returncode}")
             return
@@ -82,7 +91,7 @@ def run_server_mode(config: MyceliumConfig) -> None:
 
     # Start frontend (this will run in the main thread)
     try:
-        run_frontend(config)
+        run_frontend(config, client_mode=False)
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
 
@@ -92,9 +101,30 @@ def run_client_mode(
         server_port: int = 8000,
         model_id: str = "laion/larger_clap_music_and_speech"
 ) -> None:
-    """Run client mode (GPU worker)."""
+    """Run client mode (GPU worker + Frontend)."""
     logger.info("Starting Mycelium Client...")
-    run_client(server_host, server_port, model_id)
+    
+    # Load config for frontend setup
+    config = MyceliumConfig.load_from_yaml()
+    
+    # Override client config with provided values
+    config.client.server_host = server_host
+    config.client.server_port = server_port
+    config.clap.model_id = model_id
+    
+    # Start client worker in a separate thread
+    client_thread = threading.Thread(
+        target=run_client, 
+        args=(server_host, server_port, model_id)
+    )
+    client_thread.daemon = True
+    client_thread.start()
+    
+    # Start frontend in client mode (this will run in the main thread)
+    try:
+        run_frontend(config, client_mode=True)
+    except KeyboardInterrupt:
+        logger.info("Shutting down client...")
 
 
 @app.command()

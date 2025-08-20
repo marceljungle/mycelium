@@ -20,7 +20,14 @@ const getApiBaseUrl = (): string => {
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 };
 
+// Check if running in client mode
+const isClientMode = (): boolean => {
+  return process.env.NEXT_PUBLIC_MYCELIUM_MODE === 'client';
+};
+
 export const API_BASE_URL = getApiBaseUrl();
+
+export const IS_CLIENT_MODE = isClientMode();
 
 export const API_ENDPOINTS = {
   SEARCH_TEXT: `${API_BASE_URL}/api/search/text`,
