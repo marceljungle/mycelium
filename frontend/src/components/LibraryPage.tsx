@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
 
 interface Track {
@@ -44,28 +44,14 @@ export default function LibraryPage() {
   const [currentTask, setCurrentTask] = useState<ProcessingTask | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // Advanced search state
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [artistSearch, setArtistSearch] = useState('');
+  const [albumSearch, setAlbumSearch] = useState('');
+  const [titleSearch, setTitleSearch] = useState('');
 
-  useEffect(() => {
-    fetchTracks();
-    
-    // Cleanup polling on unmount
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
-  }, [pollInterval]);
-
-  useEffect(() => {
-    // Use API search instead of client-side filtering
-    if (searchQuery.trim()) {
-      fetchTracks(searchQuery);
-    } else {
-      fetchTracks();
-    }
-  }, [searchQuery]);
-
-  const fetchTracks = async (searchTerm?: string) => {
+  const fetchTracks = useCallback(async (searchTerm?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -88,17 +74,90 @@ export default function LibraryPage() {
         title: track.title,
         filepath: track.filepath,
         plex_rating_key: track.plex_rating_key,
-        processed: true // Assume processed if in the database
+        processed: false // We'll determine this based on embeddings
       }));
       
       setFilteredTracks(tracksData);
-    } catch {
-      setError('Unable to connect to API. Make sure the server is running.');
-      setFilteredTracks([]);
+    } catch (err) {
+      console.error('Error fetching tracks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const fetchTracksAdvanced = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let url = `${API_BASE_URL}/api/library/tracks?page=1&limit=100`;
+      
+      // Add advanced search parameters
+      const params = new URLSearchParams();
+      if (artistSearch.trim()) {
+        params.append('artist', artistSearch.trim());
+      }
+      if (albumSearch.trim()) {
+        params.append('album', albumSearch.trim());
+      }
+      if (titleSearch.trim()) {
+        params.append('title', titleSearch.trim());
+      }
+      
+      if (params.toString()) {
+        url += `&${params.toString()}`;
+      }
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch tracks');
+      }
+      const data = await response.json();
+      
+      // Convert API response to Track objects
+      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
+        id: track.plex_rating_key,
+        artist: track.artist,
+        album: track.album,
+        title: track.title,
+        filepath: track.filepath,
+        plex_rating_key: track.plex_rating_key,
+        processed: false // We'll determine this based on embeddings
+      }));
+      
+      setFilteredTracks(tracksData);
+    } catch (err) {
+      console.error('Error fetching tracks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
+    } finally {
+      setLoading(false);
+    }
+  }, [artistSearch, albumSearch, titleSearch]);
+
+  useEffect(() => {
+    fetchTracks();
+    
+    // Cleanup polling on unmount
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [pollInterval, fetchTracks]);
+
+  useEffect(() => {
+    // Trigger search when any search field changes
+    if (showAdvancedSearch) {
+      // Use advanced search when enabled
+      fetchTracksAdvanced();
+    } else if (searchQuery.trim()) {
+      // Use simple search
+      fetchTracks(searchQuery);
+    } else {
+      // No search, get all tracks
+      fetchTracks();
+    }
+  }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
 
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
     try {
@@ -291,28 +350,116 @@ export default function LibraryPage() {
           Search your Plex music library and get recommendations based on specific tracks.
         </p>
         
-        {/* Search Input */}
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search artists, albums, or tracks..."
-            className="w-full px-4 py-3 pl-10 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-          />
-          <svg
-            className="absolute left-3 top-3.5 h-5 w-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+        {/* Search Interface */}
+        <div className="space-y-4">
+          {/* Search Type Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => {
+                  setShowAdvancedSearch(false);
+                  // Clear advanced search fields when switching to simple search
+                  setArtistSearch('');
+                  setAlbumSearch('');
+                  setTitleSearch('');
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  !showAdvancedSearch
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Simple Search
+              </button>
+              <button
+                onClick={() => {
+                  setShowAdvancedSearch(true);
+                  // Clear simple search when switching to advanced search
+                  setSearchQuery('');
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  showAdvancedSearch
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Advanced Search
+              </button>
+            </div>
+          </div>
+
+          {/* Simple Search */}
+          {!showAdvancedSearch && (
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search artists, albums, or tracks..."
+                className="w-full px-4 py-3 pl-10 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+              <svg
+                className="absolute left-3 top-3.5 h-5 w-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
+          )}
+
+          {/* Advanced Search */}
+          {showAdvancedSearch && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Artist
+                  </label>
+                  <input
+                    type="text"
+                    value={artistSearch}
+                    onChange={(e) => setArtistSearch(e.target.value)}
+                    placeholder="Search by artist..."
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Album
+                  </label>
+                  <input
+                    type="text"
+                    value={albumSearch}
+                    onChange={(e) => setAlbumSearch(e.target.value)}
+                    placeholder="Search by album..."
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Title
+                  </label>
+                  <input
+                    type="text"
+                    value={titleSearch}
+                    onChange={(e) => setTitleSearch(e.target.value)}
+                    placeholder="Search by title..."
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                💡 Advanced search uses AND logic - tracks must match all specified criteria
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -371,3 +371,97 @@ class TrackDatabase:
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute(query, params).fetchone()
             return result[0]
+    
+    def search_tracks_advanced(
+        self, 
+        artist: Optional[str] = None,
+        album: Optional[str] = None, 
+        title: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[StoredTrack]:
+        """Search tracks by specific artist, album, and/or title criteria using AND logic."""
+        conditions = []
+        params = []
+        
+        if artist and artist.strip():
+            conditions.append("artist LIKE ?")
+            params.append(f"%{artist.strip()}%")
+            
+        if album and album.strip():
+            conditions.append("album LIKE ?")
+            params.append(f"%{album.strip()}%")
+            
+        if title and title.strip():
+            conditions.append("title LIKE ?")
+            params.append(f"%{title.strip()}%")
+        
+        if not conditions:
+            # If no search criteria provided, return all tracks
+            return self.get_all_tracks(limit=limit, offset=offset)
+        
+        query = f"""
+            SELECT plex_rating_key, artist, album, title, filepath, added_at, last_scanned,
+                   embedding_processed, embedding_processed_at
+            FROM tracks 
+            WHERE {' AND '.join(conditions)}
+            ORDER BY artist, album, title
+        """
+        
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            
+            return [
+                StoredTrack(
+                    plex_rating_key=row["plex_rating_key"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                    embedding_processed=bool(row["embedding_processed"]),
+                    embedding_processed_at=datetime.fromisoformat(row["embedding_processed_at"]) if row["embedding_processed_at"] else None
+                )
+                for row in rows
+            ]
+    
+    def count_search_tracks_advanced(
+        self,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None
+    ) -> int:
+        """Count tracks matching advanced search criteria."""
+        conditions = []
+        params = []
+        
+        if artist and artist.strip():
+            conditions.append("artist LIKE ?")
+            params.append(f"%{artist.strip()}%")
+            
+        if album and album.strip():
+            conditions.append("album LIKE ?")
+            params.append(f"%{album.strip()}%")
+            
+        if title and title.strip():
+            conditions.append("title LIKE ?")
+            params.append(f"%{title.strip()}%")
+        
+        if not conditions:
+            # If no search criteria provided, return total count
+            return self.get_track_count()
+        
+        query = f"""
+            SELECT COUNT(*) as count
+            FROM tracks 
+            WHERE {' AND '.join(conditions)}
+        """
+        
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(query, params).fetchone()
+            return result[0]

@@ -180,6 +180,29 @@ class MyceliumService:
         """Count tracks matching search query in the database."""
         return self.track_database.count_search_tracks(search_query)
     
+    def search_tracks_advanced(
+        self,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0
+    ) -> List[Track]:
+        """Search tracks in the database using advanced criteria with AND logic."""
+        stored_tracks = self.track_database.search_tracks_advanced(
+            artist=artist, album=album, title=title, limit=limit, offset=offset
+        )
+        return [stored_track.to_track() for stored_track in stored_tracks]
+    
+    def count_tracks_advanced(
+        self,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None
+    ) -> int:
+        """Count tracks matching advanced search criteria in the database."""
+        return self.track_database.count_search_tracks_advanced(artist=artist, album=album, title=title)
+    
     def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""
         return self.embedding_repository.has_embedding(track_id)

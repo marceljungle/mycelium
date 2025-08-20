@@ -281,19 +281,38 @@ async def search_by_audio(
 async def get_library_tracks(
         page: int = Query(1, ge=1, description="Page number (starting from 1)"),
         limit: int = Query(50, ge=1, le=200, description="Number of tracks per page"),
-        search: Optional[str] = Query(None, description="Search query for filtering tracks")
+        search: Optional[str] = Query(None, description="Search query for filtering tracks (simple search)"),
+        artist: Optional[str] = Query(None, description="Filter by artist name"),
+        album: Optional[str] = Query(None, description="Filter by album name"),
+        title: Optional[str] = Query(None, description="Filter by track title")
 ):
-    """Get tracks from the library with pagination and optional search."""
-    logger.info(f"Library tracks request - page: {page}, limit: {limit}, search: {search}")
+    """Get tracks from the library with pagination and optional search.
+    
+    Supports both simple search (search parameter) and advanced search (artist, album, title parameters).
+    Advanced search uses AND logic between fields, while simple search uses OR logic across all fields.
+    """
+    logger.info(f"Library tracks request - page: {page}, limit: {limit}, search: {search}, artist: {artist}, album: {album}, title: {title}")
 
     try:
-        if search and search.strip():
-            # Use search functionality
-            logger.info(f"Performing library search for: '{search.strip()}'")
+        # Determine search type and execute appropriate query
+        if artist or album or title:
+            # Use advanced search with AND logic
+            logger.info(f"Performing advanced library search - artist: {artist}, album: {album}, title: {title}")
+            tracks = service.search_tracks_advanced(
+                artist=artist, 
+                album=album, 
+                title=title, 
+                limit=limit, 
+                offset=(page - 1) * limit
+            )
+            total_count = service.count_tracks_advanced(artist=artist, album=album, title=title)
+        elif search and search.strip():
+            # Use simple search with OR logic (backward compatibility)
+            logger.info(f"Performing simple library search for: '{search.strip()}'")
             tracks = service.search_tracks_in_database(search.strip(), limit=limit, offset=(page - 1) * limit)
             total_count = service.count_tracks_in_database(search.strip())
         else:
-            # Regular pagination
+            # Regular pagination with no search
             offset = (page - 1) * limit
             tracks = service.get_all_tracks(limit=limit, offset=offset)
 
