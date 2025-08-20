@@ -13,6 +13,7 @@ from typing_extensions import Annotated
 
 from mycelium.client import run_client
 from mycelium.config_yaml import MyceliumConfig
+from mycelium.client_config_yaml import MyceliumClientConfig
 
 app = typer.Typer(
     name="mycelium",
@@ -101,7 +102,7 @@ def run_server_mode(config: MyceliumConfig) -> None:
         logger.info("Shutting down server...")
 
 
-def run_client_api(config: MyceliumConfig, client_api_port: int = 3001) -> None:
+def run_client_api(client_config: MyceliumClientConfig, client_api_port: int = 3001) -> None:
     """Run the minimal client API server for configuration."""
     logger.info(f"Starting client API server on port {client_api_port}")
     uvicorn.run(
@@ -120,13 +121,26 @@ def run_client_mode(
     """Run client mode (GPU worker + Client API + Frontend)."""
     logger.info("Starting Mycelium Client...")
     
-    # Load config for frontend setup
-    config = MyceliumConfig.load_from_yaml()
+    # Load client-specific config
+    client_config = MyceliumClientConfig.load_from_yaml()
     
     # Override client config with provided values
-    config.client.server_host = server_host
-    config.client.server_port = server_port
-    config.clap.model_id = model_id
+    client_config.client.server_host = server_host
+    client_config.client.server_port = server_port
+    client_config.clap.model_id = model_id
+    
+    # Create a temporary server config for frontend setup (contains only needed values)
+    # This is used only for frontend configuration, not for actual server operations
+    from mycelium.config_yaml import PlexConfig, APIConfig, ChromaConfig, DatabaseConfig
+    temp_server_config = MyceliumConfig(
+        plex=PlexConfig(),  # Placeholder, not used
+        api=APIConfig(),  # Placeholder, not used  
+        chroma=ChromaConfig(),  # Placeholder, not used
+        database=DatabaseConfig(),  # Placeholder, not used
+        client=client_config.client,  # Use client config
+        clap=client_config.clap,  # Use client config
+        logging=client_config.logging  # Use client config
+    )
     
     # Choose a port for the client API (different from main API)
     client_api_port = 3001
@@ -134,7 +148,7 @@ def run_client_mode(
     # Start client API server in a separate thread
     client_api_thread = threading.Thread(
         target=run_client_api,
-        args=(config, client_api_port)
+        args=(client_config, client_api_port)
     )
     client_api_thread.daemon = True
     client_api_thread.start()
@@ -149,7 +163,7 @@ def run_client_mode(
     
     # Start frontend in client mode (this will run in the main thread)
     try:
-        run_frontend(config, client_mode=True, client_api_port=client_api_port)
+        run_frontend(temp_server_config, client_mode=True, client_api_port=client_api_port)
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 
@@ -188,17 +202,17 @@ def client(
 ) -> None:
     """Start client mode (GPU worker)."""
     try:
-        config = MyceliumConfig.load_from_yaml()
-        config.setup_logging()
+        client_config = MyceliumClientConfig.load_from_yaml()
+        client_config.setup_logging()
 
         # Use config defaults if not provided
-        final_host = server_host if server_host is not None else config.client.server_host
-        final_port = server_port if server_port is not None else config.client.server_port
+        final_host = server_host if server_host is not None else client_config.client.server_host
+        final_port = server_port if server_port is not None else client_config.client.server_port
 
         run_client_mode(
             server_host=final_host,
             server_port=final_port,
-            model_id=config.clap.model_id
+            model_id=client_config.clap.model_id
         )
     except Exception as e:
         typer.echo(f"Client error: {e}", err=True)

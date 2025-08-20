@@ -7,21 +7,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from ..config_yaml import MyceliumConfig
+from ..client_config_yaml import MyceliumClientConfig
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
 
 
 class ConfigRequest(BaseModel):
-    """Request model for updating configuration."""
-    plex: Dict[str, Any]
-    api: Dict[str, Any]
+    """Request model for updating client configuration."""
     client: Dict[str, Any]
-    chroma: Dict[str, Any]
     clap: Dict[str, Any]
     logging: Dict[str, Any]
-    database: Optional[Dict[str, Any]] = None
 
 
 # Create minimal FastAPI app for client configuration only
@@ -56,31 +52,17 @@ async def root():
 
 @app.get("/api/config")
 async def get_config():
-    """Get current configuration."""
+    """Get current client configuration."""
     try:
         logger.info("Client configuration get request received")
         # Load current configuration from YAML
-        config = MyceliumConfig.load_from_yaml()
+        config = MyceliumClientConfig.load_from_yaml()
         
         # Return current configuration as dict
         config_dict = {
-            "plex": {
-                "url": config.plex.url,
-                "token": config.plex.token,
-                "music_library_name": config.plex.music_library_name
-            },
-            "api": {
-                "host": config.api.host,
-                "port": config.api.port,
-                "reload": config.api.reload
-            },
             "client": {
                 "server_host": config.client.server_host,
                 "server_port": config.client.server_port
-            },
-            "chroma": {
-                "collection_name": config.chroma.collection_name,
-                "batch_size": config.chroma.batch_size
             },
             "clap": {
                 "model_id": config.clap.model_id,
@@ -100,27 +82,19 @@ async def get_config():
 
 @app.post("/api/config")
 async def save_config(config_request: ConfigRequest):
-    """Save configuration to YAML file."""
+    """Save client configuration to YAML file."""
     try:
         logger.info("Client configuration save request received")
         
         # Create new config object with updated values
-        from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, ClientConfig, LoggingConfig
+        from ..client_config_yaml import CLAPConfig, ClientConfig, LoggingConfig
         
-        plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
-        chroma_config = ChromaConfig(**config_request.chroma)
-        database_config = DatabaseConfig()
-        api_config = APIConfig(**config_request.api)
         client_config = ClientConfig(**config_request.client)
         logging_config = LoggingConfig(**config_request.logging)
         
-        yaml_config = MyceliumConfig(
-            plex=plex_config,
+        yaml_config = MyceliumClientConfig(
             clap=clap_config,
-            chroma=chroma_config,
-            database=database_config,
-            api=api_config,
             client=client_config,
             logging=logging_config
         )

@@ -12,7 +12,6 @@ interface ClientConfigData {
     model_id: string;
     target_sr: number;
     chunk_duration_s: number;
-    batch_size: number;
   };
   logging: {
     level: string;
@@ -240,19 +239,6 @@ export default function ClientSettingsPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Batch Size
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.batch_size}
-                    onChange={(e) => updateConfig('clap', 'batch_size', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Logging Configuration */}
@@ -282,7 +268,7 @@ export default function ClientSettingsPage() {
             {/* Action Buttons */}
             <div className="flex justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-600">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Configuration is stored in ~/.config/mycelium/config.yml
+                Configuration is stored in ~/.config/mycelium/client_config.yml
               </div>
               <div className="space-x-3">
                 <button
