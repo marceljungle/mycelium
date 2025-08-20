@@ -42,14 +42,18 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         """Loads the model and processor on the first call that needs them."""
         if self._model is None or self._processor is None:
             self.logger.info(f"Loading model '{self.model_id}' to device '{self.device}'...")
-            self._model = ClapModel.from_pretrained(self.model_id).to(self.device)
-            self._processor = ClapProcessor.from_pretrained(self.model_id)
 
-            ## Apply.half() to the model only if using half precision.
-            if self.use_half:
-                self._model.half()
+            self.model = ClapModel.from_pretrained(self.model_id).to(self.device)
+            self.processor = ClapProcessor.from_pretrained(self.model_id)
 
-            self._model.eval()
+            if self.use_half and self.device == "cuda":
+                self.logger.info("Applying half precision (FP16) to model for CUDA device.")
+                self.model.half()
+            elif self.use_half and self.device == "mps":
+                self.logger.warning(
+                    "Half precision is supported but disabled on MPS device to prevent potential crashes. Using FP32.")
+
+            self.model.eval()
             self.logger.info("Model loaded successfully.")
 
     def _get_best_device(self) -> str:
