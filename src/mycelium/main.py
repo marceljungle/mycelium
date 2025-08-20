@@ -34,7 +34,7 @@ def run_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(config: MyceliumConfig, client_mode: bool = False):
+def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_port: int = None):
     """Run the frontend server."""
     frontend_dir = Path(__file__).parent.parent.parent / "frontend"
     if not frontend_dir.exists():
@@ -45,9 +45,14 @@ def run_frontend(config: MyceliumConfig, client_mode: bool = False):
     env = dict(os.environ)
     if client_mode:
         env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'client'
-        env['NEXT_PUBLIC_API_PORT'] = str(config.client.server_port)
-        # In client mode, we need to point to the server's API
-        env['NEXT_PUBLIC_API_URL'] = f"http://{config.client.server_host}:{config.client.server_port}"
+        # In client mode, point to the local client API instead of the server
+        if client_api_port:
+            env['NEXT_PUBLIC_API_URL'] = f"http://localhost:{client_api_port}"
+            env['NEXT_PUBLIC_API_PORT'] = str(client_api_port)
+        else:
+            # Fallback to server API if no client API port specified
+            env['NEXT_PUBLIC_API_PORT'] = str(config.client.server_port)
+            env['NEXT_PUBLIC_API_URL'] = f"http://{config.client.server_host}:{config.client.server_port}"
 
     if config.api.reload:
         build_dir = frontend_dir / ".next"
@@ -96,12 +101,23 @@ def run_server_mode(config: MyceliumConfig) -> None:
         logger.info("Shutting down server...")
 
 
+def run_client_api(config: MyceliumConfig, client_api_port: int = 3001) -> None:
+    """Run the minimal client API server for configuration."""
+    logger.info(f"Starting client API server on port {client_api_port}")
+    uvicorn.run(
+        "mycelium.api.client_app:app",
+        host="localhost",
+        port=client_api_port,
+        reload=False
+    )
+
+
 def run_client_mode(
         server_host: str = "localhost",
         server_port: int = 8000,
         model_id: str = "laion/larger_clap_music_and_speech"
 ) -> None:
-    """Run client mode (GPU worker + Frontend)."""
+    """Run client mode (GPU worker + Client API + Frontend)."""
     logger.info("Starting Mycelium Client...")
     
     # Load config for frontend setup
@@ -111,6 +127,17 @@ def run_client_mode(
     config.client.server_host = server_host
     config.client.server_port = server_port
     config.clap.model_id = model_id
+    
+    # Choose a port for the client API (different from main API)
+    client_api_port = 3001
+    
+    # Start client API server in a separate thread
+    client_api_thread = threading.Thread(
+        target=run_client_api,
+        args=(config, client_api_port)
+    )
+    client_api_thread.daemon = True
+    client_api_thread.start()
     
     # Start client worker in a separate thread
     client_thread = threading.Thread(
@@ -122,7 +149,7 @@ def run_client_mode(
     
     # Start frontend in client mode (this will run in the main thread)
     try:
-        run_frontend(config, client_mode=True)
+        run_frontend(config, client_mode=True, client_api_port=client_api_port)
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 
