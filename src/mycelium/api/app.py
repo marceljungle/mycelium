@@ -349,8 +349,7 @@ async def get_config():
             "clap": {
                 "model_id": config.clap.model_id,
                 "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s,
-                "batch_size": config.clap.batch_size
+                "chunk_duration_s": config.clap.chunk_duration_s
             },
             "logging": {
                 "level": config.logging.level

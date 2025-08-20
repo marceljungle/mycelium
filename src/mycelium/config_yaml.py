@@ -68,7 +68,6 @@ class CLAPConfig:
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
     chunk_duration_s: int = 10
-    batch_size: int = 16
 
 
 @dataclass
@@ -148,8 +147,7 @@ class MyceliumConfig:
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
-            batch_size=config_data.get("clap", {}).get("batch_size", 16)
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10)
         )
         
         chroma_config = ChromaConfig(

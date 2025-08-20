@@ -72,13 +72,11 @@ class ResumableEmbeddingProcessingUseCase:
             self,
             embedding_generator: EmbeddingGenerator,
             embedding_repository: EmbeddingRepository,
-            track_database: TrackDatabase,
-            batch_size: int = 16
+            track_database: TrackDatabase
     ):
         self.embedding_generator = embedding_generator
         self.embedding_repository = embedding_repository
         self.track_database = track_database
-        self.batch_size = batch_size
         self._should_stop = False
 
     def execute(
