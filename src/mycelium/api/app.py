@@ -340,10 +340,6 @@ async def get_config():
                 "port": config.api.port,
                 "reload": config.api.reload
             },
-            "client": {
-                "server_host": config.client.server_host,
-                "server_port": config.client.server_port
-            },
             "chroma": {
                 "collection_name": config.chroma.collection_name,
                 "batch_size": config.chroma.batch_size
