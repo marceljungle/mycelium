@@ -1,0 +1,24 @@
+# Mycelium Client Configuration Example
+# Copy this file to ~/.config/mycelium/client_config.yml and edit as needed
+
+# CLAP model configuration for embedding generation
+clap:
+  model_id: laion/larger_clap_music_and_speech
+  target_sr: 48000
+  chunk_duration_s: 10
+
+# Client configuration for connecting to Mycelium server
+client:
+  server_host: localhost
+  server_port: 8000
+
+# Client API server configuration for local configuration management
+client_api:
+  host: localhost
+  port: 3001
+
+# Logging configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: null  # Auto-determined based on platform

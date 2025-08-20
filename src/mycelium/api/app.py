@@ -1,6 +1,8 @@
 """FastAPI application for Mycelium web interface."""
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -9,8 +11,6 @@ from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import tempfile
-import os
 
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
@@ -21,6 +21,8 @@ from .worker_models import (
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
 from ..config import MyceliumConfig, setup_logging
+from ..config_yaml import MyceliumConfig as ConfigYAML
+from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult
 
 # Setup logger for this module
@@ -138,7 +140,7 @@ async def root():
             "config_get": "/api/config",
             "config_save": "/api/config",
             "scan_library": "/api/library/scan",
-            "process_library": "/api/library/process", 
+            "process_library": "/api/library/process",
             "process_on_server": "/api/library/process/server",
             "stop_processing": "/api/library/process/stop",
             "processing_progress": "/api/library/progress",
@@ -166,10 +168,10 @@ async def search_by_text(search_request: SearchRequest):
     """Search for music tracks by text description."""
     try:
         results = service.search_similar_by_text(
-            search_request.query, 
+            search_request.query,
             search_request.n_results
         )
-        
+
         return [
             SearchResultResponse(
                 track=TrackResponse(
@@ -190,13 +192,13 @@ async def search_by_text(search_request: SearchRequest):
 
 @app.get("/api/search/text", response_model=List[SearchResultResponse])
 async def search_by_text_get(
-    q: str = Query(..., description="Search query"),
-    n_results: int = Query(10, description="Number of results to return")
+        q: str = Query(..., description="Search query"),
+        n_results: int = Query(10, description="Number of results to return")
 ):
     """Search for music tracks by text description (GET endpoint)."""
     try:
         results = service.search_similar_by_text(q, n_results)
-        
+
         return [
             SearchResultResponse(
                 track=TrackResponse(
@@ -217,34 +219,34 @@ async def search_by_text_get(
 
 @app.post("/api/search/audio", response_model=List[SearchResultResponse])
 async def search_by_audio(
-    audio: UploadFile = File(..., description="Audio file to search with"),
-    n_results: int = Form(10, description="Number of results to return")
+        audio: UploadFile = File(..., description="Audio file to search with"),
+        n_results: int = Form(10, description="Number of results to return")
 ):
     """Search for music tracks by audio file."""
     logger.info(f"Audio search request received - filename: {audio.filename}, content_type: {audio.content_type}")
-    
+
     try:
         # Validate file type
         if not audio.content_type or not any(
-            audio.content_type.startswith(mime) 
-            for mime in ["audio/", "application/octet-stream"]
+                audio.content_type.startswith(mime)
+                for mime in ["audio/", "application/octet-stream"]
         ):
             logger.warning(f"Invalid file type: {audio.content_type}")
             raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
-        
+
         # Create temporary file to store upload
         with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
             content = await audio.read()
             temp_file.write(content)
             temp_file_path = temp_file.name
-        
+
         logger.info(f"Audio file saved to temporary location: {temp_file_path}")
-        
+
         try:
             # Search using temporary file
             results = service.search_similar_by_audio(Path(temp_file_path), n_results)
             logger.info(f"Audio search completed successfully - found {len(results)} results")
-            
+
             return [
                 SearchResultResponse(
                     track=TrackResponse(
@@ -266,7 +268,7 @@ async def search_by_audio(
                 logger.debug(f"Cleaned up temporary file: {temp_file_path}")
             except OSError as e:
                 logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
-                
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are
         raise
@@ -277,13 +279,13 @@ async def search_by_audio(
 
 @app.get("/api/library/tracks", response_model=TracksListResponse)
 async def get_library_tracks(
-    page: int = Query(1, ge=1, description="Page number (starting from 1)"),
-    limit: int = Query(50, ge=1, le=200, description="Number of tracks per page"),
-    search: Optional[str] = Query(None, description="Search query for filtering tracks")
+        page: int = Query(1, ge=1, description="Page number (starting from 1)"),
+        limit: int = Query(50, ge=1, le=200, description="Number of tracks per page"),
+        search: Optional[str] = Query(None, description="Search query for filtering tracks")
 ):
     """Get tracks from the library with pagination and optional search."""
     logger.info(f"Library tracks request - page: {page}, limit: {limit}, search: {search}")
-    
+
     try:
         if search and search.strip():
             # Use search functionality
@@ -294,13 +296,13 @@ async def get_library_tracks(
             # Regular pagination
             offset = (page - 1) * limit
             tracks = service.get_all_tracks(limit=limit, offset=offset)
-            
+
             # Get total count for pagination info
             stats = service.get_database_stats()
             total_count = stats.get("track_database_stats", {}).get("total_tracks", 0)
-        
+
         logger.info(f"Retrieved {len(tracks)} tracks from database")
-        
+
         return TracksListResponse(
             tracks=[
                 TrackResponse(
@@ -338,10 +340,6 @@ async def get_config():
                 "port": config.api.port,
                 "reload": config.api.reload
             },
-            "client": {
-                "server_host": config.client.server_host,
-                "server_port": config.client.server_port
-            },
             "chroma": {
                 "collection_name": config.chroma.collection_name,
                 "batch_size": config.chroma.batch_size
@@ -367,12 +365,7 @@ async def save_config(config_request: ConfigRequest):
     """Save configuration to YAML file."""
     try:
         logger.info("Configuration save request received")
-        # Import the YAML config manager
-        from ..config_yaml import MyceliumConfig as ConfigYAML
-        
-        # Create new config object with updated values - map the fields correctly
-        from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, ClientConfig, LoggingConfig
-        
+
         plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
         chroma_config = ChromaConfig(**config_request.chroma)
@@ -380,7 +373,7 @@ async def save_config(config_request: ConfigRequest):
         api_config = APIConfig(**config_request.api)
         client_config = ClientConfig(**config_request.client)
         logging_config = LoggingConfig(**config_request.logging)
-        
+
         yaml_config = ConfigYAML(
             plex=plex_config,
             clap=clap_config,
@@ -390,11 +383,11 @@ async def save_config(config_request: ConfigRequest):
             client=client_config,
             logging=logging_config
         )
-        
+
         # Save to default YAML location
         yaml_config.save_to_yaml()
         logger.info("Configuration saved successfully to YAML file")
-        
+
         return {
             "message": "Configuration saved successfully. Restart the server to apply changes.",
             "status": "success"
@@ -430,12 +423,12 @@ async def process_library():
                 "status": "already_running",
                 "message": "Processing is already in progress"
             }
-        
+
         # Check for active workers first
         if service.can_use_workers():
             # Use worker-based processing
             result = service.create_worker_tasks()
-            
+
             if result["success"]:
                 return WorkerProcessingResponse(
                     status="worker_processing_started",
@@ -458,7 +451,7 @@ async def process_library():
                 active_workers=0,
                 confirmation_required=True
             )
-            
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -473,10 +466,10 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
                 "message": "Processing is already in progress",
                 "status": "already_running"
             }
-        
+
         # Start processing in background on server
         background_tasks.add_task(service.process_embeddings_from_database)
-        
+
         return {
             "message": "Server-side embedding processing started in background",
             "status": "server_started"
@@ -490,7 +483,7 @@ async def stop_processing():
     """Stop the current embedding processing."""
     try:
         service.stop_processing()
-        
+
         # Also check for worker processing
         if service.has_active_worker_processing():
             worker_result = service.stop_worker_processing()
@@ -517,6 +510,7 @@ async def get_processing_progress():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # Worker Coordination API
 @app.post("/workers/register", response_model=WorkerRegistrationResponse)
 async def register_worker(request: WorkerRegistrationRequest):
@@ -541,7 +535,7 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
             # No job available - return 204 No Content
             logger.debug(f"No job available for worker {worker_id}")
             return None
-        
+
         logger.info(f"Assigning task {task.task_id} to worker {worker_id} for track {task.track_id}")
         return JobRequest(
             task_id=task.task_id,
@@ -558,8 +552,9 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
     try:
-        logger.info(f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
-        
+        logger.info(
+            f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
+
         task_result = TaskResult(
             task_id=request.task_id,
             track_id=request.track_id,
@@ -567,18 +562,19 @@ async def submit_result(request: TaskResultRequest):
             embedding=request.embedding,
             error_message=request.error_message
         )
-        
+
         success = job_queue.submit_result(task_result)
         logger.info(f"Task result submission: success={success}")
-        
+
         if success and request.embedding:
             # Save embedding to ChromaDB
-            logger.info(f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
+            logger.info(
+                f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
             service.save_embedding(request.track_id, request.embedding)
             logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
         elif request.error_message:
             logger.error(f"Worker task failed for track {request.track_id}: {request.error_message}")
-        
+
         return TaskResultResponse(
             success=success,
             message="Result submitted successfully" if success else "Task not found"
@@ -597,12 +593,12 @@ async def download_track(track_id: str):
         track_info = service.get_track_by_id(track_id)
         if not track_info:
             raise HTTPException(status_code=404, detail="Track not found")
-        
+
         # Verify file exists
         file_path = Path(track_info.filepath)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Audio file not found")
-        
+
         # Return file response
         return FileResponse(
             path=str(file_path),
@@ -618,12 +614,12 @@ async def download_track(track_id: str):
 async def get_similar_tracks(track_id: str, n_results: int = Query(10, description="Number of results")):
     """Find tracks similar to a given track."""
     logger.info(f"Similar tracks request for track_id: {track_id}")
-    
+
     try:
         # Check if embedding already exists
         has_emb = service.has_embedding(track_id)
         logger.info(f"Embedding check for track {track_id}: {has_emb}")
-        
+
         if has_emb:
             logger.info(f"Embedding exists for track {track_id}, performing similarity search")
             # Perform similarity search
@@ -642,9 +638,9 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
                 )
                 for result in results
             ]
-        
+
         logger.info(f"No embedding found for track {track_id}, checking for workers")
-        
+
         # Check if there are active workers
         active_workers = job_queue.get_active_workers()
         if active_workers:
@@ -652,7 +648,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             # Create task for worker processing
             download_url = f"http://{config.api.host}:{config.api.port}/download_track/{track_id}"
             task = job_queue.create_task(track_id, download_url)
-            
+
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking
             response = WorkerProcessingResponse(
@@ -663,7 +659,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             )
             logger.info(f"Returning worker processing response: {response.model_dump()}")
             return response
-        
+
         logger.info(f"No active workers available for track {track_id}")
         # No active workers - return confirmation required
         return ConfirmationRequiredResponse(
@@ -671,7 +667,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             message="The sonic signature for this song needs to be calculated, and no workers are active. Do you wish to continue on the server hardware?",
             track_id=track_id
         )
-    
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are
         raise
@@ -685,29 +681,29 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
     """Compute embedding on server CPU after user confirmation."""
     try:
         logger.info(f"Starting server-side computation for track {request.track_id}")
-        
+
         # For better UX, process synchronously for single tracks (should be fast enough)
         # Load track info
         track_info = service.get_track_by_id(request.track_id)
         if not track_info:
             logger.warning(f"Track not found for ID: {request.track_id}")
             raise HTTPException(status_code=404, detail="Track not found")
-        
+
         logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
-        
+
         # Compute embedding on CPU
         embedding = service.compute_embedding_cpu(os.fspath(track_info.filepath))
-        
+
         if embedding is None or len(embedding) == 0:
             logger.error(f"Failed to compute embedding for track {request.track_id}")
             raise HTTPException(status_code=500, detail="Failed to compute embedding")
-        
+
         logger.info(f"Successfully computed embedding for track {request.track_id}, size: {len(embedding)}")
-        
+
         # Save to database
         service.save_embedding(request.track_id, embedding)
         logger.info(f"Successfully computed and saved embedding for track: {request.track_id}")
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions as they are
         raise
@@ -735,6 +731,7 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
 
 if __name__ == "__main__":
     uvicorn.run(

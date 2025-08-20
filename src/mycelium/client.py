@@ -150,28 +150,39 @@ class MyceliumClient:
             logging.info("Model unloaded")
 
     def register_with_server(self) -> bool:
-        """Register this worker with the server."""
-        try:
-            response = requests.post(
-                f"{self.server_url}/workers/register",
-                json={
-                    "worker_id": self.worker_id,
-                    "ip_address": self.ip_address
-                },
-                timeout=10
-            )
+        """Register this worker with the server.
+        Keeps retrying until successful, with a small delay between attempts.
+        Returns False only if interrupted (Ctrl+C).
+        """
+        delay_seconds = 3
+        attempt = 1
+        print("Attempting to register with server...")
+        while True:
+            try:
+                response = requests.post(
+                    f"{self.server_url}/workers/register",
+                    json={
+                        "worker_id": self.worker_id,
+                        "ip_address": self.ip_address
+                    },
+                    timeout=10
+                )
 
-            if response.status_code == 200:
-                logging.info("Successfully registered with server")
-                return True
-            else:
-                logging.warning(f"Failed to register: {response.status_code} - {response.text}")
+                if response.status_code == 200:
+                    print(f"Successfully registered with server (attempt {attempt})")
+                    return True
+                else:
+                    print(f"Failed to register (attempt {attempt}): {response.status_code} - {response.text}")
+            except Exception as e:
+                print(f"Error registering with server (attempt {attempt}): {e}")
+
+            try:
+                time.sleep(delay_seconds)
+            except KeyboardInterrupt:
+                print("Registration interrupted by user.")
                 return False
-
-        except Exception as e:
-            logging.error(f"Error registering with server: {e}")
-            return False
-
+            attempt += 1
+    
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
         try:

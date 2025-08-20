@@ -1,7 +1,7 @@
-"""YAML-based configuration management for Mycelium."""
+"""Client-specific YAML configuration management for Mycelium workers."""
 
-import logging
 import os
+import logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
@@ -17,7 +17,7 @@ def get_user_data_dir() -> Path:
         base_dir = os.path.expanduser('~/Library/Application Support')
     else:  # Linux/Unix
         base_dir = os.getenv('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
-
+    
     data_dir = Path(base_dir) / 'mycelium'
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
@@ -31,35 +31,27 @@ def get_user_log_dir() -> Path:
         base_dir = os.path.expanduser('~/Library/Logs')
     else:  # Linux/Unix
         base_dir = os.getenv('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
-
+    
     log_dir = Path(base_dir) / 'mycelium'
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
 
-def get_config_dir() -> Path:
-    """Get the configuration directory for Mycelium."""
+def get_client_config_dir() -> Path:
+    """Get the configuration directory for Mycelium client."""
     if os.name == 'nt':  # Windows
         base_dir = os.getenv('APPDATA', os.path.expanduser('~/AppData/Roaming'))
     else:  # macOS and Linux/Unix
         base_dir = os.path.expanduser('~/.config')
-
+    
     config_dir = Path(base_dir) / 'mycelium'
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
 
-def get_config_file_path() -> Path:
-    """Get the configuration file path."""
-    return get_config_dir() / 'config.yml'
-
-
-@dataclass
-class PlexConfig:
-    """Configuration for Plex connection."""
-    url: str = "http://localhost:32400"
-    token: Optional[str] = None
-    music_library_name: str = "Music"
+def get_client_config_file_path() -> Path:
+    """Get the client configuration file path."""
+    return get_client_config_dir() / 'client_config.yml'
 
 
 @dataclass
@@ -71,31 +63,17 @@ class CLAPConfig:
 
 
 @dataclass
-class ChromaConfig:
-    """Configuration for ChromaDB."""
-    collection_name: str = "my_music_library"
-    batch_size: int = 1000
-
-    def get_db_path(self) -> str:
-        """Get the actual database path for ChromaDB."""
-        return str(get_user_data_dir() / "music_vector_db")
+class ClientConfig:
+    """Configuration for client worker connections."""
+    server_host: str = "localhost"
+    server_port: int = 8000
 
 
 @dataclass
-class DatabaseConfig:
-    """Configuration for track metadata database."""
-
-    def get_db_path(self) -> str:
-        """Get the actual database path for track metadata."""
-        return str(get_user_data_dir() / "mycelium_tracks.db")
-
-
-@dataclass
-class APIConfig:
-    """Configuration for API server."""
-    host: str = "0.0.0.0"
-    port: int = 8000
-    reload: bool = False
+class ClientAPIConfig:
+    """Configuration for client API server."""
+    host: str = "localhost"
+    port: int = 3001
 
 
 @dataclass
@@ -107,72 +85,59 @@ class LoggingConfig:
 
 
 @dataclass
-class MyceliumConfig:
-    """Main configuration class."""
-    plex: PlexConfig
+class MyceliumClientConfig:
+    """Client-specific configuration class containing only settings relevant to GPU workers."""
     clap: CLAPConfig
-    chroma: ChromaConfig
-    database: DatabaseConfig
-    api: APIConfig
+    client: ClientConfig
+    client_api: ClientAPIConfig
     logging: LoggingConfig
 
     @classmethod
-    def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumConfig":
-        """Load configuration from YAML file only."""
+    def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumClientConfig":
+        """Load client configuration from YAML file only."""
         if config_path is None:
-            config_path = get_config_file_path()
-
+            config_path = get_client_config_file_path()
+        
         # Load YAML config if it exists
         config_data = {}
         config_exists = config_path.exists()
         if config_exists:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f) or {}
-
+        
         # Load from YAML only - no environment variable fallbacks
-        plex_config = PlexConfig(
-            url=config_data.get("plex", {}).get("url", "http://localhost:32400"),
-            token=config_data.get("plex", {}).get("token", "replace_with_your_token"),
-            music_library_name=config_data.get("plex", {}).get("music_library_name", "Music")
-        )
-
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
             chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10)
         )
-
-        chroma_config = ChromaConfig(
-            collection_name=config_data.get("chroma", {}).get("collection_name", "my_music_library"),
-            batch_size=config_data.get("chroma", {}).get("batch_size", 1000)
+        
+        client_config = ClientConfig(
+            server_host=config_data.get("client", {}).get("server_host", "localhost"),
+            server_port=config_data.get("client", {}).get("server_port", 8000)
         )
-
-        database_config = DatabaseConfig()
-
-        api_config = APIConfig(
-            host=config_data.get("api", {}).get("host", "0.0.0.0"),
-            port=config_data.get("api", {}).get("port", 8000),
-            reload=config_data.get("api", {}).get("reload", False)
+        
+        client_api_config = ClientAPIConfig(
+            host=config_data.get("client_api", {}).get("host", "localhost"),
+            port=config_data.get("client_api", {}).get("port", 3001)
         )
-
+        
         # Handle logging configuration with default log file path
         logging_data = config_data.get("logging", {})
         log_file = logging_data.get("file")
         if log_file is None:
-            log_file = str(get_user_log_dir() / "mycelium.log")
-
+            log_file = str(get_user_log_dir() / "mycelium_client.log")
+        
         logging_config = LoggingConfig(
             level=logging_data.get("level", "INFO"),
             format=logging_data.get("format", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
             file=log_file
         )
-
+        
         cfg = cls(
-            plex=plex_config,
             clap=clap_config,
-            chroma=chroma_config,
-            database=database_config,
-            api=api_config,
+            client=client_config,
+            client_api=client_api_config,
             logging=logging_config
         )
 
@@ -185,23 +150,21 @@ class MyceliumConfig:
             except Exception:
                 # Best-effort; ignore failures to avoid blocking startup
                 pass
-
+        
         return cfg
-
+    
     def save_to_yaml(self, config_path: Optional[Path] = None) -> None:
-        """Save configuration to YAML file."""
+        """Save client configuration to YAML file."""
         if config_path is None:
-            config_path = get_config_file_path()
-
+            config_path = get_client_config_file_path()
+        
         config_dict = {
-            "plex": asdict(self.plex),
-            "clap": asdict(self.clap),
-            "chroma": asdict(self.chroma),
-            "database": asdict(self.database),
-            "api": asdict(self.api),
+            "clap": asdict(self.clap), 
+            "client": asdict(self.client),
+            "client_api": asdict(self.client_api),
             "logging": asdict(self.logging)
         }
-
+        
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, indent=2)
 
@@ -209,11 +172,11 @@ class MyceliumConfig:
         """Setup logging configuration."""
         # Configure the root logger
         level = getattr(logging, self.logging.level.upper(), logging.INFO)
-
+        
         # Create log directory if needed
         log_file_path = Path(self.logging.file)
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
-
+        
         # Setup logging
         logging.basicConfig(
             level=level,
@@ -223,7 +186,7 @@ class MyceliumConfig:
                 logging.StreamHandler()  # Also log to console
             ]
         )
-
+        
         # Set log level for third-party libraries to reduce noise
         logging.getLogger('chromadb').setLevel(logging.WARNING)
         logging.getLogger('urllib3').setLevel(logging.WARNING)

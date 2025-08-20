@@ -3,35 +3,28 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 
-interface ConfigData {
-  plex: {
-    url: string;
-    token: string;
-    music_library_name: string;
+interface ClientConfigData {
+  client: {
+    server_host: string;
+    server_port: number;
   };
-  api: {
+  client_api: {
     host: string;
     port: number;
-    reload: boolean;
-  };
-  chroma: {
-    collection_name: string;
-    batch_size: number;
   };
   clap: {
     model_id: string;
     target_sr: number;
     chunk_duration_s: number;
-    batch_size: number;
   };
   logging: {
     level: string;
   };
 }
 
-export default function SettingsPage() {
-  const [config, setConfig] = useState<ConfigData | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<ConfigData | null>(null);
+export default function ClientSettingsPage() {
+  const [config, setConfig] = useState<ClientConfigData | null>(null);
+  const [originalConfig, setOriginalConfig] = useState<ClientConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +43,14 @@ export default function SettingsPage() {
         throw new Error('Failed to fetch configuration');
       }
       const configData = await response.json();
-      setConfig(configData);
-      setOriginalConfig(JSON.parse(JSON.stringify(configData)));
+      const clientConfig: ClientConfigData = {
+        client: configData.client,
+        client_api: configData.client_api,
+        clap: configData.clap,
+        logging: configData.logging
+      };
+      setConfig(clientConfig);
+      setOriginalConfig(JSON.parse(JSON.stringify(clientConfig)));
     } catch {
       setError('Unable to fetch configuration. Make sure the API server is running.');
     } finally {
@@ -67,10 +66,22 @@ export default function SettingsPage() {
     setSuccessMessage(null);
 
     try {
+      const currentResponse = await fetch(`${API_BASE_URL}/api/config`);
+      if (!currentResponse.ok) {
+        throw new Error('Failed to fetch current configuration');
+      }
+
+      const updatedConfig = {
+        client: config.client,
+        client_api: config.client_api,
+        clap: config.clap,
+        logging: config.logging
+      };
+
       const response = await fetch(`${API_BASE_URL}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify(updatedConfig)
       });
 
       if (!response.ok) {
@@ -79,7 +90,7 @@ export default function SettingsPage() {
 
       const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      setSuccessMessage(result.message || 'Configuration saved successfully! Restart the server to apply changes.');
+      setSuccessMessage(result.message || 'Configuration saved successfully! Restart the client to apply changes.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
@@ -99,7 +110,7 @@ export default function SettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
-  const updateConfig = (section: keyof ConfigData, key: string, value: string | number | boolean) => {
+  const updateConfig = (section: keyof ClientConfigData, key: string, value: string | number | boolean) => {
     if (!config) return;
 
     setConfig(prev => ({
@@ -115,10 +126,10 @@ export default function SettingsPage() {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-          ⚙️ Settings
+          ⚙️ Client Settings
         </h2>
         <div className="animate-pulse space-y-4">
-          {[...Array(6)].map((_, i) => (
+          {[...Array(3)].map((_, i) => (
             <div key={i} className="bg-gray-200 dark:bg-gray-700 h-20 rounded-lg"></div>
           ))}
         </div>
@@ -130,10 +141,10 @@ export default function SettingsPage() {
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
       <div className="p-6 border-b border-gray-200 dark:border-gray-600">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          ⚙️ Settings
+          ⚙️ Client Settings
         </h2>
         <p className="text-gray-600 dark:text-gray-300">
-          Configure your Mycelium server installation. Changes require a server restart.
+          Configure your Mycelium client worker. Changes require a client restart.
         </p>
       </div>
 
@@ -152,97 +163,71 @@ export default function SettingsPage() {
 
         {config && (
           <>
-            {/* Plex Configuration */}
+            {/* Client Configuration */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                📺 Plex Server
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Server URL
-                  </label>
-                  <input
-                    type="text"
-                    value={config.plex.url}
-                    onChange={(e) => updateConfig('plex', 'url', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="http://localhost:32400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Music Library Name
-                  </label>
-                  <input
-                    type="text"
-                    value={config.plex.music_library_name}
-                    onChange={(e) => updateConfig('plex', 'music_library_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Music"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Plex Token
-                  </label>
-                  <input
-                    type="password"
-                    value={config.plex.token}
-                    onChange={(e) => updateConfig('plex', 'token', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Your Plex authentication token"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Get your token from{' '}
-                    <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
-                       target="_blank" rel="noopener noreferrer"
-                       className="text-purple-600 dark:text-purple-400 hover:underline">
-                      Plex support
-                    </a>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* API Configuration */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🌐 API Server
+                🖥️ Client Worker
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Host
+                    Server Host
                   </label>
                   <input
                     type="text"
-                    value={config.api.host}
-                    onChange={(e) => updateConfig('api', 'host', e.target.value)}
+                    value={config.client.server_host}
+                    onChange={(e) => updateConfig('client', 'server_host', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="localhost"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Port
+                    Server Port
                   </label>
                   <input
                     type="number"
-                    value={config.api.port}
-                    onChange={(e) => updateConfig('api', 'port', parseInt(e.target.value))}
+                    value={config.client.server_port}
+                    onChange={(e) => updateConfig('client', 'server_port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="8000"
                   />
                 </div>
-                <div className="flex items-center">
-                  <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={config.api.reload}
-                      onChange={(e) => updateConfig('api', 'reload', e.target.checked)}
-                      className="rounded border-gray-300 dark:border-gray-600"
-                    />
-                    <span>Auto-reload</span>
+              </div>
+            </div>
+
+            {/* Client API Server Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🔌 Client API Server
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Configure the local API server for client configuration management.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Host
                   </label>
+                  <input
+                    type="text"
+                    value={config.client_api.host}
+                    onChange={(e) => updateConfig('client_api', 'host', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="localhost"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    API Port
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client_api.port}
+                    onChange={(e) => updateConfig('client_api', 'port', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="3001"
+                  />
                 </div>
               </div>
             </div>
@@ -278,34 +263,14 @@ export default function SettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Database Configuration */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🗄️ Database
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Collection Name
-                  </label>
-                  <input
-                    type="text"
-                    value={config.chroma.collection_name}
-                    onChange={(e) => updateConfig('chroma', 'collection_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Batch Size
+                    Chunk Duration (s)
                   </label>
                   <input
                     type="number"
-                    value={config.chroma.batch_size}
-                    onChange={(e) => updateConfig('chroma', 'batch_size', parseInt(e.target.value))}
+                    value={config.clap.chunk_duration_s}
+                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -339,7 +304,7 @@ export default function SettingsPage() {
             {/* Action Buttons */}
             <div className="flex justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-600">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Configuration is stored in ~/.config/mycelium/config.yml
+                Configuration is stored in ~/.config/mycelium/client_config.yml
               </div>
               <div className="space-x-3">
                 <button
