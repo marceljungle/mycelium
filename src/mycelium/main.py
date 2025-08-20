@@ -50,10 +50,6 @@ def run_frontend(config: MyceliumConfig, client_mode: bool = False, client_api_p
         if client_api_port:
             env['NEXT_PUBLIC_API_URL'] = f"http://localhost:{client_api_port}"
             env['NEXT_PUBLIC_API_PORT'] = str(client_api_port)
-        else:
-            # Fallback to server API if no client API port specified
-            env['NEXT_PUBLIC_API_PORT'] = str(config.client.server_port)
-            env['NEXT_PUBLIC_API_URL'] = f"http://{config.client.server_host}:{config.client.server_port}"
 
     if config.api.reload:
         build_dir = frontend_dir / ".next"
@@ -137,12 +133,10 @@ def run_client_mode(
         api=APIConfig(),  # Placeholder, not used  
         chroma=ChromaConfig(),  # Placeholder, not used
         database=DatabaseConfig(),  # Placeholder, not used
-        client=client_config.client,  # Use client config
         clap=client_config.clap,  # Use client config
         logging=client_config.logging  # Use client config
     )
-    
-    # Choose a port for the client API (different from main API)
+
     client_api_port = 3001
     
     # Start client API server in a separate thread

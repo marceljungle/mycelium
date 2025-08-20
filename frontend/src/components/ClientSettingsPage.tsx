@@ -39,7 +39,6 @@ export default function ClientSettingsPage() {
         throw new Error('Failed to fetch configuration');
       }
       const configData = await response.json();
-      // Extract only client-relevant sections
       const clientConfig: ClientConfigData = {
         client: configData.client,
         clap: configData.clap,
@@ -62,17 +61,12 @@ export default function ClientSettingsPage() {
     setSuccessMessage(null);
 
     try {
-      // We need to send the full config, not just the client sections
-      // So first fetch the current full config, then update our sections
       const currentResponse = await fetch(`${API_BASE_URL}/api/config`);
       if (!currentResponse.ok) {
         throw new Error('Failed to fetch current configuration');
       }
-      const fullConfig = await currentResponse.json();
-      
-      // Update only our relevant sections
+
       const updatedConfig = {
-        ...fullConfig,
         client: config.client,
         clap: config.clap,
         logging: config.logging
