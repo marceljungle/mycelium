@@ -1,7 +1,6 @@
 """Configuration management for Mycelium - YAML only."""
 
 import logging
-from typing import Optional
 
 # Import YAML configuration as the only configuration method
 from .config_yaml import MyceliumConfig, get_config_file_path, get_user_data_dir, get_user_log_dir
