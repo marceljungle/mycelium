@@ -8,7 +8,6 @@ from typing import List, Optional
 
 class TaskType(str, Enum):
     """Type of tasks that can be assigned to workers."""
-    COMPUTE_EMBEDDING = "compute_embedding"
     COMPUTE_TEXT_EMBEDDING = "compute_text_embedding"
     COMPUTE_AUDIO_EMBEDDING = "compute_audio_embedding"
 

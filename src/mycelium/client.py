@@ -212,7 +212,7 @@ class MyceliumClient:
 
                 if job:
                     task_id = job["task_id"]
-                    task_type = job.get("task_type", "compute_embedding")
+                    task_type = job.get("task_type", "compute_audio_embedding")
                     logging.info(f"Download worker: Got job {task_id} with task_type {task_type}")
 
                     # Handle different task types
@@ -337,12 +337,12 @@ class MyceliumClient:
         task_id = downloaded_job.task_id
         track_id = downloaded_job.track_id
         original_job = downloaded_job.original_job
-        task_type = original_job.get("task_type", "compute_embedding")
+        task_type = original_job.get("task_type", "compute_audio_embedding")
 
         logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
 
         try:
-            if task_type == "compute_embedding" or task_type == "compute_audio_embedding":
+            if task_type == "compute_audio_embedding":
                 # Traditional track embedding computation
                 audio_file = downloaded_job.audio_file
                 embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)

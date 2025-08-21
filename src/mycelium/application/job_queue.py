@@ -93,7 +93,7 @@ class JobQueueService:
                 )
             else:
                 # Traditional embedding task - use external URL as-is
-                task_type = TaskType.COMPUTE_EMBEDDING
+                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
                 
                 task = Task(
                     task_id=task_id,
@@ -274,12 +274,12 @@ class JobQueueService:
             # Only count library processing tasks, not search tasks
             library_pending_tasks = [
                 task_id for task_id in self._pending_tasks
-                if self._tasks.get(task_id) and self._tasks[task_id].task_type == TaskType.COMPUTE_EMBEDDING
+                if self._tasks.get(task_id) and self._tasks[task_id].task_type == TaskType.COMPUTE_AUDIO_EMBEDDING
             ]
             
             library_in_progress_tasks = [
                 t for t in self._tasks.values()
-                if t.status == TaskStatus.IN_PROGRESS and t.task_type == TaskType.COMPUTE_EMBEDDING
+                if t.status == TaskStatus.IN_PROGRESS and t.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING
             ]
             
             return len(library_pending_tasks) > 0 or len(library_in_progress_tasks) > 0

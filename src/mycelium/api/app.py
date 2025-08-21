@@ -582,7 +582,7 @@ async def submit_result(request: TaskResultRequest):
             # Get the task to check its type
             task = job_queue.get_task_status(request.task_id)
             
-            if task and task.task_type == TaskType.COMPUTE_EMBEDDING:
+            if task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
                 # Traditional track embedding task
                 logger.info(f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
                 service.save_embedding(request.track_id, request.embedding)
