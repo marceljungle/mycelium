@@ -276,15 +276,8 @@ export default function LibraryPage() {
               });
               
               if (processResponse.ok) {
-                const processResult = await processResponse.json();
-                if (processResult.status === 'completed') {
-                  // Processing completed successfully, try getting recommendations again
                   setProcessingState('none');
                   await getRecommendations(track, true);
-                  return;
-                } else {
-                  setError('Processing completed but no recommendations found. Please try again.');
-                }
               } else {
                 const errorData = await processResponse.json().catch(() => ({}));
                 setError(errorData.detail || 'Failed to process track. Please try again later.');
