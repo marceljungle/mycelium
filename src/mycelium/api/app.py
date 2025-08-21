@@ -546,18 +546,14 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 
         logger.info(f"Assigning task {task.task_id} to worker {worker_id} for track {task.track_id}")
         
-        # Encode audio data as base64 for JSON serialization
-        audio_data_base64 = None
-        if task.audio_data:
-            audio_data_base64 = base64.b64encode(task.audio_data).decode('utf-8')
-            
+        # No longer encode audio data as base64 - workers will download files via URL
         return JobRequest(
             task_id=task.task_id,
             task_type=task.task_type,
             track_id=task.track_id,
             download_url=task.download_url,
             text_query=task.text_query,
-            audio_data_base64=audio_data_base64,
+            audio_data_base64=None,  # No longer used - workers download files
             audio_filename=task.audio_filename,
             n_results=task.n_results
         )
@@ -635,6 +631,9 @@ async def submit_result(request: TaskResultRequest):
                         task.status = TaskStatus.FAILED
                         task.error_message = str(e)
                         task.completed_at = datetime.now()
+                        
+                # Clean up any temporary files (for consistency)
+                job_queue.cleanup_task_files(request.task_id)
                     
             elif task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
                 # Audio search task - perform search on server  
@@ -675,12 +674,17 @@ async def submit_result(request: TaskResultRequest):
                         task.status = TaskStatus.FAILED
                         task.error_message = str(e)
                         task.completed_at = datetime.now()
+                
+                # Clean up temporary audio file for audio search tasks
+                job_queue.cleanup_task_files(request.task_id)
                     
         elif success and request.search_results:
             # Legacy search task - results were computed by worker (should not happen with new code)
             logger.info(f"Legacy search task {request.task_id} completed with {len(request.search_results)} results")
         elif request.error_message:
             logger.error(f"Worker task failed for track {request.track_id}: {request.error_message}")
+            # Clean up temporary files for failed tasks
+            job_queue.cleanup_task_files(request.task_id)
         else:
             logger.warning(f"Task {request.task_id} completed but no embedding provided")
 
@@ -713,6 +717,25 @@ async def download_track(track_id: str):
             path=str(file_path),
             media_type="application/octet-stream",
             filename=file_path.name
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/download_audio_task/{task_id}")
+async def download_audio_task(task_id: str):
+    """Download an audio file for a search task."""
+    try:
+        # Get the temporary file path for this task
+        temp_file_path = job_queue.get_audio_task_file(task_id)
+        if not temp_file_path or not temp_file_path.exists():
+            raise HTTPException(status_code=404, detail="Audio task file not found")
+
+        # Return file response
+        return FileResponse(
+            path=str(temp_file_path),
+            media_type="application/octet-stream",
+            filename=f"audio_task_{task_id}.tmp"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

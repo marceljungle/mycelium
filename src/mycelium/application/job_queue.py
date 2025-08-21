@@ -1,7 +1,10 @@
 """Job queue and worker management service."""
 
+import os
+import tempfile
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Lock
 from typing import List, Optional, Dict
 
@@ -16,6 +19,9 @@ class JobQueueService:
         self._tasks: Dict[str, Task] = {}
         self._pending_tasks: List[str] = []
         self._lock = Lock()
+        # Temporary directory for audio files to avoid base64 encoding large files
+        self._temp_dir = Path(tempfile.mkdtemp(prefix="mycelium_audio_"))
+        self._temp_files: Dict[str, Path] = {}  # task_id -> temp_file_path
 
     def register_worker(self, worker_id: str, ip_address: str) -> Worker:
         """Register a new worker or update existing one."""
@@ -87,15 +93,28 @@ class JobQueueService:
             return task
 
     def create_audio_search_task(self, audio_data: bytes, audio_filename: str, n_results: int = 10, prioritize: bool = True) -> Task:
-        """Create a new audio search task and add it to the queue."""
+        """Create a new audio search task and add it to the queue.
+        
+        For efficiency with large audio files, stores audio data as temporary file
+        instead of keeping it in memory or base64 encoding it.
+        """
         with self._lock:
             task_id = str(uuid.uuid4())
+            
+            # Create temporary file for audio data to avoid base64 encoding overhead
+            temp_file = self._temp_dir / f"audio_task_{task_id}.tmp"
+            temp_file.write_bytes(audio_data)
+            self._temp_files[task_id] = temp_file
+            
+            # Create download URL for the worker
+            download_url = f"/download_audio_task/{task_id}"
+            
             task = Task(
                 task_id=task_id,
                 task_type=TaskType.COMPUTE_AUDIO_EMBEDDING,
                 track_id="",  # Not needed for audio search
-                download_url="",  # Not needed for audio search
-                audio_data=audio_data,
+                download_url=download_url,  # URL for worker to download audio file
+                audio_data=None,  # Don't store in memory - use temp file instead
                 audio_filename=audio_filename,
                 n_results=n_results
             )
@@ -239,11 +258,59 @@ class JobQueueService:
             return self._cleanup_stale_tasks()
 
     def has_active_processing(self) -> bool:
-        """Check if there are any tasks currently being processed or pending."""
+        """Check if there are any library processing tasks currently being processed or pending.
+        
+        Note: This excludes search tasks (text/audio search) which have their own loading states.
+        Only counts COMPUTE_EMBEDDING tasks for library processing status.
+        """
         with self._lock:
             # Clean up stale in-progress tasks from inactive workers first
             self._cleanup_stale_tasks()
             
-            return len(self._pending_tasks) > 0 or any(
-                t.status == TaskStatus.IN_PROGRESS for t in self._tasks.values()
-            )
+            # Only count library processing tasks, not search tasks
+            library_pending_tasks = [
+                task_id for task_id in self._pending_tasks
+                if self._tasks.get(task_id) and self._tasks[task_id].task_type == TaskType.COMPUTE_EMBEDDING
+            ]
+            
+            library_in_progress_tasks = [
+                t for t in self._tasks.values()
+                if t.status == TaskStatus.IN_PROGRESS and t.task_type == TaskType.COMPUTE_EMBEDDING
+            ]
+            
+            return len(library_pending_tasks) > 0 or len(library_in_progress_tasks) > 0
+
+    def get_audio_task_file(self, task_id: str) -> Optional[Path]:
+        """Get the temporary file path for an audio task."""
+        with self._lock:
+            return self._temp_files.get(task_id)
+
+    def cleanup_task_files(self, task_id: str) -> None:
+        """Clean up temporary files for a completed task."""
+        with self._lock:
+            if task_id in self._temp_files:
+                temp_file = self._temp_files[task_id]
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                except OSError:
+                    pass  # Ignore cleanup errors
+                del self._temp_files[task_id]
+
+    def cleanup_all_temp_files(self) -> None:
+        """Clean up all temporary files."""
+        with self._lock:
+            for temp_file in self._temp_files.values():
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                except OSError:
+                    pass  # Ignore cleanup errors
+            self._temp_files.clear()
+            
+            # Clean up the temporary directory
+            try:
+                if self._temp_dir.exists():
+                    self._temp_dir.rmdir()
+            except OSError:
+                pass  # Directory might not be empty or accessible

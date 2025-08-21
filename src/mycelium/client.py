@@ -234,45 +234,79 @@ class MyceliumClient:
                             logging.info(f"Download worker: Queue full, could not enqueue text search job {task_id}")
                             
                     elif task_type == "compute_audio_embedding":
-                        # Audio search task - need to handle audio data from job
-                        audio_data = job.get("audio_data")
-                        if not audio_data:
-                            # Check for base64 encoded data
-                            audio_data_base64 = job.get("audio_data_base64")
-                            if audio_data_base64:
-                                audio_data = base64.b64decode(audio_data_base64)
-                        
+                        # Audio search task - download audio file from server
+                        download_url = job.get("download_url")
                         audio_filename = job.get("audio_filename", "search.tmp")
                         
-                        if audio_data:
-                            # Create temporary file for the audio data
+                        if download_url:
+                            # Download audio file from server
                             try:
-                                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
-                                temp_file.write(audio_data)
-                                temp_file.close()
-                                audio_file = Path(temp_file.name)
-                                
-                                downloaded_job = DownloadedJob(
-                                    task_id=task_id,
-                                    track_id=job["track_id"],
-                                    audio_file=audio_file,
-                                    original_job=job
-                                )
-                                
-                                try:
-                                    self.download_queue.put(downloaded_job, timeout=5)
-                                    logging.info(f"Download worker: Queued audio search job {task_id} for processing")
-                                    self._log_queue_status("after queuing audio search")
-                                except:
-                                    logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
+                                audio_response = requests.get(f"{self.server_host}:{self.server_port}{download_url}")
+                                if audio_response.status_code == 200:
+                                    # Create temporary file for the audio data
+                                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+                                    temp_file.write(audio_response.content)
+                                    temp_file.close()
+                                    
+                                    downloaded_job = DownloadedJob(
+                                        task_id=task_id,
+                                        track_id=job["track_id"],
+                                        audio_file=temp_file.name,
+                                        original_job=job
+                                    )
+                                    
                                     try:
-                                        os.unlink(audio_file)
+                                        self.download_queue.put(downloaded_job, timeout=5)
+                                        logging.info(f"Download worker: Downloaded and queued audio search job {task_id} from {download_url}")
+                                        self._log_queue_status("after downloading audio search")
                                     except:
-                                        pass
+                                        logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
+                                        # Clean up temp file if couldn't queue
+                                        try:
+                                            os.unlink(temp_file.name)
+                                        except:
+                                            pass
+                                else:
+                                    logging.error(f"Download worker: Failed to download audio file from {download_url}, status: {audio_response.status_code}")
                             except Exception as e:
-                                logging.error(f"Download worker: Failed to create temp file for audio search job {task_id}: {e}")
+                                logging.error(f"Download worker: Error downloading audio file: {e}")
                         else:
-                            logging.error(f"Download worker: Audio search job {task_id} missing audio data")
+                            # Fallback to base64 data (backward compatibility)
+                            audio_data = job.get("audio_data")
+                            if not audio_data:
+                                # Check for base64 encoded data
+                                audio_data_base64 = job.get("audio_data_base64")
+                                if audio_data_base64:
+                                    audio_data = base64.b64decode(audio_data_base64)
+                            
+                            if audio_data:
+                                # Create temporary file for the audio data (backward compatibility)
+                                try:
+                                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+                                    temp_file.write(audio_data)
+                                    temp_file.close()
+                                    
+                                    downloaded_job = DownloadedJob(
+                                        task_id=task_id,
+                                        track_id=job["track_id"],
+                                        audio_file=temp_file.name,
+                                        original_job=job
+                                    )
+                                    
+                                    try:
+                                        self.download_queue.put(downloaded_job, timeout=5)
+                                        logging.info(f"Download worker: Queued audio search job {task_id} for processing (base64 fallback)")
+                                        self._log_queue_status("after queuing audio search")
+                                    except:
+                                        logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
+                                        try:
+                                            os.unlink(temp_file.name)
+                                        except:
+                                            pass
+                                except Exception as e:
+                                    logging.error(f"Download worker: Failed to create temp file for audio search job {task_id}: {e}")
+                            else:
+                                logging.error(f"Download worker: Audio search job {task_id} missing audio data and download URL")
                             
                     else:
                         # Traditional track embedding task - download audio file
