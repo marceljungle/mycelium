@@ -52,6 +52,9 @@ class MyceliumClient:
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
 
+        # Disable tokenizers parallelism to avoid warnings when using threading
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         self.device = CLAPEmbeddingGenerator().get_best_device()
 
         # Download queue management
