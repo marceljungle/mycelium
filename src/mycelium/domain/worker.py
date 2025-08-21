@@ -15,6 +15,7 @@ class ContextType(str, Enum):
     """Type of context for the task."""
     AUDIO_SEARCH = "audio_search"
     AUDIO_PROCESSING = "audio_processing"
+    TEXT_SEARCH = "text_search"
 
 
 class TaskStatus(str, Enum):

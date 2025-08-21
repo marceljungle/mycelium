@@ -119,6 +119,7 @@ class JobQueueService:
             task = Task(
                 task_id=task_id,
                 task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
+                context_type=ContextType.TEXT_SEARCH,
                 track_id="",  # Not needed for text search
                 download_url="",  # Not needed for text search
                 text_query=text_query,
