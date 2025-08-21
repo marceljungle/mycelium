@@ -24,8 +24,8 @@ class DownloadedJob:
     """Represents a job with downloaded audio file."""
     task_id: str
     track_id: str
-    audio_file: Path
     original_job: dict
+    audio_file: Optional[Path]
 
 
 class MyceliumClient:
