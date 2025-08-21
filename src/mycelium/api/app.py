@@ -688,7 +688,8 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             track_id=track_id
         )
 
-    except HTTPException:
+    except HTTPException as e:
+        logger.error(f"Error in similar tracks endpoint for track {track_id}: {e}", exc_info=True)
         # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
