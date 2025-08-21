@@ -163,38 +163,6 @@ async def get_library_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/search/text", response_model=List[SearchResultResponse])
-async def search_by_text(search_request: SearchRequest):
-    """Search for music tracks by text description."""
-    logger.info(f"Text search request received - query: '{search_request.query}', n_results: {search_request.n_results}")
-    try:
-        results = service.search_similar_by_text(
-            search_request.query,
-            search_request.n_results
-        )
-
-        return [
-            SearchResultResponse(
-                track=TrackResponse(
-                    artist=result.track.artist,
-                    album=result.track.album,
-                    title=result.track.title,
-                    filepath=str(result.track.filepath),
-                    plex_rating_key=result.track.plex_rating_key
-                ),
-                similarity_score=result.similarity_score,
-                distance=result.distance
-            )
-            for result in results
-        ]
-    except HTTPException:
-        # Re-raise HTTP exceptions unchanged
-        raise
-    except Exception as e:
-        logger.error(f"Text search failed for query '{search_request.query}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/api/search/text", response_model=List[SearchResultResponse])
 async def search_by_text_get(
         q: str = Query(..., description="Search query"),

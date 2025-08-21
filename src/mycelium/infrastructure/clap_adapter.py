@@ -142,7 +142,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 text_features = model.get_text_features(**inputs)
                 text_embedding = torch.nn.functional.normalize(text_features, p=2, dim=-1)
 
-            return text_embedding.cpu().numpy().tolist()
+            return text_embedding.cpu().numpy().tolist()[0]
 
         except Exception as e:
             self.logger.error(f"Error generating text embedding for '{text}': {e}", exc_info=True)
