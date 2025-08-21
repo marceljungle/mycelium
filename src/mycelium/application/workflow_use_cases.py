@@ -274,8 +274,9 @@ class WorkerBasedProcessingUseCase:
         tasks_created = 0
         for stored_track in unprocessed_tracks:
             try:
+                # TODO: we shouldn't specify here the host and port, because the client already knows about them in its own config.
                 download_url = f"http://{self.api_host}:{self.api_port}/download_track/{stored_track.plex_rating_key}"
-                self.job_queue.create_task(stored_track.plex_rating_key, download_url)
+                self.job_queue.create_task(stored_track.plex_rating_key, download_url, prioritize=False)
                 tasks_created += 1
             except Exception as e:
                 logger.error(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
