@@ -197,7 +197,6 @@ async def search_by_text_get(
         # No active workers - return confirmation required
         return SearchConfirmationRequiredResponse(
             status="confirmation_required",
-            message="Text search requires embedding computation, and no workers are active. Do you wish to continue on the server hardware?",
             query=q
         )
 
@@ -255,7 +254,6 @@ async def search_by_audio(
         # No active workers - return confirmation required
         return SearchConfirmationRequiredResponse(
             status="confirmation_required",
-            message="Audio search requires embedding computation, and no workers are active. Do you wish to continue on the server hardware?",
             filename=audio.filename
         )
 

@@ -89,7 +89,6 @@ class SearchProcessingResponse(BaseModel):
 class SearchConfirmationRequiredResponse(BaseModel):
     """Response when search requires user confirmation for server processing."""
     status: str
-    message: str
     query: Optional[str] = None  # For text search  
     filename: Optional[str] = None  # For audio search
 

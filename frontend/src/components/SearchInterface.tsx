@@ -139,7 +139,7 @@ export default function SearchInterface() {
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(
-          `Text search requires embedding computation, and no workers are active. ${data.message}\n\nWould you like to process it on the server?`
+          `Text search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?`
         );
         
         if (shouldProcess) {
@@ -220,7 +220,7 @@ export default function SearchInterface() {
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(
-          `Audio search requires embedding computation, and no workers are active. ${data.message}\n\nWould you like to process it on the server?`
+          `Audio search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?`
         );
         
         if (shouldProcess) {

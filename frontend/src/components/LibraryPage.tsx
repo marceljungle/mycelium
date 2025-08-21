@@ -262,7 +262,7 @@ export default function LibraryPage() {
         } else if (data.status === 'confirmation_required') {
           // Handle confirmation required case - offer processing options
           const shouldProcess = window.confirm(
-            `This track needs to be processed first. ${data.message}\n\nWould you like to process it now?`
+            `This track needs to be processed first.\n\nWould you like to process it now?`
           );
           
           if (shouldProcess) {
