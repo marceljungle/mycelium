@@ -67,7 +67,7 @@ class JobQueueService:
                 self._pending_tasks.append(task_id)
             return task
 
-    def create_text_search_task(self, text_query: str, prioritize: bool = True) -> Task:
+    def create_text_search_task(self, text_query: str, n_results: int = 10, prioritize: bool = True) -> Task:
         """Create a new text search task and add it to the queue."""
         with self._lock:
             task_id = str(uuid.uuid4())
@@ -76,7 +76,8 @@ class JobQueueService:
                 task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
                 track_id="",  # Not needed for text search
                 download_url="",  # Not needed for text search
-                text_query=text_query
+                text_query=text_query,
+                n_results=n_results
             )
             self._tasks[task_id] = task
             if prioritize:
@@ -85,7 +86,7 @@ class JobQueueService:
                 self._pending_tasks.append(task_id)
             return task
 
-    def create_audio_search_task(self, audio_data: bytes, audio_filename: str, prioritize: bool = True) -> Task:
+    def create_audio_search_task(self, audio_data: bytes, audio_filename: str, n_results: int = 10, prioritize: bool = True) -> Task:
         """Create a new audio search task and add it to the queue."""
         with self._lock:
             task_id = str(uuid.uuid4())
@@ -95,7 +96,8 @@ class JobQueueService:
                 track_id="",  # Not needed for audio search
                 download_url="",  # Not needed for audio search
                 audio_data=audio_data,
-                audio_filename=audio_filename
+                audio_filename=audio_filename,
+                n_results=n_results
             )
             self._tasks[task_id] = task
             if prioritize:

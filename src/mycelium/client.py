@@ -361,51 +361,6 @@ class MyceliumClient:
             logging.error(f"Error submitting result: {e}")
             return False
 
-    def submit_search_result(self, task_id: str, track_id: str, search_results: List[dict]) -> bool:
-        """Submit search result to server."""
-        return self.submit_result(task_id, track_id, None, None, search_results)
-
-    def _search_by_embedding(self, embedding: List[float], n_results: int = 10):
-        """Perform search using an embedding by calling the server's search endpoint."""
-        # For now, we'll need to make a call back to the server to perform the search
-        # since the client doesn't have direct access to the database
-        # This is a temporary implementation - ideally workers would have read-only DB access
-        try:
-            response = requests.post(
-                f"{self.server_url}/api/internal/search_by_embedding",  # Internal endpoint
-                json={
-                    "embedding": embedding,
-                    "n_results": n_results
-                },
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                results = response.json()
-                # Convert back to SearchResult objects
-                from mycelium.domain.models import SearchResult, Track
-                return [
-                    SearchResult(
-                        track=Track(
-                            artist=r["track"]["artist"],
-                            album=r["track"]["album"], 
-                            title=r["track"]["title"],
-                            filepath=Path(r["track"]["filepath"]),
-                            plex_rating_key=r["track"]["plex_rating_key"]
-                        ),
-                        similarity_score=r["similarity_score"],
-                        distance=r["distance"]
-                    )
-                    for r in results
-                ]
-            else:
-                logging.error(f"Failed to search by embedding: {response.status_code}")
-                return []
-                
-        except Exception as e:
-            logging.error(f"Error searching by embedding: {e}")
-            return []
-
     def process_job(self, downloaded_job: DownloadedJob) -> bool:
         """Process a downloaded job."""
         task_id = downloaded_job.task_id
@@ -436,40 +391,21 @@ class MyceliumClient:
                 # Text search embedding computation
                 text_query = original_job.get("text_query")
                 if not text_query:
-                    self.submit_result(task_id, track_id, None, "Missing text query", None)
+                    self.submit_result(task_id, track_id, None, "Missing text query")
                     return False
                     
                 logging.info(f"Computing text embedding for query: '{text_query}'")
                 text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
                 
                 if text_embedding:
-                    # Perform search using the computed embedding
-                    search_results = self._search_by_embedding(text_embedding, 10)  # Default n_results
-                    
-                    # Convert search results to dict format for API
-                    results_dict = [
-                        {
-                            "track": {
-                                "artist": result.track.artist,
-                                "album": result.track.album,
-                                "title": result.track.title,
-                                "filepath": str(result.track.filepath),
-                                "plex_rating_key": result.track.plex_rating_key
-                            },
-                            "similarity_score": result.similarity_score,
-                            "distance": result.distance
-                        }
-                        for result in search_results
-                    ]
-                    
-                    success = self.submit_search_result(task_id, track_id, results_dict)
+                    success = self.submit_result(task_id, track_id, text_embedding)
                     if success:
-                        logging.info(f"Successfully processed text search job {task_id}")
+                        logging.info(f"Successfully processed text embedding job {task_id}")
                     else:
-                        logging.warning(f"Failed to submit text search result for job {task_id}")
+                        logging.warning(f"Failed to submit text embedding result for job {task_id}")
                     return success
                 else:
-                    self.submit_result(task_id, track_id, None, "Failed to compute text embedding", None)
+                    self.submit_result(task_id, track_id, None, "Failed to compute text embedding")
                     return False
                     
             elif task_type == "compute_audio_embedding":
@@ -478,33 +414,14 @@ class MyceliumClient:
                 embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
                 
                 if embedding:
-                    # Perform search using the computed embedding
-                    search_results = self._search_by_embedding(embedding, 10)  # Default n_results
-                    
-                    # Convert search results to dict format for API
-                    results_dict = [
-                        {
-                            "track": {
-                                "artist": result.track.artist,
-                                "album": result.track.album,
-                                "title": result.track.title,
-                                "filepath": str(result.track.filepath),
-                                "plex_rating_key": result.track.plex_rating_key
-                            },
-                            "similarity_score": result.similarity_score,
-                            "distance": result.distance
-                        }
-                        for result in search_results
-                    ]
-                    
-                    success = self.submit_search_result(task_id, track_id, results_dict)
+                    success = self.submit_result(task_id, track_id, embedding)
                     if success:
-                        logging.info(f"Successfully processed audio search job {task_id}")
+                        logging.info(f"Successfully processed audio embedding job {task_id}")
                     else:
-                        logging.warning(f"Failed to submit audio search result for job {task_id}")
+                        logging.warning(f"Failed to submit audio embedding result for job {task_id}")
                     return success
                 else:
-                    self.submit_result(task_id, track_id, None, "Failed to compute audio embedding", None)
+                    self.submit_result(task_id, track_id, None, "Failed to compute audio embedding")
                     return False
             else:
                 logging.error(f"Unknown task type: {task_type}")

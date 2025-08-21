@@ -29,6 +29,7 @@ class JobRequest(BaseModel):
     text_query: Optional[str] = None  # For text search tasks
     audio_data: Optional[bytes] = None  # For audio search tasks  
     audio_filename: Optional[str] = None  # For audio search tasks
+    n_results: Optional[int] = None  # For search tasks
 
 
 class TaskResultRequest(BaseModel):

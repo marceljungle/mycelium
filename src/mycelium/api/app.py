@@ -25,7 +25,7 @@ from ..application.services import MyceliumService
 from ..config import MyceliumConfig, setup_logging
 from ..config_yaml import MyceliumConfig as ConfigYAML
 from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
-from ..domain.worker import TaskResult
+from ..domain.worker import TaskResult, TaskType
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ async def search_by_text_get(
         if active_workers:
             logger.info(f"Found {len(active_workers)} active workers, creating text search task")
             # Create task for worker processing
-            task = job_queue.create_text_search_task(text_query=q, prioritize=True)
+            task = job_queue.create_text_search_task(text_query=q, n_results=n_results, prioritize=True)
             
             logger.info(f"Created text search task {task.task_id} for query '{q}'")
             # Return processing response
@@ -237,6 +237,7 @@ async def search_by_audio(
             task = job_queue.create_audio_search_task(
                 audio_data=content, 
                 audio_filename=audio.filename or "upload.tmp",
+                n_results=n_results,
                 prioritize=True
             )
             
@@ -549,7 +550,8 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
             download_url=task.download_url,
             text_query=task.text_query,
             audio_data=task.audio_data,
-            audio_filename=task.audio_filename
+            audio_filename=task.audio_filename,
+            n_results=task.n_results
         )
     except Exception as e:
         logger.error(f"Error getting job for worker {worker_id}: {e}", exc_info=True)
@@ -576,20 +578,85 @@ async def submit_result(request: TaskResultRequest):
         logger.info(f"Task result submission: success={success}")
 
         # Handle different task types
-        if success and request.embedding and not request.search_results:
-            # This is a track embedding task (traditional COMPUTE_EMBEDDING)
-            # Save embedding to ChromaDB
-            logger.info(
-                f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
-            service.save_embedding(request.track_id, request.embedding)
-            logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
+        if success and request.embedding:
+            # Get the task to check its type
+            task = job_queue.get_task_status(request.task_id)
+            
+            if task and task.task_type == TaskType.COMPUTE_EMBEDDING:
+                # Traditional track embedding task
+                logger.info(f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
+                service.save_embedding(request.track_id, request.embedding)
+                logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
+                
+            elif task and task.task_type == TaskType.COMPUTE_TEXT_EMBEDDING:
+                # Text search task - perform search on server
+                logger.info(f"Performing text search for task {request.task_id} with query '{task.text_query}'")
+                try:
+                    # Use the embedding to search directly
+                    search_results = service.embedding_repository.search_by_embedding(request.embedding, task.n_results or 10)
+                    
+                    # Convert to dict format and store in task
+                    results_dict = [
+                        {
+                            "track": {
+                                "artist": result.track.artist,
+                                "album": result.track.album,
+                                "title": result.track.title,
+                                "filepath": str(result.track.filepath),
+                                "plex_rating_key": result.track.plex_rating_key
+                            },
+                            "similarity_score": result.similarity_score,
+                            "distance": result.distance
+                        }
+                        for result in search_results
+                    ]
+                    
+                    # Update task with search results
+                    with job_queue._lock:
+                        task.search_results = results_dict
+                    
+                    logger.info(f"Text search completed for task {request.task_id}, found {len(results_dict)} results")
+                except Exception as e:
+                    logger.error(f"Error performing text search for task {request.task_id}: {e}", exc_info=True)
+                    
+            elif task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
+                # Audio search task - perform search on server  
+                logger.info(f"Performing audio search for task {request.task_id} with file '{task.audio_filename}'")
+                try:
+                    # Use the embedding to search directly
+                    search_results = service.embedding_repository.search_by_embedding(request.embedding, task.n_results or 10)
+                    
+                    # Convert to dict format and store in task
+                    results_dict = [
+                        {
+                            "track": {
+                                "artist": result.track.artist,
+                                "album": result.track.album,
+                                "title": result.track.title,
+                                "filepath": str(result.track.filepath),
+                                "plex_rating_key": result.track.plex_rating_key
+                            },
+                            "similarity_score": result.similarity_score,
+                            "distance": result.distance
+                        }
+                        for result in search_results
+                    ]
+                    
+                    # Update task with search results
+                    with job_queue._lock:
+                        task.search_results = results_dict
+                    
+                    logger.info(f"Audio search completed for task {request.task_id}, found {len(results_dict)} results")
+                except Exception as e:
+                    logger.error(f"Error performing audio search for task {request.task_id}: {e}", exc_info=True)
+                    
         elif success and request.search_results:
-            # This is a search task - results are stored in the task for retrieval
-            logger.info(f"Search task {request.task_id} completed with {len(request.search_results)} results")
+            # Legacy search task - results were computed by worker (should not happen with new code)
+            logger.info(f"Legacy search task {request.task_id} completed with {len(request.search_results)} results")
         elif request.error_message:
             logger.error(f"Worker task failed for track {request.track_id}: {request.error_message}")
         else:
-            logger.warning(f"Task {request.task_id} completed but no embedding or search results provided")
+            logger.warning(f"Task {request.task_id} completed but no embedding provided")
 
         return TaskResultResponse(
             success=success,
@@ -843,42 +910,6 @@ async def get_task_status(task_id: str):
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
 
-
-@app.post("/api/internal/search_by_embedding", response_model=List[SearchResultResponse])
-async def search_by_embedding_internal(request: dict):
-    """Internal endpoint for workers to search using embeddings."""
-    try:
-        embedding = request.get("embedding")
-        n_results = request.get("n_results", 10)
-        
-        if not embedding:
-            raise HTTPException(status_code=400, detail="Embedding is required")
-            
-        logger.info(f"Internal search by embedding request - n_results: {n_results}")
-        
-        # Use the embedding repository to search directly
-        results = service.embedding_repository.search_by_embedding(embedding, n_results)
-        
-        return [
-            SearchResultResponse(
-                track=TrackResponse(
-                    artist=result.track.artist,
-                    album=result.track.album,
-                    title=result.track.title,
-                    filepath=str(result.track.filepath),
-                    plex_rating_key=result.track.plex_rating_key
-                ),
-                similarity_score=result.similarity_score,
-                distance=result.distance
-            )
-            for result in results
-        ]
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Internal search by embedding failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal search failed: {str(e)}")
 
 
 if __name__ == "__main__":
