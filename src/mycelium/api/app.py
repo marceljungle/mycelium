@@ -594,7 +594,8 @@ async def submit_result(request: TaskResultRequest):
 
                 if task.context_type == ContextType.AUDIO_SEARCH:
                     # Audio search task - perform search on server
-                    logger.info(f"Performing audio search for task {request.task_id} with file '{task.audio_filename}'")
+                    context_info = f"track '{request.track_id}'" if task.track_id else f"file '{task.audio_filename}'"
+                    logger.info(f"Performing audio search for task {request.task_id} with {context_info}")
                     try:
                         # Use the embedding to search directly
                         search_results = service.embedding_repository.search_by_embedding(request.embedding,
@@ -779,7 +780,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             # Create task for worker processing
             download_url = f"/download_track/{track_id}"
             task = job_queue.create_task(track_id=track_id, download_url=download_url, prioritize=True,
-                                         context_type=ContextType.AUDIO_PROCESSING)
+                                         context_type=ContextType.AUDIO_SEARCH)
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking
