@@ -62,3 +62,12 @@ class EmbeddingGenerator(ABC):
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
         """Generate embedding for text description."""
         pass
+
+    @staticmethod
+    def get_best_device() -> str:
+        """Get the best device for running the embedding model (e.g., 'cpu', 'cuda')."""
+        pass
+
+    @staticmethod
+    def can_use_half_precision() -> bool:
+        """Checks once if the device supports half precision."""

@@ -13,7 +13,6 @@ from typing import Optional, List, Dict
 
 import requests
 import torch
-from transformers import ClapModel, ClapProcessor
 
 from mycelium.infrastructure import CLAPEmbeddingGenerator
 
@@ -53,10 +52,7 @@ class MyceliumClient:
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
 
-        # Initialize model (will be loaded when first needed)
-        self.model = None
-        self.processor = None
-        self.device = self._get_best_device()
+        self.device = CLAPEmbeddingGenerator().get_best_device()
 
         # Download queue management
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
@@ -94,7 +90,8 @@ class MyceliumClient:
         else:
             logging.info("  📭 Queue empty - waiting for downloads")
 
-    def _get_local_ip(self) -> str:
+    @staticmethod
+    def _get_local_ip() -> str:
         """Get the local IP address."""
         try:
             # Connect to a remote address to determine local IP
@@ -104,43 +101,13 @@ class MyceliumClient:
         except Exception:
             return "127.0.0.1"
 
-    def _get_best_device(self) -> str:
-        """Get the best available device for computation."""
-        if torch.cuda.is_available():
-            return "cuda"
-        elif torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
-
-    def _load_model(self):
-        """Load the CLAP model and processor."""
-        if self.model is None:
-            logging.info(f"Loading CLAP model: {self.model_id}")
-            self.model = ClapModel.from_pretrained(self.model_id).to(self.device)
-            self.processor = ClapProcessor.from_pretrained(self.model_id)
-            self.model.eval()
-
-            # Apply device-specific optimizations
-            if self.device == "cuda":
-                self.model.half()
-            elif self.device == "mps":
-                try:
-                    self.model.half()
-                    torch.backends.mps.enabled = True
-                    logging.info("MPS half precision enabled for optimal performance")
-                except RuntimeError as e:
-                    logging.warning(f"MPS half precision not supported, using FP32: {e}")
-
-            logging.info("Model loaded successfully")
-
     def _unload_model(self):
         """Unload model to free GPU memory."""
-        if self.model is not None:
-            del self.model
-            del self.processor
-            self.model = None
-            self.processor = None
+        if self.clap_embedding_generator.model is not None:
+            del self.clap_embedding_generator.model
+            del self.clap_embedding_generator.processor
+            self.clap_embedding_generator.model = None
+            self.clap_embedding_generator.processor = None
 
             if self.device == "cuda":
                 torch.cuda.empty_cache()
@@ -309,19 +276,6 @@ class MyceliumClient:
             except Empty:
                 break
 
-    def _can_use_half_precision(self) -> bool:
-        """Check if the current device supports half precision."""
-        if self.device == "cuda":
-            return True
-        elif self.device == "mps":
-            # Test if MPS supports half precision on this device
-            try:
-                torch.rand(1, device=self.device, dtype=torch.half)
-                return True
-            except RuntimeError:
-                return False
-        return False
-
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
                       error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
@@ -361,7 +315,6 @@ class MyceliumClient:
 
         try:
             # Compute embedding
-            self._load_model()
             embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
 
             # Submit result
@@ -391,10 +344,6 @@ class MyceliumClient:
         if not self.register_with_server():
             logging.info("Failed to register with server. Exiting.")
             return
-
-        # Pre-load model at start of session for efficiency
-        logging.info("Loading CLAP model for the session...")
-        self._load_model()
 
         # Start background download worker
         logging.info("Starting background download worker...")
