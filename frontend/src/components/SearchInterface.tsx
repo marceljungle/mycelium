@@ -24,6 +24,7 @@ export default function SearchInterface() {
   const [error, setError] = useState<string | null>(null);
   const [searchType, setSearchType] = useState<'text' | 'audio'>('text');
   const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleTextSearch = async () => {
@@ -81,30 +82,59 @@ export default function SearchInterface() {
     }
   };
 
+  const validateAndSetFile = (file: File) => {
+    // Check file type
+    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/flac', 'audio/ogg'];
+    if (!validTypes.some(type => file.type.includes(type.split('/')[1]))) {
+      setError('Please select a valid audio file (MP3, WAV, FLAC, or OGG)');
+      return false;
+    }
+
+    setAudioFile(file);
+    setError(null);
+    return true;
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Check file type
-      const validTypes = ['audio/mpeg', 'audio/wav', 'audio/mp3', 'audio/flac', 'audio/ogg'];
-      if (!validTypes.some(type => file.type.includes(type.split('/')[1]))) {
-        setError('Please select a valid audio file (MP3, WAV, FLAC, or OGG)');
-        return;
-      }
-      
-      // Check file size (50MB limit)
-      if (file.size > 50 * 1024 * 1024) {
-        setError('File size must be less than 50MB');
-        return;
-      }
-
-      setAudioFile(file);
-      setError(null);
+      validateAndSetFile(file);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchType === 'text') {
       handleTextSearch();
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      validateAndSetFile(file);
     }
   };
 
@@ -206,7 +236,17 @@ export default function SearchInterface() {
         <div className="mb-6">
           <div className="space-y-4">
             {/* File Upload Area */}
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6">
+            <div 
+              className={`border-2 border-dashed rounded-lg p-6 transition-colors ${
+                isDragOver 
+                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' 
+                  : 'border-gray-300 dark:border-gray-600'
+              }`}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <input
                 ref={fileInputRef}
                 type="file"
@@ -227,7 +267,7 @@ export default function SearchInterface() {
                         Drop audio file here or click to browse
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Supports MP3, WAV, FLAC, OGG (max 50MB)
+                        Supports MP3, WAV, FLAC, OGG
                       </p>
                     </div>
                   </div>
