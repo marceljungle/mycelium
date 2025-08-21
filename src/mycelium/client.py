@@ -149,7 +149,7 @@ class MyceliumClient:
                 print("Registration interrupted by user.")
                 return False
             attempt += 1
-    
+
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
         try:
@@ -224,82 +224,49 @@ class MyceliumClient:
                             audio_file=None,  # No audio file for text search
                             original_job=job
                         )
-                        
+
                         try:
                             self.download_queue.put(downloaded_job, timeout=5)
                             logging.info(f"Download worker: Queued text search job {task_id} for processing")
                             self._log_queue_status("after queuing text search")
                         except:
                             logging.info(f"Download worker: Queue full, could not enqueue text search job {task_id}")
-                            
-                    elif task_type == "compute_audio_embedding":
-                        # Audio search task - download audio file from server
-                        download_url = job.get("download_url")
-                        
-                        if download_url:
-                            # Download audio file from server
-                            try:
-                                audio_response = requests.get(f"http://{self.server_host}:{self.server_port}{download_url}")
-                                if audio_response.status_code == 200:
-                                    # Create temporary file for the audio data
-                                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
-                                    temp_file.write(audio_response.content)
-                                    temp_file.close()
-                                    
-                                    downloaded_job = DownloadedJob(
-                                        task_id=task_id,
-                                        track_id=job["track_id"],
-                                        audio_file=os.fspath(temp_file.name),
-                                        original_job=job
-                                    )
-                                    
-                                    try:
-                                        self.download_queue.put(downloaded_job, timeout=5)
-                                        logging.info(f"Download worker: Downloaded and queued audio search job {task_id} from {download_url}")
-                                        self._log_queue_status("after downloading audio search")
-                                    except:
-                                        logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
-                                        # Clean up temp file if couldn't queue
-                                        try:
-                                            os.unlink(temp_file.name)
-                                        except:
-                                            pass
-                                else:
-                                    logging.error(f"Download worker: Failed to download audio file from {download_url}, status: {audio_response.status_code}")
-                            except Exception as e:
-                                logging.error(f"Download worker: Error downloading audio file: {e}")
-                        else:
-                            logging.error(f"Download worker: Audio search job {task_id} missing download URL")
-                            
+
                     else:
-                        # Traditional track embedding task - download audio file
-                        logging.info(f"Download worker: Downloading audio for job {task_id}")
-                        audio_file = self.download_audio_file(job["download_url"])
+                        download_url = job.get("download_url")
 
-                        if audio_file:
-                            # Create downloaded job object
-                            downloaded_job = DownloadedJob(
-                                task_id=task_id,
-                                track_id=job["track_id"],
-                                audio_file=audio_file,
-                                original_job=job
-                            )
+                        if download_url:
+                            full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
 
-                            try:
-                                # Add to queue (this will block if queue is full)
-                                self.download_queue.put(downloaded_job, timeout=5)
-                                logging.info(f"Download worker: Queued job {task_id} for processing")
-                                self._log_queue_status("after queuing")
-                            except:
-                                # Queue remained full; clean up the downloaded temp file
-                                logging.info(
-                                    f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                            logging.info(f"Download worker: Downloading audio for job {task_id} from {full_url}")
+                            audio_file = self.download_audio_file(full_url)
+
+                            if audio_file:
+                                # Create downloaded job object
+                                downloaded_job = DownloadedJob(
+                                    task_id=task_id,
+                                    track_id=job["track_id"],
+                                    audio_file=audio_file,
+                                    original_job=job
+                                )
+
                                 try:
-                                    os.unlink(audio_file)
+                                    # Add to queue (this will block if queue is full)
+                                    self.download_queue.put(downloaded_job, timeout=5)
+                                    logging.info(f"Download worker: Queued job {task_id} for processing")
+                                    self._log_queue_status("after queuing")
                                 except:
-                                    pass
+                                    # Queue remained full; clean up the downloaded temp file
+                                    logging.info(
+                                        f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                                    try:
+                                        os.unlink(audio_file)
+                                    except:
+                                        pass
+                            else:
+                                logging.info(f"Download worker: Failed to download audio for job {task_id}")
                         else:
-                            logging.info(f"Download worker: Failed to download audio for job {task_id}")
+                            logging.error(f"Download worker: Job {task_id} missing download URL")
                 else:
                     # No job available, wait before polling again
                     time.sleep(self.poll_interval)
@@ -371,15 +338,15 @@ class MyceliumClient:
         track_id = downloaded_job.track_id
         original_job = downloaded_job.original_job
         task_type = original_job.get("task_type", "compute_embedding")
-        
+
         logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
 
         try:
-            if task_type == "compute_embedding":
+            if task_type == "compute_embedding" or task_type == "compute_audio_embedding":
                 # Traditional track embedding computation
                 audio_file = downloaded_job.audio_file
                 embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
-                
+
                 if embedding:
                     success = self.submit_result(task_id, track_id, embedding)
                     if success:
@@ -390,17 +357,17 @@ class MyceliumClient:
                 else:
                     self.submit_result(task_id, track_id, None, "Failed to compute embedding")
                     return False
-                    
+
             elif task_type == "compute_text_embedding":
                 # Text search embedding computation
                 text_query = original_job.get("text_query")
                 if not text_query:
                     self.submit_result(task_id, track_id, None, "Missing text query")
                     return False
-                    
+
                 logging.info(f"Computing text embedding for query: '{text_query}'")
                 text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
-                
+
                 if text_embedding:
                     success = self.submit_result(task_id, track_id, text_embedding)
                     if success:
@@ -410,22 +377,6 @@ class MyceliumClient:
                     return success
                 else:
                     self.submit_result(task_id, track_id, None, "Failed to compute text embedding")
-                    return False
-                    
-            elif task_type == "compute_audio_embedding":
-                # Audio search embedding computation
-                audio_file = downloaded_job.audio_file
-                embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
-                
-                if embedding:
-                    success = self.submit_result(task_id, track_id, embedding)
-                    if success:
-                        logging.info(f"Successfully processed audio embedding job {task_id}")
-                    else:
-                        logging.warning(f"Failed to submit audio embedding result for job {task_id}")
-                    return success
-                else:
-                    self.submit_result(task_id, track_id, None, "Failed to compute audio embedding")
                     return False
             else:
                 logging.error(f"Unknown task type: {task_type}")

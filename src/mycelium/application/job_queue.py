@@ -56,16 +56,52 @@ class JobQueueService:
             
             return [w for w in self._workers.values() if w.is_active]
 
-    def create_task(self, track_id: str, download_url: str, prioritize: bool) -> Task:
-        """Create a new task and add it to the queue."""
+    def create_task(self, track_id: str = "", download_url: str = "", 
+                    audio_data: bytes = None, audio_filename: str = "", 
+                    n_results: int = 10, prioritize: bool = True) -> Task:
+        """Create a new task and add it to the queue.
+        
+        Can create either:
+        - Traditional embedding task: provide track_id and download_url
+        - Audio search task: provide audio_data and audio_filename
+        """
         with self._lock:
             task_id = str(uuid.uuid4())
-            task = Task(
-                task_id=task_id,
-                task_type=TaskType.COMPUTE_EMBEDDING,
-                track_id=track_id,
-                download_url=download_url
-            )
+            
+            # Determine task type based on provided parameters
+            if audio_data is not None:
+                # Audio search task - create temporary file and internal URL
+                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
+                
+                # Create temporary file for audio data to avoid base64 encoding overhead
+                temp_file = self._temp_dir / f"audio_task_{task_id}.tmp"
+                temp_file.write_bytes(audio_data)
+                self._temp_files[task_id] = temp_file
+                
+                # Create download URL for the worker (internal URL)
+                download_url = f"/download_audio_task/{task_id}"
+                track_id = ""  # Not needed for audio search
+                
+                task = Task(
+                    task_id=task_id,
+                    task_type=task_type,
+                    track_id=track_id,
+                    download_url=download_url,
+                    audio_data=None,  # Don't store in memory - use temp file instead
+                    audio_filename=audio_filename,
+                    n_results=n_results
+                )
+            else:
+                # Traditional embedding task - use external URL as-is
+                task_type = TaskType.COMPUTE_EMBEDDING
+                
+                task = Task(
+                    task_id=task_id,
+                    task_type=task_type,
+                    track_id=track_id,
+                    download_url=download_url
+                )
+            
             self._tasks[task_id] = task
             if prioritize:
                 self._pending_tasks.insert(0, task_id)
@@ -92,38 +128,6 @@ class JobQueueService:
                 self._pending_tasks.append(task_id)
             return task
 
-    def create_audio_search_task(self, audio_data: bytes, audio_filename: str, n_results: int = 10, prioritize: bool = True) -> Task:
-        """Create a new audio search task and add it to the queue.
-        
-        For efficiency with large audio files, stores audio data as temporary file
-        instead of keeping it in memory or base64 encoding it.
-        """
-        with self._lock:
-            task_id = str(uuid.uuid4())
-            
-            # Create temporary file for audio data to avoid base64 encoding overhead
-            temp_file = self._temp_dir / f"audio_task_{task_id}.tmp"
-            temp_file.write_bytes(audio_data)
-            self._temp_files[task_id] = temp_file
-            
-            # Create download URL for the worker
-            download_url = f"/download_audio_task/{task_id}"
-            
-            task = Task(
-                task_id=task_id,
-                task_type=TaskType.COMPUTE_AUDIO_EMBEDDING,
-                track_id="",  # Not needed for audio search
-                download_url=download_url,  # URL for worker to download audio file
-                audio_data=None,  # Don't store in memory - use temp file instead
-                audio_filename=audio_filename,
-                n_results=n_results
-            )
-            self._tasks[task_id] = task
-            if prioritize:
-                self._pending_tasks.insert(0, task_id)
-            else:
-                self._pending_tasks.append(task_id)
-            return task
 
     def get_next_job(self, worker_id: str) -> Optional[Task]:
         """Get the next job for a worker."""

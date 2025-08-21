@@ -235,7 +235,7 @@ async def search_by_audio(
         if active_workers:
             logger.info(f"Found {len(active_workers)} active workers, creating audio search task")
             # Create task for worker processing
-            task = job_queue.create_audio_search_task(
+            task = job_queue.create_task(
                 audio_data=content, 
                 audio_filename=audio.filename or "upload.tmp",
                 n_results=n_results,
@@ -776,8 +776,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
         if active_workers:
             logger.info(f"Found {len(active_workers)} active workers, creating task")
             # Create task for worker processing
-            # TODO: we shouldn't specify here the host and port, because the client already knows about them in its own config.
-            download_url = f"http://{config.api.host}:{config.api.port}/download_track/{track_id}"
+            download_url = f"/download_track/{track_id}"
             task = job_queue.create_task(track_id=track_id, download_url=download_url, prioritize=True)
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
