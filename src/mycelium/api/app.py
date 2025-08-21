@@ -779,7 +779,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
             # Create task for worker processing
             download_url = f"/download_track/{track_id}"
             task = job_queue.create_task(track_id=track_id, download_url=download_url, prioritize=True,
-                                         context_type=ContextType.AUDIO_PROCESSING)
+                                         context_type=ContextType.SIMILAR_TRACKS)
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking
