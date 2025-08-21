@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { API_BASE_URL } from '../config/api';
 
@@ -27,6 +27,69 @@ export default function SearchInterface() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [numResults, setNumResults] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Worker processing state
+  const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [pollInterval]);
+
+  const pollTaskStatus = async (taskId: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
+      if (response.ok) {
+        const taskData = await response.json();
+        
+        if (taskData.status === 'success' && taskData.search_results) {
+          // Task completed successfully with search results
+          setResults(taskData.search_results);
+          return true;
+        } else if (taskData.status === 'failed') {
+          // Task failed
+          setError(taskData.error_message || 'Search task failed on worker');
+          return true;
+        }
+        // Task still in progress
+        return false;
+      } else {
+        console.error('Failed to poll task status:', response.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error polling task status:', error);
+      return false;
+    }
+  };
+
+  const startTaskPolling = (taskId: string) => {
+    console.log('Starting task polling for search task:', taskId);
+    setCurrentTaskId(taskId);
+    setProcessingState('worker');
+
+    const interval = setInterval(async () => {
+      const completed = await pollTaskStatus(taskId);
+      
+      if (completed) {
+        console.log(`Search task ${taskId} completed, clearing polling`);
+        clearInterval(interval);
+        setPollInterval(null);
+        setCurrentTaskId(null);
+        setProcessingState('none');
+        setLoading(false);
+        setAudioLoading(false);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    setPollInterval(interval);
+  };
 
   const handleTextSearch = async () => {
     if (!query.trim()) return;
@@ -42,11 +105,61 @@ export default function SearchInterface() {
       }
 
       const data = await response.json();
-      setResults(data);
+      
+      // Check if it's direct search results or a processing response
+      if (Array.isArray(data)) {
+        // Direct search results (server processed immediately)
+        setResults(data);
+        setLoading(false);
+      } else if (data.status === 'processing') {
+        // Worker processing - start polling
+        console.log('Text search sent to worker, starting polling for task:', data.task_id);
+        startTaskPolling(data.task_id);
+      } else if (data.status === 'confirmation_required') {
+        // No workers available - ask for confirmation
+        const shouldProcess = window.confirm(
+          `Text search requires embedding computation, and no workers are active. ${data.message}\n\nWould you like to process it on the server?`
+        );
+        
+        if (shouldProcess) {
+          setProcessingState('server');
+          try {
+            // Process on server
+            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/text`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                query: query,
+                n_results: numResults
+              }),
+            });
+
+            if (serverResponse.ok) {
+              const serverResults = await serverResponse.json();
+              setResults(serverResults);
+            } else {
+              const errorData = await serverResponse.json().catch(() => ({}));
+              setError(errorData.detail || 'Failed to process text search on server. Please try again later.');
+            }
+          } catch {
+            setError('Error processing text search on server. Please check your connection.');
+          } finally {
+            setProcessingState('none');
+            setLoading(false);
+          }
+        } else {
+          setLoading(false);
+        }
+      } else {
+        console.error('Unexpected response from text search:', data);
+        setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
+        setLoading(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       setResults([]);
-    } finally {
       setLoading(false);
     }
   };
@@ -73,12 +186,66 @@ export default function SearchInterface() {
       }
 
       const data = await response.json();
-      setResults(data);
+      
+      // Check if it's direct search results or a processing response
+      if (Array.isArray(data)) {
+        // Direct search results (server processed immediately)
+        setResults(data);
+        setAudioLoading(false);
+      } else if (data.status === 'processing') {
+        // Worker processing - start polling
+        console.log('Audio search sent to worker, starting polling for task:', data.task_id);
+        startTaskPolling(data.task_id);
+      } else if (data.status === 'confirmation_required') {
+        // No workers available - ask for confirmation
+        const shouldProcess = window.confirm(
+          `Audio search requires embedding computation, and no workers are active. ${data.message}\n\nWould you like to process it on the server?`
+        );
+        
+        if (shouldProcess) {
+          setProcessingState('server');
+          try {
+            // Process on server - need to send audio data as bytes
+            const audioBuffer = await audioFile.arrayBuffer();
+            const audioBytes = Array.from(new Uint8Array(audioBuffer));
+
+            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/audio`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                audio_data: audioBytes,
+                audio_filename: audioFile.name,
+                n_results: numResults
+              }),
+            });
+
+            if (serverResponse.ok) {
+              const serverResults = await serverResponse.json();
+              setResults(serverResults);
+            } else {
+              const errorData = await serverResponse.json().catch(() => ({}));
+              setError(errorData.detail || 'Failed to process audio search on server. Please try again later.');
+            }
+          } catch {
+            setError('Error processing audio search on server. Please check your connection.');
+          } finally {
+            setProcessingState('none');
+            setAudioLoading(false);
+          }
+        } else {
+          setAudioLoading(false);
+        }
+      } else {
+        console.error('Unexpected response from audio search:', data);
+        setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
+        setAudioLoading(false);
+      }
     } catch (err) {
       console.error('Audio search error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred during audio search');
       setResults([]);
-    } finally {
       setAudioLoading(false);
     }
   };
@@ -212,16 +379,17 @@ export default function SearchInterface() {
             </div>
             <button
               onClick={handleTextSearch}
-              disabled={loading || !query.trim()}
+              disabled={loading || processingState !== 'none' || !query.trim()}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
-              {loading ? (
+              {loading || processingState !== 'none' ? (
                 <div className="flex items-center">
                   <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Searching...
+                  {processingState === 'worker' ? 'Processing with AI worker...' : 
+                   processingState === 'server' ? 'Processing on server...' : 'Searching...'}
                 </div>
               ) : (
                 'Search'
@@ -321,16 +489,17 @@ export default function SearchInterface() {
             {/* Search Button for Audio */}
             <button
               onClick={handleAudioSearch}
-              disabled={audioLoading || !audioFile}
+              disabled={audioLoading || processingState !== 'none' || !audioFile}
               className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
-              {audioLoading ? (
+              {audioLoading || processingState !== 'none' ? (
                 <div className="flex items-center justify-center">
                   <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Analyzing Audio...
+                  {processingState === 'worker' ? 'Processing with AI worker...' : 
+                   processingState === 'server' ? 'Processing on server...' : 'Analyzing Audio...'}
                 </div>
               ) : (
                 '🔍 Find Similar Music'
@@ -351,7 +520,7 @@ export default function SearchInterface() {
         </div>
       )}
 
-      <SearchResults results={results} loading={loading || audioLoading} />
+      <SearchResults results={results} loading={loading || audioLoading || processingState !== 'none'} />
     </div>
   );
 }
