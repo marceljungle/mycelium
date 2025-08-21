@@ -1,4 +1,5 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
+import base64
 import logging
 import os
 import socket
@@ -235,6 +236,12 @@ class MyceliumClient:
                     elif task_type == "compute_audio_embedding":
                         # Audio search task - need to handle audio data from job
                         audio_data = job.get("audio_data")
+                        if not audio_data:
+                            # Check for base64 encoded data
+                            audio_data_base64 = job.get("audio_data_base64")
+                            if audio_data_base64:
+                                audio_data = base64.b64decode(audio_data_base64)
+                        
                         audio_filename = job.get("audio_filename", "search.tmp")
                         
                         if audio_data:

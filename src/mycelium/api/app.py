@@ -1,5 +1,6 @@
 """FastAPI application for Mycelium web interface."""
 
+import base64
 import logging
 import os
 import tempfile
@@ -543,13 +544,19 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
             return None
 
         logger.info(f"Assigning task {task.task_id} to worker {worker_id} for track {task.track_id}")
+        
+        # Encode audio data as base64 for JSON serialization
+        audio_data_base64 = None
+        if task.audio_data:
+            audio_data_base64 = base64.b64encode(task.audio_data).decode('utf-8')
+            
         return JobRequest(
             task_id=task.task_id,
             task_type=task.task_type,
             track_id=task.track_id,
             download_url=task.download_url,
             text_query=task.text_query,
-            audio_data=task.audio_data,
+            audio_data_base64=audio_data_base64,
             audio_filename=task.audio_filename,
             n_results=task.n_results
         )
@@ -838,14 +845,15 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
 async def compute_audio_search_on_server(request: ComputeSearchOnServerRequest):
     """Compute audio search on server CPU after user confirmation."""
     try:
-        if not request.audio_data:
+        audio_bytes = request.audio_bytes
+        if not audio_bytes:
             raise HTTPException(status_code=400, detail="Audio data is required for audio search")
             
         logger.info(f"Starting server-side audio search for file: '{request.audio_filename}'")
         
         # Create temporary file for the audio data
         with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            temp_file.write(request.audio_data)
+            temp_file.write(audio_bytes)
             temp_file_path = temp_file.name
 
         try:
@@ -872,16 +880,15 @@ async def compute_audio_search_on_server(request: ComputeSearchOnServerRequest):
             # Clean up temporary file
             try:
                 os.unlink(temp_file_path)
-                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
-            except OSError as e:
-                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
-        
+            except OSError:
+                pass
+                
     except HTTPException:
         # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
-        logger.error(f"Error computing audio search on server for file '{request.audio_filename}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Server audio search failed: {str(e)}")
+        logger.error(f"Audio search on server failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Audio search failed: {str(e)}")
 
 
 @app.get("/api/queue/task/{task_id}")
