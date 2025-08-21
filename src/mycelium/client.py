@@ -1,5 +1,4 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
-import base64
 import logging
 import os
 import socket
@@ -271,42 +270,7 @@ class MyceliumClient:
                             except Exception as e:
                                 logging.error(f"Download worker: Error downloading audio file: {e}")
                         else:
-                            # Fallback to base64 data (backward compatibility)
-                            audio_data = job.get("audio_data")
-                            if not audio_data:
-                                # Check for base64 encoded data
-                                audio_data_base64 = job.get("audio_data_base64")
-                                if audio_data_base64:
-                                    audio_data = base64.b64decode(audio_data_base64)
-                            
-                            if audio_data:
-                                # Create temporary file for the audio data (backward compatibility)
-                                try:
-                                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
-                                    temp_file.write(audio_data)
-                                    temp_file.close()
-                                    
-                                    downloaded_job = DownloadedJob(
-                                        task_id=task_id,
-                                        track_id=job["track_id"],
-                                        audio_file=temp_file.name,
-                                        original_job=job
-                                    )
-                                    
-                                    try:
-                                        self.download_queue.put(downloaded_job, timeout=5)
-                                        logging.info(f"Download worker: Queued audio search job {task_id} for processing (base64 fallback)")
-                                        self._log_queue_status("after queuing audio search")
-                                    except:
-                                        logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
-                                        try:
-                                            os.unlink(temp_file.name)
-                                        except:
-                                            pass
-                                except Exception as e:
-                                    logging.error(f"Download worker: Failed to create temp file for audio search job {task_id}: {e}")
-                            else:
-                                logging.error(f"Download worker: Audio search job {task_id} missing audio data and download URL")
+                            logging.error(f"Download worker: Audio search job {task_id} missing download URL")
                             
                     else:
                         # Traditional track embedding task - download audio file

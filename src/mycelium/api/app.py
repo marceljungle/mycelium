@@ -1,6 +1,5 @@
 """FastAPI application for Mycelium web interface."""
 
-import base64
 import logging
 import os
 import tempfile
@@ -546,14 +545,13 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 
         logger.info(f"Assigning task {task.task_id} to worker {worker_id} for track {task.track_id}")
         
-        # No longer encode audio data as base64 - workers will download files via URL
+        # Workers download files via URL
         return JobRequest(
             task_id=task.task_id,
             task_type=task.task_type,
             track_id=task.track_id,
             download_url=task.download_url,
             text_query=task.text_query,
-            audio_data_base64=None,  # No longer used - workers download files
             audio_filename=task.audio_filename,
             n_results=task.n_results
         )

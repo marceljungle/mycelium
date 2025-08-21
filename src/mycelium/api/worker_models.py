@@ -1,9 +1,8 @@
 """API models for worker coordination."""
 
-import base64
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from ..domain.worker import TaskType, TaskStatus
 
@@ -28,16 +27,8 @@ class JobRequest(BaseModel):
     track_id: str
     download_url: str
     text_query: Optional[str] = None  # For text search tasks
-    audio_data_base64: Optional[str] = Field(None, description="Base64 encoded audio data (deprecated - use download_url)")
     audio_filename: Optional[str] = None  # For audio search tasks
     n_results: Optional[int] = None  # For search tasks
-    
-    @property
-    def audio_data(self) -> Optional[bytes]:
-        """Get audio data as bytes, decoded from base64 (deprecated - use download_url instead)."""
-        if self.audio_data_base64:
-            return base64.b64decode(self.audio_data_base64)
-        return None
 
 
 class TaskResultRequest(BaseModel):
