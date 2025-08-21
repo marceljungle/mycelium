@@ -166,6 +166,7 @@ async def get_library_stats():
 @app.post("/api/search/text", response_model=List[SearchResultResponse])
 async def search_by_text(search_request: SearchRequest):
     """Search for music tracks by text description."""
+    logger.info(f"Text search request received - query: '{search_request.query}', n_results: {search_request.n_results}")
     try:
         results = service.search_similar_by_text(
             search_request.query,
@@ -186,7 +187,11 @@ async def search_by_text(search_request: SearchRequest):
             )
             for result in results
         ]
+    except HTTPException:
+        # Re-raise HTTP exceptions unchanged
+        raise
     except Exception as e:
+        logger.error(f"Text search failed for query '{search_request.query}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -196,6 +201,7 @@ async def search_by_text_get(
         n_results: int = Query(10, description="Number of results to return")
 ):
     """Search for music tracks by text description (GET endpoint)."""
+    logger.info(f"Text search GET request - q: '{q}', n_results: {n_results}")
     try:
         results = service.search_similar_by_text(q, n_results)
 
@@ -213,7 +219,11 @@ async def search_by_text_get(
             )
             for result in results
         ]
+    except HTTPException:
+        # Re-raise HTTP exceptions unchanged
+        raise
     except Exception as e:
+        logger.error(f"Text search GET failed for q '{q}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -390,7 +400,6 @@ async def save_config(config_request: ConfigRequest):
         chroma_config = ChromaConfig(**config_request.chroma)
         database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
-        client_config = ClientConfig(**config_request.client)
         logging_config = LoggingConfig(**config_request.logging)
 
         yaml_config = ConfigYAML(
@@ -399,7 +408,6 @@ async def save_config(config_request: ConfigRequest):
             chroma=chroma_config,
             database=database_config,
             api=api_config,
-            client=client_config,
             logging=logging_config
         )
 
