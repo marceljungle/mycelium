@@ -588,8 +588,9 @@ async def submit_result(request: TaskResultRequest):
                 # Traditional track embedding task
                 logger.info(
                     f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
-                service.save_embedding(request.track_id, request.embedding)
-                logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
+                if (request.track_id is not None) and (request.track_id.strip() != ""):
+                    service.save_embedding(request.track_id, request.embedding)
+                    logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
 
                 if task.context_type == ContextType.AUDIO_SEARCH:
                     # Audio search task - perform search on server

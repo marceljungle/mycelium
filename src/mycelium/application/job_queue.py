@@ -269,21 +269,22 @@ class JobQueueService:
         """Check if there are any library processing tasks currently being processed or pending.
         
         Note: This excludes search tasks (text/audio search) which have their own loading states.
-        Only counts COMPUTE_EMBEDDING tasks for library processing status.
+        Only counts tasks with AUDIO_PROCESSING context for library processing status.
         """
         with self._lock:
             # Clean up stale in-progress tasks from inactive workers first
             self._cleanup_stale_tasks()
             
             # Only count library processing tasks, not search tasks
+            # Use context_type to distinguish between library processing and search tasks
             library_pending_tasks = [
                 task_id for task_id in self._pending_tasks
-                if self._tasks.get(task_id) and self._tasks[task_id].task_type == TaskType.COMPUTE_AUDIO_EMBEDDING
+                if self._tasks.get(task_id) and self._tasks[task_id].context_type == ContextType.AUDIO_PROCESSING
             ]
             
             library_in_progress_tasks = [
                 t for t in self._tasks.values()
-                if t.status == TaskStatus.IN_PROGRESS and t.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING
+                if t.status == TaskStatus.IN_PROGRESS and t.context_type == ContextType.AUDIO_PROCESSING
             ]
             
             return len(library_pending_tasks) > 0 or len(library_in_progress_tasks) > 0

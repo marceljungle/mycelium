@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { API_BASE_URL } from '../config/api';
-import { useProcessing } from '../contexts/ProcessingContext';
 
 interface SearchResult {
   track: {
@@ -28,9 +27,6 @@ export default function SearchInterface() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [numResults, setNumResults] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Get processing context functions to refresh UI state after search
-  const { fetchStats, fetchProgress } = useProcessing();
   
   // Worker processing state
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
@@ -57,9 +53,6 @@ export default function SearchInterface() {
           // Task completed successfully with search results
           console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
           setResults(taskData.search_results);
-          // Refresh processing state after search completes
-          await fetchStats();
-          await fetchProgress();
           return true;
         } else if (taskData.status === 'failed') {
           // Task failed
@@ -139,9 +132,8 @@ export default function SearchInterface() {
         // Direct search results (server processed immediately)
         setResults(data);
         setLoading(false);
-        // Refresh processing state after search completes
-        await fetchStats();
-        await fetchProgress();
+
+
       } else if (data.status === 'processing') {
         // Worker processing - start polling
         console.log('Text search sent to worker, starting polling for task:', data.task_id);
@@ -170,9 +162,6 @@ export default function SearchInterface() {
             if (serverResponse.ok) {
               const serverResults = await serverResponse.json();
               setResults(serverResults);
-              // Refresh processing state after server search completes
-              await fetchStats();
-              await fetchProgress();
             } else {
               const errorData = await serverResponse.json().catch(() => ({}));
               setError(errorData.detail || 'Failed to process text search on server. Please try again later.');
@@ -226,9 +215,8 @@ export default function SearchInterface() {
         // Direct search results (server processed immediately)
         setResults(data);
         setAudioLoading(false);
-        // Refresh processing state after search completes
-        await fetchStats();
-        await fetchProgress();
+
+
       } else if (data.status === 'processing') {
         // Worker processing - start polling
         console.log('Audio search sent to worker, starting polling for task:', data.task_id);
@@ -254,9 +242,6 @@ export default function SearchInterface() {
             if (serverResponse.ok) {
               const serverResults = await serverResponse.json();
               setResults(serverResults);
-              // Refresh processing state after server search completes
-              await fetchStats();
-              await fetchProgress();
             } else {
               const errorData = await serverResponse.json().catch(() => ({}));
               setError(errorData.detail || 'Failed to process audio search on server. Please try again later.');
