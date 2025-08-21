@@ -594,7 +594,8 @@ async def submit_result(request: TaskResultRequest):
 
                 if task.context_type == ContextType.AUDIO_SEARCH:
                     # Audio search task - perform search on server
-                    logger.info(f"Performing audio search for task {request.task_id} with file '{task.audio_filename}'")
+                    context_info = f"track '{request.track_id}'" if task.track_id else f"file '{task.audio_filename}'"
+                    logger.info(f"Performing audio search for task {request.task_id} with {context_info}")
                     try:
                         # Use the embedding to search directly
                         search_results = service.embedding_repository.search_by_embedding(request.embedding,
