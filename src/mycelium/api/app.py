@@ -16,7 +16,9 @@ from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
     ConfirmationRequiredResponse, ComputeOnServerRequest,
-    WorkerProcessingResponse, NoWorkersResponse
+    WorkerProcessingResponse, NoWorkersResponse,
+    SearchProcessingResponse, SearchConfirmationRequiredResponse,
+    ComputeSearchOnServerRequest
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
@@ -137,6 +139,8 @@ async def root():
             "library_tracks": "/api/library/tracks",
             "search_text": "/api/search/text",
             "search_audio": "/api/search/audio",
+            "compute_text_search": "/compute/search/text",
+            "compute_audio_search": "/compute/search/audio",
             "config_get": "/api/config",
             "config_save": "/api/config",
             "scan_library": "/api/library/scan",
@@ -163,30 +167,39 @@ async def get_library_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/search/text", response_model=List[SearchResultResponse])
+@app.get("/api/search/text")
 async def search_by_text_get(
         q: str = Query(..., description="Search query"),
         n_results: int = Query(10, description="Number of results to return")
 ):
     """Search for music tracks by text description (GET endpoint)."""
     logger.info(f"Text search GET request - q: '{q}', n_results: {n_results}")
+    
     try:
-        results = service.search_similar_by_text(q, n_results)
-
-        return [
-            SearchResultResponse(
-                track=TrackResponse(
-                    artist=result.track.artist,
-                    album=result.track.album,
-                    title=result.track.title,
-                    filepath=str(result.track.filepath),
-                    plex_rating_key=result.track.plex_rating_key
-                ),
-                similarity_score=result.similarity_score,
-                distance=result.distance
+        # Check if there are active workers
+        active_workers = job_queue.get_active_workers()
+        if active_workers:
+            logger.info(f"Found {len(active_workers)} active workers, creating text search task")
+            # Create task for worker processing
+            task = job_queue.create_text_search_task(text_query=q, prioritize=True)
+            
+            logger.info(f"Created text search task {task.task_id} for query '{q}'")
+            # Return processing response
+            return SearchProcessingResponse(
+                status="processing",
+                message="Text embedding computation has been sent to a worker. Please try again in a few moments.",
+                task_id=task.task_id,
+                query=q
             )
-            for result in results
-        ]
+
+        logger.info(f"No active workers available for text search")
+        # No active workers - return confirmation required
+        return SearchConfirmationRequiredResponse(
+            status="confirmation_required",
+            message="Text search requires embedding computation, and no workers are active. Do you wish to continue on the server hardware?",
+            query=q
+        )
+
     except HTTPException:
         # Re-raise HTTP exceptions unchanged
         raise
@@ -195,7 +208,7 @@ async def search_by_text_get(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/search/audio", response_model=List[SearchResultResponse])
+@app.post("/api/search/audio")
 async def search_by_audio(
         audio: UploadFile = File(..., description="Audio file to search with"),
         n_results: int = Form(10, description="Number of results to return")
@@ -212,43 +225,40 @@ async def search_by_audio(
             logger.warning(f"Invalid file type: {audio.content_type}")
             raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
 
-        # Create temporary file to store upload
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            content = await audio.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        # Read audio content
+        content = await audio.read()
+        logger.info(f"Audio file read successfully - size: {len(content)} bytes")
 
-        logger.info(f"Audio file saved to temporary location: {temp_file_path}")
+        # Check if there are active workers
+        active_workers = job_queue.get_active_workers()
+        if active_workers:
+            logger.info(f"Found {len(active_workers)} active workers, creating audio search task")
+            # Create task for worker processing
+            task = job_queue.create_audio_search_task(
+                audio_data=content, 
+                audio_filename=audio.filename or "upload.tmp",
+                prioritize=True
+            )
+            
+            logger.info(f"Created audio search task {task.task_id} for file '{audio.filename}'")
+            # Return processing response
+            return SearchProcessingResponse(
+                status="processing", 
+                message="Audio embedding computation has been sent to a worker. Please try again in a few moments.",
+                task_id=task.task_id,
+                filename=audio.filename
+            )
 
-        try:
-            # Search using temporary file
-            results = service.search_similar_by_audio(Path(temp_file_path), n_results)
-            logger.info(f"Audio search completed successfully - found {len(results)} results")
-
-            return [
-                SearchResultResponse(
-                    track=TrackResponse(
-                        artist=result.track.artist,
-                        album=result.track.album,
-                        title=result.track.title,
-                        filepath=str(result.track.filepath),
-                        plex_rating_key=result.track.plex_rating_key
-                    ),
-                    similarity_score=result.similarity_score,
-                    distance=result.distance
-                )
-                for result in results
-            ]
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_file_path)
-                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
-            except OSError as e:
-                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+        logger.info(f"No active workers available for audio search")
+        # No active workers - return confirmation required
+        return SearchConfirmationRequiredResponse(
+            status="confirmation_required",
+            message="Audio search requires embedding computation, and no workers are active. Do you wish to continue on the server hardware?",
+            filename=audio.filename
+        )
 
     except HTTPException:
-        # Re-raise HTTP exceptions as they are
+        # Re-raise HTTP exceptions unchanged
         raise
     except Exception as e:
         logger.error(f"Audio search failed: {e}", exc_info=True)
@@ -536,7 +546,10 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
             task_id=task.task_id,
             task_type=task.task_type,
             track_id=task.track_id,
-            download_url=task.download_url
+            download_url=task.download_url,
+            text_query=task.text_query,
+            audio_data=task.audio_data,
+            audio_filename=task.audio_filename
         )
     except Exception as e:
         logger.error(f"Error getting job for worker {worker_id}: {e}", exc_info=True)
@@ -555,20 +568,28 @@ async def submit_result(request: TaskResultRequest):
             track_id=request.track_id,
             status=request.status,
             embedding=request.embedding,
-            error_message=request.error_message
+            error_message=request.error_message,
+            search_results=request.search_results
         )
 
         success = job_queue.submit_result(task_result)
         logger.info(f"Task result submission: success={success}")
 
-        if success and request.embedding:
+        # Handle different task types
+        if success and request.embedding and not request.search_results:
+            # This is a track embedding task (traditional COMPUTE_EMBEDDING)
             # Save embedding to ChromaDB
             logger.info(
                 f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}")
             service.save_embedding(request.track_id, request.embedding)
             logger.info(f"Successfully saved worker-generated embedding for track {request.track_id}")
+        elif success and request.search_results:
+            # This is a search task - results are stored in the task for retrieval
+            logger.info(f"Search task {request.task_id} completed with {len(request.search_results)} results")
         elif request.error_message:
             logger.error(f"Worker task failed for track {request.track_id}: {request.error_message}")
+        else:
+            logger.warning(f"Task {request.task_id} completed but no embedding or search results provided")
 
         return TaskResultResponse(
             success=success,
@@ -709,13 +730,100 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
         raise HTTPException(status_code=500, detail=f"Server computation failed: {str(e)}")
 
 
+@app.post("/compute/search/text", response_model=List[SearchResultResponse])
+async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
+    """Compute text search on server CPU after user confirmation."""
+    try:
+        if not request.query:
+            raise HTTPException(status_code=400, detail="Query is required for text search")
+            
+        logger.info(f"Starting server-side text search for query: '{request.query}'")
+        
+        # Perform text search directly on server
+        results = service.search_similar_by_text(request.query, request.n_results)
+        
+        logger.info(f"Text search completed successfully - found {len(results)} results")
+        
+        return [
+            SearchResultResponse(
+                track=TrackResponse(
+                    artist=result.track.artist,
+                    album=result.track.album,
+                    title=result.track.title,
+                    filepath=str(result.track.filepath),
+                    plex_rating_key=result.track.plex_rating_key
+                ),
+                similarity_score=result.similarity_score,
+                distance=result.distance
+            )
+            for result in results
+        ]
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
+    except Exception as e:
+        logger.error(f"Error computing text search on server for query '{request.query}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Server text search failed: {str(e)}")
+
+
+@app.post("/compute/search/audio", response_model=List[SearchResultResponse])
+async def compute_audio_search_on_server(request: ComputeSearchOnServerRequest):
+    """Compute audio search on server CPU after user confirmation."""
+    try:
+        if not request.audio_data:
+            raise HTTPException(status_code=400, detail="Audio data is required for audio search")
+            
+        logger.info(f"Starting server-side audio search for file: '{request.audio_filename}'")
+        
+        # Create temporary file for the audio data
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
+            temp_file.write(request.audio_data)
+            temp_file_path = temp_file.name
+
+        try:
+            # Perform audio search directly on server
+            results = service.search_similar_by_audio(Path(temp_file_path), request.n_results)
+            
+            logger.info(f"Audio search completed successfully - found {len(results)} results")
+            
+            return [
+                SearchResultResponse(
+                    track=TrackResponse(
+                        artist=result.track.artist,
+                        album=result.track.album,
+                        title=result.track.title,
+                        filepath=str(result.track.filepath),
+                        plex_rating_key=result.track.plex_rating_key
+                    ),
+                    similarity_score=result.similarity_score,
+                    distance=result.distance
+                )
+                for result in results
+            ]
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
+            except OSError as e:
+                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are
+        raise
+    except Exception as e:
+        logger.error(f"Error computing audio search on server for file '{request.audio_filename}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Server audio search failed: {str(e)}")
+
+
 @app.get("/api/queue/task/{task_id}")
 async def get_task_status(task_id: str):
     """Get status of a specific task."""
     try:
         task = job_queue.get_task_status(task_id)
         if task:
-            return {
+            response = {
                 "task_id": task.task_id,
                 "status": task.status.value,
                 "track_id": task.track_id,
@@ -723,11 +831,54 @@ async def get_task_status(task_id: str):
                 "completed_at": task.completed_at.isoformat() if task.completed_at else None,
                 "error_message": task.error_message
             }
+            
+            # Include search results for search tasks
+            if task.search_results:
+                response["search_results"] = task.search_results
+                
+            return response
         else:
             raise HTTPException(status_code=404, detail="Task not found")
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
+
+@app.post("/api/internal/search_by_embedding", response_model=List[SearchResultResponse])
+async def search_by_embedding_internal(request: dict):
+    """Internal endpoint for workers to search using embeddings."""
+    try:
+        embedding = request.get("embedding")
+        n_results = request.get("n_results", 10)
+        
+        if not embedding:
+            raise HTTPException(status_code=400, detail="Embedding is required")
+            
+        logger.info(f"Internal search by embedding request - n_results: {n_results}")
+        
+        # Use the embedding repository to search directly
+        results = service.embedding_repository.search_by_embedding(embedding, n_results)
+        
+        return [
+            SearchResultResponse(
+                track=TrackResponse(
+                    artist=result.track.artist,
+                    album=result.track.album,
+                    title=result.track.title,
+                    filepath=str(result.track.filepath),
+                    plex_rating_key=result.track.plex_rating_key
+                ),
+                similarity_score=result.similarity_score,
+                distance=result.distance
+            )
+            for result in results
+        ]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Internal search by embedding failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal search failed: {str(e)}")
 
 
 if __name__ == "__main__":

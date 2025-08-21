@@ -212,35 +212,90 @@ class MyceliumClient:
 
                 if job:
                     task_id = job["task_id"]
-                    logging.info(f"Download worker: Downloading audio for job {task_id}")
+                    task_type = job.get("task_type", "compute_embedding")
+                    logging.info(f"Download worker: Got job {task_id} with task_type {task_type}")
 
-                    # Download audio file
-                    audio_file = self.download_audio_file(job["download_url"])
-
-                    if audio_file:
-                        # Create downloaded job object
+                    # Handle different task types
+                    if task_type == "compute_text_embedding":
+                        # Text search task - no download needed
                         downloaded_job = DownloadedJob(
                             task_id=task_id,
                             track_id=job["track_id"],
-                            audio_file=audio_file,
+                            audio_file=None,  # No audio file for text search
                             original_job=job
                         )
-
+                        
                         try:
-                            # Add to queue (this will block if queue is full)
                             self.download_queue.put(downloaded_job, timeout=5)
-                            logging.info(f"Download worker: Queued job {task_id} for processing")
-                            self._log_queue_status("after queuing")
+                            logging.info(f"Download worker: Queued text search job {task_id} for processing")
+                            self._log_queue_status("after queuing text search")
                         except:
-                            # Queue remained full; clean up the downloaded temp file
-                            logging.info(
-                                f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                            logging.info(f"Download worker: Queue full, could not enqueue text search job {task_id}")
+                            
+                    elif task_type == "compute_audio_embedding":
+                        # Audio search task - need to handle audio data from job
+                        audio_data = job.get("audio_data")
+                        audio_filename = job.get("audio_filename", "search.tmp")
+                        
+                        if audio_data:
+                            # Create temporary file for the audio data
                             try:
-                                os.unlink(audio_file)
-                            except:
-                                pass
+                                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+                                temp_file.write(audio_data)
+                                temp_file.close()
+                                audio_file = Path(temp_file.name)
+                                
+                                downloaded_job = DownloadedJob(
+                                    task_id=task_id,
+                                    track_id=job["track_id"],
+                                    audio_file=audio_file,
+                                    original_job=job
+                                )
+                                
+                                try:
+                                    self.download_queue.put(downloaded_job, timeout=5)
+                                    logging.info(f"Download worker: Queued audio search job {task_id} for processing")
+                                    self._log_queue_status("after queuing audio search")
+                                except:
+                                    logging.info(f"Download worker: Queue full, could not enqueue audio search job {task_id}")
+                                    try:
+                                        os.unlink(audio_file)
+                                    except:
+                                        pass
+                            except Exception as e:
+                                logging.error(f"Download worker: Failed to create temp file for audio search job {task_id}: {e}")
+                        else:
+                            logging.error(f"Download worker: Audio search job {task_id} missing audio data")
+                            
                     else:
-                        logging.info(f"Download worker: Failed to download audio for job {task_id}")
+                        # Traditional track embedding task - download audio file
+                        logging.info(f"Download worker: Downloading audio for job {task_id}")
+                        audio_file = self.download_audio_file(job["download_url"])
+
+                        if audio_file:
+                            # Create downloaded job object
+                            downloaded_job = DownloadedJob(
+                                task_id=task_id,
+                                track_id=job["track_id"],
+                                audio_file=audio_file,
+                                original_job=job
+                            )
+
+                            try:
+                                # Add to queue (this will block if queue is full)
+                                self.download_queue.put(downloaded_job, timeout=5)
+                                logging.info(f"Download worker: Queued job {task_id} for processing")
+                                self._log_queue_status("after queuing")
+                            except:
+                                # Queue remained full; clean up the downloaded temp file
+                                logging.info(
+                                    f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                                try:
+                                    os.unlink(audio_file)
+                                except:
+                                    pass
+                        else:
+                            logging.info(f"Download worker: Failed to download audio for job {task_id}")
                 else:
                     # No job available, wait before polling again
                     time.sleep(self.poll_interval)
@@ -277,10 +332,10 @@ class MyceliumClient:
                 break
 
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
-                      error_message: Optional[str] = None) -> bool:
+                      error_message: Optional[str] = None, search_results: Optional[List[dict]] = None) -> bool:
         """Submit task result to server."""
         try:
-            status = "success" if embedding is not None else "failed"
+            status = "success" if (embedding is not None or search_results is not None) else "failed"
 
             response = requests.post(
                 f"{self.server_url}/workers/submit_result",
@@ -289,7 +344,8 @@ class MyceliumClient:
                     "track_id": track_id,
                     "status": status,
                     "embedding": embedding,
-                    "error_message": error_message
+                    "error_message": error_message,
+                    "search_results": search_results
                 },
                 timeout=30
             )
@@ -305,36 +361,163 @@ class MyceliumClient:
             logging.error(f"Error submitting result: {e}")
             return False
 
+    def submit_search_result(self, task_id: str, track_id: str, search_results: List[dict]) -> bool:
+        """Submit search result to server."""
+        return self.submit_result(task_id, track_id, None, None, search_results)
+
+    def _search_by_embedding(self, embedding: List[float], n_results: int = 10):
+        """Perform search using an embedding by calling the server's search endpoint."""
+        # For now, we'll need to make a call back to the server to perform the search
+        # since the client doesn't have direct access to the database
+        # This is a temporary implementation - ideally workers would have read-only DB access
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/internal/search_by_embedding",  # Internal endpoint
+                json={
+                    "embedding": embedding,
+                    "n_results": n_results
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                results = response.json()
+                # Convert back to SearchResult objects
+                from mycelium.domain.models import SearchResult, Track
+                return [
+                    SearchResult(
+                        track=Track(
+                            artist=r["track"]["artist"],
+                            album=r["track"]["album"], 
+                            title=r["track"]["title"],
+                            filepath=Path(r["track"]["filepath"]),
+                            plex_rating_key=r["track"]["plex_rating_key"]
+                        ),
+                        similarity_score=r["similarity_score"],
+                        distance=r["distance"]
+                    )
+                    for r in results
+                ]
+            else:
+                logging.error(f"Failed to search by embedding: {response.status_code}")
+                return []
+                
+        except Exception as e:
+            logging.error(f"Error searching by embedding: {e}")
+            return []
+
     def process_job(self, downloaded_job: DownloadedJob) -> bool:
         """Process a downloaded job."""
         task_id = downloaded_job.task_id
         track_id = downloaded_job.track_id
-        audio_file = downloaded_job.audio_file
-
-        logging.info(f"Processing job {task_id} for track {track_id}")
+        original_job = downloaded_job.original_job
+        task_type = original_job.get("task_type", "compute_embedding")
+        
+        logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
 
         try:
-            # Compute embedding
-            embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
-
-            # Submit result
-            if embedding:
-                success = self.submit_result(task_id, track_id, embedding)
-                if success:
-                    logging.info(f"Successfully processed job {task_id}")
+            if task_type == "compute_embedding":
+                # Traditional track embedding computation
+                audio_file = downloaded_job.audio_file
+                embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
+                
+                if embedding:
+                    success = self.submit_result(task_id, track_id, embedding)
+                    if success:
+                        logging.info(f"Successfully processed embedding job {task_id}")
+                    else:
+                        logging.warning(f"Failed to submit embedding result for job {task_id}")
+                    return success
                 else:
-                    logging.warning(f"Failed to submit result for job {task_id}")
-                return success
+                    self.submit_result(task_id, track_id, None, "Failed to compute embedding")
+                    return False
+                    
+            elif task_type == "compute_text_embedding":
+                # Text search embedding computation
+                text_query = original_job.get("text_query")
+                if not text_query:
+                    self.submit_result(task_id, track_id, None, "Missing text query", None)
+                    return False
+                    
+                logging.info(f"Computing text embedding for query: '{text_query}'")
+                text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
+                
+                if text_embedding:
+                    # Perform search using the computed embedding
+                    search_results = self._search_by_embedding(text_embedding, 10)  # Default n_results
+                    
+                    # Convert search results to dict format for API
+                    results_dict = [
+                        {
+                            "track": {
+                                "artist": result.track.artist,
+                                "album": result.track.album,
+                                "title": result.track.title,
+                                "filepath": str(result.track.filepath),
+                                "plex_rating_key": result.track.plex_rating_key
+                            },
+                            "similarity_score": result.similarity_score,
+                            "distance": result.distance
+                        }
+                        for result in search_results
+                    ]
+                    
+                    success = self.submit_search_result(task_id, track_id, results_dict)
+                    if success:
+                        logging.info(f"Successfully processed text search job {task_id}")
+                    else:
+                        logging.warning(f"Failed to submit text search result for job {task_id}")
+                    return success
+                else:
+                    self.submit_result(task_id, track_id, None, "Failed to compute text embedding", None)
+                    return False
+                    
+            elif task_type == "compute_audio_embedding":
+                # Audio search embedding computation
+                audio_file = downloaded_job.audio_file
+                embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
+                
+                if embedding:
+                    # Perform search using the computed embedding
+                    search_results = self._search_by_embedding(embedding, 10)  # Default n_results
+                    
+                    # Convert search results to dict format for API
+                    results_dict = [
+                        {
+                            "track": {
+                                "artist": result.track.artist,
+                                "album": result.track.album,
+                                "title": result.track.title,
+                                "filepath": str(result.track.filepath),
+                                "plex_rating_key": result.track.plex_rating_key
+                            },
+                            "similarity_score": result.similarity_score,
+                            "distance": result.distance
+                        }
+                        for result in search_results
+                    ]
+                    
+                    success = self.submit_search_result(task_id, track_id, results_dict)
+                    if success:
+                        logging.info(f"Successfully processed audio search job {task_id}")
+                    else:
+                        logging.warning(f"Failed to submit audio search result for job {task_id}")
+                    return success
+                else:
+                    self.submit_result(task_id, track_id, None, "Failed to compute audio embedding", None)
+                    return False
             else:
-                self.submit_result(task_id, track_id, None, "Failed to compute embedding")
+                logging.error(f"Unknown task type: {task_type}")
+                self.submit_result(task_id, track_id, None, f"Unknown task type: {task_type}", None)
                 return False
 
         finally:
             # Clean up temporary file
-            try:
-                os.unlink(audio_file)
-            except Exception:
-                pass
+            if hasattr(downloaded_job, 'audio_file') and downloaded_job.audio_file:
+                try:
+                    os.unlink(downloaded_job.audio_file)
+                except Exception:
+                    pass
 
     def run(self):
         """Main worker loop."""

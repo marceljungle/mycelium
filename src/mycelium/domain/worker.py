@@ -9,6 +9,8 @@ from typing import List, Optional
 class TaskType(str, Enum):
     """Type of tasks that can be assigned to workers."""
     COMPUTE_EMBEDDING = "compute_embedding"
+    COMPUTE_TEXT_EMBEDDING = "compute_text_embedding"
+    COMPUTE_AUDIO_EMBEDDING = "compute_audio_embedding"
 
 
 class TaskStatus(str, Enum):
@@ -42,6 +44,12 @@ class Task:
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
+    # Additional fields for search tasks
+    text_query: Optional[str] = None  # For text search tasks
+    audio_data: Optional[bytes] = None  # For audio search tasks
+    audio_filename: Optional[str] = None  # For audio search tasks
+    # Results storage for search tasks
+    search_results: Optional[List[dict]] = None
 
     def __post_init__(self):
         if self.created_at is None:
@@ -56,3 +64,5 @@ class TaskResult:
     status: TaskStatus
     embedding: Optional[List[float]] = None
     error_message: Optional[str] = None
+    # For search tasks, we store the search results directly
+    search_results: Optional[List[dict]] = None

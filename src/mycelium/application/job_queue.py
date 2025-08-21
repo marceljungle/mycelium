@@ -67,6 +67,43 @@ class JobQueueService:
                 self._pending_tasks.append(task_id)
             return task
 
+    def create_text_search_task(self, text_query: str, prioritize: bool = True) -> Task:
+        """Create a new text search task and add it to the queue."""
+        with self._lock:
+            task_id = str(uuid.uuid4())
+            task = Task(
+                task_id=task_id,
+                task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
+                track_id="",  # Not needed for text search
+                download_url="",  # Not needed for text search
+                text_query=text_query
+            )
+            self._tasks[task_id] = task
+            if prioritize:
+                self._pending_tasks.insert(0, task_id)
+            else:
+                self._pending_tasks.append(task_id)
+            return task
+
+    def create_audio_search_task(self, audio_data: bytes, audio_filename: str, prioritize: bool = True) -> Task:
+        """Create a new audio search task and add it to the queue."""
+        with self._lock:
+            task_id = str(uuid.uuid4())
+            task = Task(
+                task_id=task_id,
+                task_type=TaskType.COMPUTE_AUDIO_EMBEDDING,
+                track_id="",  # Not needed for audio search
+                download_url="",  # Not needed for audio search
+                audio_data=audio_data,
+                audio_filename=audio_filename
+            )
+            self._tasks[task_id] = task
+            if prioritize:
+                self._pending_tasks.insert(0, task_id)
+            else:
+                self._pending_tasks.append(task_id)
+            return task
+
     def get_next_job(self, worker_id: str) -> Optional[Task]:
         """Get the next job for a worker."""
         with self._lock:
@@ -98,6 +135,10 @@ class JobQueueService:
             
             if result.error_message:
                 task.error_message = result.error_message
+                
+            # Store search results for search tasks
+            if result.search_results:
+                task.search_results = result.search_results
             
             return True
 
