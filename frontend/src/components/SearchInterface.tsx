@@ -47,20 +47,28 @@ export default function SearchInterface() {
       const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
       if (response.ok) {
         const taskData = await response.json();
+        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.search_results}`);
         
         if (taskData.status === 'success' && taskData.search_results) {
           // Task completed successfully with search results
+          console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
           setResults(taskData.search_results);
           return true;
         } else if (taskData.status === 'failed') {
           // Task failed
+          console.error(`Task ${taskId} failed:`, taskData.error_message);
           setError(taskData.error_message || 'Search task failed on worker');
           return true;
+        } else if (taskData.status === 'success' && !taskData.search_results) {
+          // Task marked as success but no results yet - this might be a race condition
+          console.warn(`Task ${taskId} marked as success but no search results yet, continuing polling...`);
+          return false;
         }
         // Task still in progress
+        console.log(`Task ${taskId} still in progress (status: ${taskData.status})`);
         return false;
       } else {
-        console.error('Failed to poll task status:', response.status);
+        console.error('Failed to poll task status:', response.status, response.statusText);
         return false;
       }
     } catch (error) {
@@ -74,17 +82,30 @@ export default function SearchInterface() {
     setCurrentTaskId(taskId);
     setProcessingState('worker');
 
+    let pollCount = 0;
+    const maxPolls = 150; // 5 minutes with 2-second intervals
+
     const interval = setInterval(async () => {
+      pollCount++;
       const completed = await pollTaskStatus(taskId);
       
       if (completed) {
-        console.log(`Search task ${taskId} completed, clearing polling`);
+        console.log(`Search task ${taskId} completed, clearing polling after ${pollCount} polls`);
         clearInterval(interval);
         setPollInterval(null);
         setCurrentTaskId(null);
         setProcessingState('none');
         setLoading(false);
         setAudioLoading(false);
+      } else if (pollCount >= maxPolls) {
+        console.warn(`Search task ${taskId} polling timeout after ${pollCount} polls (${maxPolls * 2} seconds)`);
+        clearInterval(interval);
+        setPollInterval(null);
+        setCurrentTaskId(null);
+        setProcessingState('none');
+        setLoading(false);
+        setAudioLoading(false);
+        setError('Search task timed out. Please try again.');
       }
     }, 2000); // Poll every 2 seconds
 

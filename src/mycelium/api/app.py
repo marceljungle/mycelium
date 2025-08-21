@@ -4,6 +4,7 @@ import base64
 import logging
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -26,7 +27,7 @@ from ..application.services import MyceliumService
 from ..config import MyceliumConfig, setup_logging
 from ..config_yaml import MyceliumConfig as ConfigYAML
 from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
-from ..domain.worker import TaskResult, TaskType
+from ..domain.worker import TaskResult, TaskType, TaskStatus
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -618,13 +619,22 @@ async def submit_result(request: TaskResultRequest):
                         for result in search_results
                     ]
                     
-                    # Update task with search results
+                    # Update task with search results - ensure task status is set to success
                     with job_queue._lock:
                         task.search_results = results_dict
+                        if task.status != TaskStatus.SUCCESS:
+                            logger.info(f"Setting task {request.task_id} status to SUCCESS")
+                            task.status = TaskStatus.SUCCESS
+                            task.completed_at = datetime.now()
                     
                     logger.info(f"Text search completed for task {request.task_id}, found {len(results_dict)} results")
                 except Exception as e:
                     logger.error(f"Error performing text search for task {request.task_id}: {e}", exc_info=True)
+                    # Set task status to failed
+                    with job_queue._lock:
+                        task.status = TaskStatus.FAILED
+                        task.error_message = str(e)
+                        task.completed_at = datetime.now()
                     
             elif task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
                 # Audio search task - perform search on server  
@@ -649,13 +659,22 @@ async def submit_result(request: TaskResultRequest):
                         for result in search_results
                     ]
                     
-                    # Update task with search results
+                    # Update task with search results - ensure task status is set to success
                     with job_queue._lock:
                         task.search_results = results_dict
+                        if task.status != TaskStatus.SUCCESS:
+                            logger.info(f"Setting task {request.task_id} status to SUCCESS")
+                            task.status = TaskStatus.SUCCESS
+                            task.completed_at = datetime.now()
                     
                     logger.info(f"Audio search completed for task {request.task_id}, found {len(results_dict)} results")
                 except Exception as e:
                     logger.error(f"Error performing audio search for task {request.task_id}: {e}", exc_info=True)
+                    # Set task status to failed
+                    with job_queue._lock:
+                        task.status = TaskStatus.FAILED
+                        task.error_message = str(e)
+                        task.completed_at = datetime.now()
                     
         elif success and request.search_results:
             # Legacy search task - results were computed by worker (should not happen with new code)
@@ -909,9 +928,13 @@ async def get_task_status(task_id: str):
             # Include search results for search tasks
             if task.search_results:
                 response["search_results"] = task.search_results
+                logger.debug(f"Task {task_id} status: {task.status.value}, has search_results: {len(task.search_results)} results")
+            else:
+                logger.debug(f"Task {task_id} status: {task.status.value}, no search_results yet")
                 
             return response
         else:
+            logger.warning(f"Task {task_id} not found in queue")
             raise HTTPException(status_code=404, detail="Task not found")
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
