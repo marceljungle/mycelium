@@ -492,10 +492,10 @@ export default function LibraryPage() {
             <div className="text-center py-8">
               <div className="text-4xl mb-2">🔍</div>
               <p className="text-gray-500 dark:text-gray-400 mb-2">
-                {searchQuery || showAdvancedSearch ? 'No tracks found matching your search' : 'Start searching to find your tracks'}
+                {(searchQuery || (showAdvancedSearch && (artistSearch.trim() || albumSearch.trim() || titleSearch.trim()))) ? 'No tracks found matching your search' : 'Start searching to find your tracks'}
               </p>
               <p className="text-sm text-gray-400 dark:text-gray-500">
-                {!(searchQuery || showAdvancedSearch) ? 'Use the search bar above to explore your music library' : 'Try different search terms or scan your Plex library first'}
+                {!(searchQuery || (showAdvancedSearch && (artistSearch.trim() || albumSearch.trim() || titleSearch.trim()))) ? 'Use the search bar above to explore your music library' : 'Try different search terms or scan your Plex library first'}
               </p>
             </div>
           ) : (
