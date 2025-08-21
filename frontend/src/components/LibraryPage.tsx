@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
+import { useProcessing } from '../contexts/ProcessingContext';
 
 interface Track {
   id: string;
@@ -51,6 +52,11 @@ export default function LibraryPage() {
   const [albumSearch, setAlbumSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
   const [numResults, setNumResults] = useState(10);
+
+    const {
+    fetchStats,
+    fetchProgress
+  } = useProcessing();
 
   const fetchTracks = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -259,6 +265,8 @@ export default function LibraryPage() {
         if (Array.isArray(data)) {
           setRecommendations(data);
           setRecommendationsLoading(false);
+          await fetchStats();
+          await fetchProgress();
         } else if (data.status === 'confirmation_required') {
           // Handle confirmation required case - offer processing options
           const shouldProcess = window.confirm(
