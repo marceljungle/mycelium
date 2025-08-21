@@ -11,7 +11,6 @@ interface Track {
   title: string;
   filepath: string;
   plex_rating_key: string;
-  processed: boolean;
 }
 
 interface TrackResponse {
@@ -518,11 +517,6 @@ export default function LibraryPage() {
                   <div className="text-sm text-gray-600 dark:text-gray-300">
                     {track.artist} • {track.album}
                   </div>
-                  {!track.processed && (
-                    <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                      Not yet processed for search
-                    </div>
-                  )}
                 </button>
               ))}
             </div>
