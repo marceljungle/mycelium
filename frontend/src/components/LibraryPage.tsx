@@ -50,6 +50,7 @@ export default function LibraryPage() {
   const [artistSearch, setArtistSearch] = useState('');
   const [albumSearch, setAlbumSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
+  const [numResults, setNumResults] = useState(10);
 
   const fetchTracks = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -249,7 +250,7 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=10`);
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=${numResults}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -529,9 +530,34 @@ export default function LibraryPage() {
 
         {/* Recommendations */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Recommendations
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Recommendations
+            </h3>
+            {selectedTrack && (
+              <div className="flex items-center space-x-2">
+                <label htmlFor="rec-num-results" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Results:
+                </label>
+                <input
+                  id="rec-num-results"
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={numResults}
+                  onChange={(e) => {
+                    const newValue = Math.max(1, Math.min(50, parseInt(e.target.value) || 10));
+                    setNumResults(newValue);
+                    // Re-fetch recommendations with new count if we have a selected track and no processing is happening
+                    if (selectedTrack && processingState === 'none' && !recommendationsLoading) {
+                      getRecommendations(selectedTrack);
+                    }
+                  }}
+                  className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+            )}
+          </div>
           
           {!selectedTrack ? (
             <div className="text-center py-8">

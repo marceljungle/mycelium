@@ -25,6 +25,7 @@ export default function SearchInterface() {
   const [searchType, setSearchType] = useState<'text' | 'audio'>('text');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [numResults, setNumResults] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleTextSearch = async () => {
@@ -34,7 +35,7 @@ export default function SearchInterface() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/search/text?q=${encodeURIComponent(query)}&n_results=10`);
+      const response = await fetch(`${API_BASE_URL}/api/search/text?q=${encodeURIComponent(query)}&n_results=${numResults}`);
 
       if (!response.ok) {
         throw new Error('Search failed. Make sure the Mycelium API is running.');
@@ -59,7 +60,7 @@ export default function SearchInterface() {
     try {
       const formData = new FormData();
       formData.append('audio', audioFile);
-      formData.append('n_results', '10');
+      formData.append('n_results', numResults.toString());
 
       const response = await fetch(`${API_BASE_URL}/api/search/audio`, {
         method: 'POST',
@@ -153,27 +154,45 @@ export default function SearchInterface() {
       
       {/* Search Type Toggle */}
       <div className="mb-6">
-        <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
-          <button
-            onClick={() => setSearchType('text')}
-            className={`px-4 py-2 rounded-md font-medium transition-colors ${
-              searchType === 'text'
-                ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            📝 Text Search
-          </button>
-          <button
-            onClick={() => setSearchType('audio')}
-            className={`px-4 py-2 rounded-md font-medium transition-colors ${
-              searchType === 'audio'
-                ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            🎧 Audio Search
-          </button>
+        <div className="flex items-center justify-between">
+          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
+            <button
+              onClick={() => setSearchType('text')}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                searchType === 'text'
+                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              📝 Text Search
+            </button>
+            <button
+              onClick={() => setSearchType('audio')}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                searchType === 'audio'
+                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              🎧 Audio Search
+            </button>
+          </div>
+          
+          {/* Number of Results Control */}
+          <div className="flex items-center space-x-2">
+            <label htmlFor="num-results" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Results:
+            </label>
+            <input
+              id="num-results"
+              type="number"
+              min="1"
+              max="50"
+              value={numResults}
+              onChange={(e) => setNumResults(Math.max(1, Math.min(50, parseInt(e.target.value) || 10)))}
+              className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+          </div>
         </div>
       </div>
 
