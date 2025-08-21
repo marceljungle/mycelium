@@ -48,8 +48,8 @@ class JobQueueService:
     def get_active_workers(self) -> List[Worker]:
         """Get list of active workers."""
         with self._lock:
-            # Clean up inactive workers (no heartbeat for more than 5 minutes)
-            cutoff_time = datetime.now() - timedelta(minutes=5)
+            # Clean up inactive workers
+            cutoff_time = datetime.now() - timedelta(seconds=10)
             for worker in self._workers.values():
                 if worker.last_heartbeat < cutoff_time:
                     worker.is_active = False
