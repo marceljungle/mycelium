@@ -50,7 +50,7 @@ class JobQueueService:
             
             return [w for w in self._workers.values() if w.is_active]
 
-    def create_task(self, track_id: str, download_url: str) -> Task:
+    def create_task(self, track_id: str, download_url: str, prioritize: bool) -> Task:
         """Create a new task and add it to the queue."""
         with self._lock:
             task_id = str(uuid.uuid4())
@@ -61,7 +61,10 @@ class JobQueueService:
                 download_url=download_url
             )
             self._tasks[task_id] = task
-            self._pending_tasks.append(task_id)
+            if prioritize:
+                self._pending_tasks.insert(0, task_id)
+            else:
+                self._pending_tasks.append(task_id)
             return task
 
     def get_next_job(self, worker_id: str) -> Optional[Task]:
