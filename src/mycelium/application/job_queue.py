@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import List, Optional, Dict
 
-from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus
+from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
 
 class JobQueueService:
@@ -58,7 +58,8 @@ class JobQueueService:
 
     def create_task(self, track_id: str = "", download_url: str = "", 
                     audio_data: bytes = None, audio_filename: str = "", 
-                    n_results: int = 10, prioritize: bool = True) -> Task:
+                    n_results: int = 10, prioritize: bool = True,
+                    context_type: ContextType = None) -> Task:
         """Create a new task and add it to the queue.
         
         Can create either:
@@ -89,17 +90,19 @@ class JobQueueService:
                     download_url=download_url,
                     audio_data=None,  # Don't store in memory - use temp file instead
                     audio_filename=audio_filename,
-                    n_results=n_results
+                    n_results=n_results,
+                    context_type=context_type
                 )
             else:
-                # Traditional embedding task - use external URL as-is
+                # Traditional embedding task
                 task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
-                
+
                 task = Task(
                     task_id=task_id,
                     task_type=task_type,
                     track_id=track_id,
-                    download_url=download_url
+                    download_url=download_url,
+                    context_type=context_type
                 )
             
             self._tasks[task_id] = task

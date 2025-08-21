@@ -11,6 +11,11 @@ class TaskType(str, Enum):
     COMPUTE_TEXT_EMBEDDING = "compute_text_embedding"
     COMPUTE_AUDIO_EMBEDDING = "compute_audio_embedding"
 
+class ContextType(str, Enum):
+    """Type of context for the task."""
+    AUDIO_SEARCH = "audio_search"
+    AUDIO_PROCESSING = "audio_processing"
+
 
 class TaskStatus(str, Enum):
     """Status of a task."""
@@ -35,6 +40,7 @@ class Task:
     """Represents a task to be processed by a worker."""
     task_id: str
     task_type: TaskType
+    context_type: ContextType
     track_id: str
     download_url: str
     status: TaskStatus = TaskStatus.PENDING

@@ -303,10 +303,10 @@ class MyceliumClient:
                 break
 
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
-                      error_message: Optional[str] = None, search_results: Optional[List[dict]] = None) -> bool:
+                      error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
         try:
-            status = "success" if (embedding is not None or search_results is not None) else "failed"
+            status = "success" if (embedding is not None) else "failed"
 
             response = requests.post(
                 f"{self.server_url}/workers/submit_result",
@@ -315,8 +315,7 @@ class MyceliumClient:
                     "track_id": track_id,
                     "status": status,
                     "embedding": embedding,
-                    "error_message": error_message,
-                    "search_results": search_results
+                    "error_message": error_message
                 },
                 timeout=30
             )
@@ -348,39 +347,43 @@ class MyceliumClient:
                 embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
 
                 if embedding:
-                    success = self.submit_result(task_id, track_id, embedding)
+                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=embedding)
                     if success:
                         logging.info(f"Successfully processed embedding job {task_id}")
                     else:
                         logging.warning(f"Failed to submit embedding result for job {task_id}")
                     return success
                 else:
-                    self.submit_result(task_id, track_id, None, "Failed to compute embedding")
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Failed to compute embedding")
                     return False
 
             elif task_type == "compute_text_embedding":
                 # Text search embedding computation
                 text_query = original_job.get("text_query")
                 if not text_query:
-                    self.submit_result(task_id, track_id, None, "Missing text query")
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Missing text query")
                     return False
 
                 logging.info(f"Computing text embedding for query: '{text_query}'")
                 text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
 
                 if text_embedding:
-                    success = self.submit_result(task_id, track_id, text_embedding)
+                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=text_embedding)
                     if success:
                         logging.info(f"Successfully processed text embedding job {task_id}")
                     else:
                         logging.warning(f"Failed to submit text embedding result for job {task_id}")
                     return success
                 else:
-                    self.submit_result(task_id, track_id, None, "Failed to compute text embedding")
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Failed to compute text embedding")
                     return False
             else:
                 logging.error(f"Unknown task type: {task_type}")
-                self.submit_result(task_id, track_id, None, f"Unknown task type: {task_type}", None)
+                self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                   error_message=f"Unknown task type: {task_type}")
                 return False
 
         finally:

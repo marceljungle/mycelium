@@ -8,9 +8,11 @@ from tqdm import tqdm
 from .job_queue import JobQueueService
 from ..domain.models import TrackEmbedding
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
+from ..domain.worker import ContextType
 from ..infrastructure.track_database import TrackDatabase
 
 logger = logging.getLogger(__name__)
+
 
 class SeparatedLibraryScanUseCase:
     """Use case for scanning and storing track metadata."""
@@ -217,11 +219,11 @@ class WorkerBasedProcessingUseCase:
     """Use case for processing embeddings using client workers."""
 
     def __init__(
-        self,
-        job_queue_service: JobQueueService,
-        track_database: TrackDatabase,
-        api_host: str = "localhost",
-        api_port: int = 8000
+            self,
+            job_queue_service: JobQueueService,
+            track_database: TrackDatabase,
+            api_host: str = "localhost",
+            api_port: int = 8000
     ):
         self.job_queue = job_queue_service
         self.track_database = track_database
@@ -237,7 +239,7 @@ class WorkerBasedProcessingUseCase:
         """Get information about available workers."""
         active_workers = self.job_queue.get_active_workers()
         queue_stats = self.job_queue.get_queue_stats()
-        
+
         return {
             "active_workers": len(active_workers),
             "worker_details": [
@@ -262,7 +264,7 @@ class WorkerBasedProcessingUseCase:
 
         # Get unprocessed tracks
         unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
-        
+
         if not unprocessed_tracks:
             return {
                 "success": True,
@@ -275,7 +277,8 @@ class WorkerBasedProcessingUseCase:
         for stored_track in unprocessed_tracks:
             try:
                 download_url = f"/download_track/{stored_track.plex_rating_key}"
-                self.job_queue.create_task(stored_track.plex_rating_key, download_url, prioritize=False)
+                self.job_queue.create_task(stored_track.plex_rating_key, download_url, prioritize=False,
+                                           context_type=ContextType.AUDIO_PROCESSING)
                 tasks_created += 1
             except Exception as e:
                 logger.error(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
