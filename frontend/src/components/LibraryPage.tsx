@@ -145,12 +145,15 @@ export default function LibraryPage() {
 
   useEffect(() => {
     // Trigger search when any search field changes
-    if (showAdvancedSearch) {
-      // Use advanced search when enabled
+    if (showAdvancedSearch && (artistSearch.trim() || albumSearch.trim() || titleSearch.trim())) {
+      // Use advanced search when enabled AND at least one field has content
       fetchTracksAdvanced();
-    } else if (searchQuery.trim()) {
-      // Use simple search
+    } else if (!showAdvancedSearch && searchQuery.trim()) {
+      // Use simple search when enabled AND search query has content
       fetchTracks(searchQuery);
+    } else {
+      // No active search - clear the tracks to show empty state
+      setFilteredTracks([]);
     }
     // Note: No auto-fetch when no search is active - show empty state instead
   }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
