@@ -89,12 +89,6 @@ export default function SearchInterface() {
       setError('Please select a valid audio file (MP3, WAV, FLAC, or OGG)');
       return false;
     }
-    
-    // Check file size (50MB limit)
-    if (file.size > 50 * 1024 * 1024) {
-      setError('File size must be less than 50MB');
-      return false;
-    }
 
     setAudioFile(file);
     setError(null);
@@ -273,7 +267,7 @@ export default function SearchInterface() {
                         Drop audio file here or click to browse
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Supports MP3, WAV, FLAC, OGG (max 50MB)
+                        Supports MP3, WAV, FLAC, OGG
                       </p>
                     </div>
                   </div>
