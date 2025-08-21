@@ -226,20 +226,13 @@ export default function SearchInterface() {
         if (shouldProcess) {
           setProcessingState('server');
           try {
-            // Process on server - need to send audio data as bytes
-            const audioBuffer = await audioFile.arrayBuffer();
-            const audioBytes = Array.from(new Uint8Array(audioBuffer));
+            const formData = new FormData();
+            formData.append('audio', audioFile);
+            formData.append('n_results', numResults.toString());
 
             const serverResponse = await fetch(`${API_BASE_URL}/compute/search/audio`, {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                audio_data: audioBytes,
-                audio_filename: audioFile.name,
-                n_results: numResults
-              }),
+              body: formData,
             });
 
             if (serverResponse.ok) {

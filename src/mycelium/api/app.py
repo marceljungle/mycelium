@@ -882,23 +882,35 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
 
 
 @app.post("/compute/search/audio", response_model=List[SearchResultResponse])
-async def compute_audio_search_on_server(request: ComputeSearchOnServerRequest):
+async def compute_audio_search_on_server(
+        audio: UploadFile = File(..., description="Audio file to search with"),
+        n_results: int = Form(10, description="Number of results to return")
+):
     """Compute audio search on server CPU after user confirmation."""
     try:
-        audio_bytes = request.audio_bytes
-        if not audio_bytes:
+        # Validate file type
+        if not audio.content_type or not any(
+                audio.content_type.startswith(mime)
+                for mime in ["audio/", "application/octet-stream"]
+        ):
+            logger.warning(f"Invalid file type: {audio.content_type}")
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
+
+        # Read audio content
+        content = await audio.read()
+        if not content:
             raise HTTPException(status_code=400, detail="Audio data is required for audio search")
             
-        logger.info(f"Starting server-side audio search for file: '{request.audio_filename}'")
+        logger.info(f"Starting server-side audio search for file: '{audio.filename}', size: {len(content)} bytes")
         
         # Create temporary file for the audio data
         with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            temp_file.write(audio_bytes)
+            temp_file.write(content)
             temp_file_path = temp_file.name
 
         try:
             # Perform audio search directly on server
-            results = service.search_similar_by_audio(Path(temp_file_path), request.n_results)
+            results = service.search_similar_by_audio(Path(temp_file_path), n_results)
             
             logger.info(f"Audio search completed successfully - found {len(results)} results")
             

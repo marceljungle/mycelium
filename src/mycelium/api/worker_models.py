@@ -97,13 +97,4 @@ class SearchConfirmationRequiredResponse(BaseModel):
 class ComputeSearchOnServerRequest(BaseModel):
     """Request model for server-side search computation."""
     query: Optional[str] = None  # For text search
-    audio_data: Optional[List[int]] = Field(None, description="Audio data as array of integers (from Uint8Array)")
-    audio_filename: Optional[str] = None  # For audio search
     n_results: int = 10
-    
-    @property
-    def audio_bytes(self) -> Optional[bytes]:
-        """Get audio data as bytes, converted from integer array."""
-        if self.audio_data:
-            return bytes(self.audio_data)
-        return None
