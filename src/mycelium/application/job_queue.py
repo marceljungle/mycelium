@@ -276,7 +276,6 @@ class JobQueueService:
             self._cleanup_stale_tasks()
             
             # Only count library processing tasks, not search tasks
-            # Use context_type to distinguish between library processing and search tasks
             library_pending_tasks = [
                 task_id for task_id in self._pending_tasks
                 if self._tasks.get(task_id) and self._tasks[task_id].context_type == ContextType.AUDIO_PROCESSING
