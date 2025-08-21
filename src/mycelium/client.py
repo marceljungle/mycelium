@@ -235,12 +235,11 @@ class MyceliumClient:
                     elif task_type == "compute_audio_embedding":
                         # Audio search task - download audio file from server
                         download_url = job.get("download_url")
-                        audio_filename = job.get("audio_filename", "search.tmp")
                         
                         if download_url:
                             # Download audio file from server
                             try:
-                                audio_response = requests.get(f"{self.server_host}:{self.server_port}{download_url}")
+                                audio_response = requests.get(f"http://{self.server_host}:{self.server_port}{download_url}")
                                 if audio_response.status_code == 200:
                                     # Create temporary file for the audio data
                                     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
@@ -250,7 +249,7 @@ class MyceliumClient:
                                     downloaded_job = DownloadedJob(
                                         task_id=task_id,
                                         track_id=job["track_id"],
-                                        audio_file=temp_file.name,
+                                        audio_file=os.fspath(temp_file.name),
                                         original_job=job
                                     )
                                     
