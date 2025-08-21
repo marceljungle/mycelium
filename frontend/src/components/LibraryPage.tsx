@@ -135,15 +135,13 @@ export default function LibraryPage() {
   }, [artistSearch, albumSearch, titleSearch]);
 
   useEffect(() => {
-    fetchTracks();
-    
-    // Cleanup polling on unmount
+    // Only setup cleanup for polling on unmount, don't auto-fetch tracks
     return () => {
       if (pollInterval) {
         clearInterval(pollInterval);
       }
     };
-  }, [pollInterval, fetchTracks]);
+  }, [pollInterval]);
 
   useEffect(() => {
     // Trigger search when any search field changes
@@ -153,10 +151,8 @@ export default function LibraryPage() {
     } else if (searchQuery.trim()) {
       // Use simple search
       fetchTracks(searchQuery);
-    } else {
-      // No search, get all tracks
-      fetchTracks();
     }
+    // Note: No auto-fetch when no search is active - show empty state instead
   }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
 
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
@@ -491,12 +487,12 @@ export default function LibraryPage() {
             </div>
           ) : filteredTracks.length === 0 ? (
             <div className="text-center py-8">
-              <div className="text-4xl mb-2">🎵</div>
+              <div className="text-4xl mb-2">🔍</div>
               <p className="text-gray-500 dark:text-gray-400 mb-2">
-                {searchQuery ? 'No tracks found matching your search' : 'No tracks in your library yet'}
+                {searchQuery || showAdvancedSearch ? 'No tracks found matching your search' : 'Start searching to find your tracks'}
               </p>
               <p className="text-sm text-gray-400 dark:text-gray-500">
-                {!searchQuery && 'Scan your Plex library first'}
+                {!(searchQuery || showAdvancedSearch) ? 'Use the search bar above to explore your music library' : 'Try different search terms or scan your Plex library first'}
               </p>
             </div>
           ) : (
