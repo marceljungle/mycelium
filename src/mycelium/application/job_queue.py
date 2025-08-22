@@ -88,7 +88,6 @@ class JobQueueService:
                     task_type=task_type,
                     track_id=track_id,
                     download_url=download_url,
-                    audio_data=None,  # Don't store in memory - use temp file instead
                     audio_filename=audio_filename,
                     n_results=n_results,
                     context_type=context_type

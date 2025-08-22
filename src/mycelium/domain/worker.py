@@ -53,7 +53,6 @@ class Task:
     error_message: Optional[str] = None
     # Additional fields for search tasks
     text_query: Optional[str] = None  # For text search tasks
-    audio_data: Optional[bytes] = None  # For audio search tasks
     audio_filename: Optional[str] = None  # For audio search tasks
     n_results: Optional[int] = None  # For search tasks - number of results to return
     # Results storage for search tasks
