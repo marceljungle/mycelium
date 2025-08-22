@@ -80,7 +80,7 @@ class JobQueueService:
                 self._temp_files[task_id] = temp_file
                 
                 # Create download URL for the worker (internal URL)
-                download_url = f"/download_audio_task/{task_id}"
+                download_url = f"/download_audio/{task_id}"
                 track_id = ""  # Not needed for audio search
                 
                 task = Task(
