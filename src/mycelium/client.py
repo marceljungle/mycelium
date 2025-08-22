@@ -14,6 +14,8 @@ from typing import Optional, List, Dict
 import requests
 import torch
 
+from mycelium.client_config import MyceliumClientConfig
+from mycelium.client_config import get_client_config_file_path
 from mycelium.infrastructure import CLAPEmbeddingGenerator
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,12 @@ class MyceliumClient:
         self.poll_interval = poll_interval
         self.download_queue_size = download_queue_size
         self.download_workers = download_workers  # Number of parallel download threads
+        self.config = MyceliumClientConfig.load_from_yaml()
+
+        # Track config file modification time for hot-reload
+
+        self.config_file_path = get_client_config_file_path()
+        self.last_config_mtime = self._get_config_mtime()
 
         # Generate unique worker ID
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
@@ -63,7 +71,9 @@ class MyceliumClient:
         self.download_threads: List[threading.Thread] = []  # Multiple download threads
         self.stop_download_thread = threading.Event()
 
-        self.clap_embedding_generator = CLAPEmbeddingGenerator()
+        self.clap_embedding_generator = CLAPEmbeddingGenerator(model_id=self.config.clap.model_id,
+                                                               target_sr=self.config.clap.target_sr,
+                                                               chunk_duration_s=self.config.clap.chunk_duration_s)
 
         logging.info(f"Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
@@ -104,6 +114,26 @@ class MyceliumClient:
         except Exception:
             return "127.0.0.1"
 
+    def _get_config_mtime(self) -> float:
+        """Get the modification time of the config file."""
+        try:
+            if self.config_file_path.exists():
+                return self.config_file_path.stat().st_mtime
+        except Exception:
+            pass
+        return 0.0
+
+    def _check_config_reload(self) -> None:
+        """Check if config file has been modified and reload if necessary."""
+        try:
+            current_mtime = self._get_config_mtime()
+            if current_mtime > self.last_config_mtime:
+                logging.info("Config file modification detected, reloading...")
+                self.reload_config()
+                self.last_config_mtime = current_mtime
+        except Exception as e:
+            logging.error(f"Error checking config reload: {e}")
+
     def _unload_model(self):
         """Unload model to free GPU memory."""
         if self.clap_embedding_generator.model is not None:
@@ -118,6 +148,49 @@ class MyceliumClient:
                 torch.mps.empty_cache()  # Clear MPS cache
 
             logging.info("Model unloaded")
+
+    def reload_config(self):
+        """Reload configuration and recreate CLAPEmbeddingGenerator with new settings."""
+        try:
+            logging.info("Reloading client configuration...")
+
+            # Load new configuration
+            new_config = MyceliumClientConfig.load_from_yaml()
+
+            # Check if CLAP config has changed
+            clap_changed = (
+                    new_config.clap.model_id != self.config.clap.model_id or
+                    new_config.clap.target_sr != self.config.clap.target_sr or
+                    new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
+            )
+
+            if clap_changed:
+                logging.info("CLAP configuration changed, recreating embedding generator...")
+
+                # Unload current model to free memory
+                self._unload_model()
+
+                # Create new embedding generator with updated config
+                self.clap_embedding_generator = CLAPEmbeddingGenerator(
+                    model_id=new_config.clap.model_id,
+                    target_sr=new_config.clap.target_sr,
+                    chunk_duration_s=new_config.clap.chunk_duration_s
+                )
+
+                logging.info(f"Updated CLAP embedding generator:")
+                logging.info(f"  Model ID: {new_config.clap.model_id}")
+                logging.info(f"  Target SR: {new_config.clap.target_sr}")
+                logging.info(f"  Chunk duration: {new_config.clap.chunk_duration_s}s")
+            else:
+                logging.info("CLAP configuration unchanged")
+
+            # Update configuration reference
+            self.config = new_config
+
+            logging.info("Client configuration reloaded successfully")
+
+        except Exception as e:
+            logging.error(f"Failed to reload client configuration: {e}", exc_info=True)
 
     def register_with_server(self) -> bool:
         """Register this worker with the server.
@@ -440,6 +513,9 @@ class MyceliumClient:
                     if current_time - last_status_log >= status_log_interval:
                         self._log_queue_status("periodic check")
                         last_status_log = current_time
+
+                    # Check for config reload (runs every poll_interval)
+                    self._check_config_reload()
                     continue
 
         except KeyboardInterrupt:
