@@ -79,7 +79,15 @@ export default function SettingsPage() {
 
       const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      setSuccessMessage(result.message || 'Configuration saved successfully! Restart the server to apply changes.');
+      
+      // Handle different response types based on reload success
+      if (result.reloaded === true) {
+        setSuccessMessage(result.message || 'Configuration saved and reloaded successfully! Changes are now active.');
+      } else if (result.reloaded === false) {
+        setSuccessMessage(result.message || 'Configuration saved, but hot-reload failed. Please restart the server to apply changes.');
+      } else {
+        setSuccessMessage(result.message || 'Configuration saved successfully!');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {

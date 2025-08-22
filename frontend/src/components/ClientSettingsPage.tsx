@@ -90,7 +90,9 @@ export default function ClientSettingsPage() {
 
       const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      setSuccessMessage(result.message || 'Configuration saved successfully! Restart the client to apply changes.');
+      
+      // Show the message from the server response which now includes hot-reload info
+      setSuccessMessage(result.message || 'Configuration saved successfully!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
@@ -144,7 +146,7 @@ export default function ClientSettingsPage() {
           ⚙️ Client Settings
         </h2>
         <p className="text-gray-600 dark:text-gray-300">
-          Configure your Mycelium client worker. Changes require a client restart.
+          Configure your Mycelium client worker. Changes are applied immediately with hot-reload.
         </p>
       </div>
 

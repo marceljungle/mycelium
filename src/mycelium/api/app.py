@@ -1,8 +1,10 @@
 """FastAPI application for Mycelium web interface."""
 
+import functools
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -23,7 +25,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, setup_logging, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -70,7 +72,6 @@ class ConfigRequest(BaseModel):
     """Request model for updating configuration."""
     plex: Dict[str, Any]
     api: Dict[str, Any]
-    client: Dict[str, Any]
     chroma: Dict[str, Any]
     clap: Dict[str, Any]
     logging: Dict[str, Any]
@@ -89,7 +90,7 @@ class TracksListResponse(BaseModel):
 config = MyceliumConfig.load_from_yaml()
 
 # Setup logging
-setup_logging(config.logging.level)
+config.setup_logging()
 
 logger.info("Initializing Mycelium service...")
 
@@ -109,6 +110,65 @@ job_queue = JobQueueService()
 
 # Initialize worker processing in the service
 service.initialize_worker_processing(job_queue, config.api.host, config.api.port)
+
+# Global lock for thread-safe config reloading
+config_lock = threading.RLock()
+
+def with_service_lock(func):
+    """Decorator to ensure thread-safe access to service and config."""
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        with config_lock:
+            return await func(*args, **kwargs)
+    return wrapper
+
+def reload_config() -> None:
+    """Reload configuration and reinitialize services."""
+    global config, service, job_queue
+    
+    with config_lock:
+        try:
+            logger.info("Reloading configuration...")
+            
+            # Load new configuration
+            new_config = MyceliumConfig.load_from_yaml()
+            
+            # Update logging if level changed
+            if new_config.logging.level != config.logging.level:
+                new_config.setup_logging()
+                logger.info(f"Updated logging level to {new_config.logging.level}")
+            
+            # Reinitialize service with new configuration
+            new_service = MyceliumService(
+                plex_url=new_config.plex.url,
+                plex_token=new_config.plex.token,
+                music_library_name=new_config.plex.music_library_name,
+                db_path=new_config.chroma.get_db_path(),
+                collection_name=new_config.chroma.collection_name,
+                model_id=new_config.clap.model_id,
+                track_db_path=new_config.database.get_db_path()
+            )
+            
+            # Reinitialize job queue service
+            new_job_queue = JobQueueService()
+            
+            # Initialize worker processing in the new service
+            new_service.initialize_worker_processing(new_job_queue, new_config.api.host, new_config.api.port)
+            
+            # Update global references atomically
+            old_config = config
+            old_service = service
+            old_job_queue = job_queue
+            
+            config = new_config
+            service = new_service
+            job_queue = new_job_queue
+            
+            logger.info("Configuration reloaded successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to reload configuration: {e}", exc_info=True)
+            raise
 
 # Create FastAPI app
 app = FastAPI(
@@ -160,8 +220,10 @@ async def root():
 
 
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
+@with_service_lock
 async def get_library_stats():
     """Get statistics about the current music library database."""
+    logger.debug("Getting library stats")
     try:
         stats = service.get_database_stats()
         return LibraryStatsResponse(**stats)
@@ -338,31 +400,33 @@ async def get_config():
     """Get current configuration."""
     try:
         logger.info("Configuration get request received")
-        # Return current configuration as dict
-        config_dict = {
-            "plex": {
-                "url": config.plex.url,
-                "token": config.plex.token,
-                "music_library_name": config.plex.music_library_name
-            },
-            "api": {
-                "host": config.api.host,
-                "port": config.api.port,
-                "reload": config.api.reload
-            },
-            "chroma": {
-                "collection_name": config.chroma.collection_name,
-                "batch_size": config.chroma.batch_size
-            },
-            "clap": {
-                "model_id": config.clap.model_id,
-                "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s
-            },
-            "logging": {
-                "level": config.logging.level
+        # Use thread-safe access to config
+        with config_lock:
+            # Return current configuration as dict
+            config_dict = {
+                "plex": {
+                    "url": config.plex.url,
+                    "token": config.plex.token,
+                    "music_library_name": config.plex.music_library_name
+                },
+                "api": {
+                    "host": config.api.host,
+                    "port": config.api.port,
+                    "reload": config.api.reload
+                },
+                "chroma": {
+                    "collection_name": config.chroma.collection_name,
+                    "batch_size": config.chroma.batch_size
+                },
+                "clap": {
+                    "model_id": config.clap.model_id,
+                    "target_sr": config.clap.target_sr,
+                    "chunk_duration_s": config.clap.chunk_duration_s
+                },
+                "logging": {
+                    "level": config.logging.level
+                }
             }
-        }
         logger.info("Configuration retrieved successfully")
         return config_dict
     except Exception as e:
@@ -372,7 +436,7 @@ async def get_config():
 
 @app.post("/api/config")
 async def save_config(config_request: ConfigRequest):
-    """Save configuration to YAML file."""
+    """Save configuration to YAML file and hot-reload the application."""
     try:
         logger.info("Configuration save request received")
 
@@ -396,16 +460,31 @@ async def save_config(config_request: ConfigRequest):
         yaml_config.save_to_yaml()
         logger.info("Configuration saved successfully to YAML file")
 
-        return {
-            "message": "Configuration saved successfully. Restart the server to apply changes.",
-            "status": "success"
-        }
+        # Hot-reload the configuration and services
+        try:
+            reload_config()
+            logger.info("Configuration hot-reloaded successfully")
+            return {
+                "message": "Configuration saved and reloaded successfully! Changes are now active.",
+                "status": "success",
+                "reloaded": True
+            }
+        except Exception as reload_error:
+            logger.error(f"Configuration saved but hot-reload failed: {reload_error}", exc_info=True)
+            return {
+                "message": "Configuration saved successfully, but hot-reload failed. Please restart the server to apply changes.",
+                "status": "warning",
+                "reloaded": False,
+                "reload_error": str(reload_error)
+            }
+            
     except Exception as e:
         logger.error(f"Failed to save configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
 
 
 @app.post("/api/library/scan")
+@with_service_lock
 async def scan_library():
     """Scan the Plex music library and save metadata to database."""
     try:
@@ -422,6 +501,7 @@ async def scan_library():
 
 
 @app.post("/api/library/process")
+@with_service_lock
 async def process_library():
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
@@ -465,6 +545,7 @@ async def process_library():
 
 
 @app.post("/api/library/process/server")
+@with_service_lock
 async def process_library_on_server(background_tasks: BackgroundTasks):
     """Process embeddings on server after user confirmation."""
     try:
@@ -487,6 +568,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
 
 
 @app.post("/api/library/process/stop")
+@with_service_lock
 async def stop_processing():
     """Stop the current embedding processing."""
     try:
@@ -510,8 +592,10 @@ async def stop_processing():
 
 
 @app.get("/api/library/progress")
+@with_service_lock
 async def get_processing_progress():
     """Get current processing progress and statistics."""
+    logger.debug("Processing progress request received")
     try:
         stats = service.get_processing_progress()
         return stats
@@ -523,6 +607,7 @@ async def get_processing_progress():
 @app.post("/workers/register", response_model=WorkerRegistrationResponse)
 async def register_worker(request: WorkerRegistrationRequest):
     """Register a worker with the server."""
+    logger.info(f"Worker registration request received for worker ID {request.worker_id}")
     try:
         worker = job_queue.register_worker(request.worker_id, request.ip_address)
         return WorkerRegistrationResponse(
@@ -537,6 +622,7 @@ async def register_worker(request: WorkerRegistrationRequest):
 @app.get("/workers/get_job")
 async def get_job(worker_id: str = Query(..., description="Worker ID")):
     """Get the next job for a worker."""
+    logger.debug(f"Worker job request received for worker ID {worker_id}")
     try:
         task = job_queue.get_next_job(worker_id)
         if task is None:
@@ -564,6 +650,7 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 @app.post("/workers/submit_result", response_model=TaskResultResponse)
 async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
+    logger.debug(f"Submitting result for worker ID {request.worker_id} and task ID {request.task_id}")
     try:
         logger.info(
             f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
@@ -702,6 +789,7 @@ async def submit_result(request: TaskResultRequest):
 @app.get("/download_track/{track_id}")
 async def download_track(track_id: str):
     """Download an audio file for processing."""
+    logger.debug(f"Download request for track {track_id}")
     try:
         # Get track info from service
         track_info = service.get_track_by_id(track_id)
@@ -726,6 +814,7 @@ async def download_track(track_id: str):
 @app.get("/download_audio/{task_id}")
 async def download_audio(task_id: str):
     """Download an audio file for a search task."""
+    logger.debug(f"Download request for audio task {task_id}")
     try:
         # Get the temporary file path for this task
         temp_file_path = job_queue.get_audio_task_file(task_id)
