@@ -1,5 +1,6 @@
 """FastAPI application for Mycelium web interface."""
 
+import functools
 import logging
 import os
 import tempfile
@@ -116,6 +117,7 @@ config_lock = threading.RLock()
 
 def with_service_lock(func):
     """Decorator to ensure thread-safe access to service and config."""
+    @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         with config_lock:
             return await func(*args, **kwargs)

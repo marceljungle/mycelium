@@ -1,5 +1,6 @@
 """Minimal FastAPI application for Mycelium client configuration."""
 
+import functools
 import logging
 import threading
 from typing import Dict, Any, Optional
@@ -21,6 +22,7 @@ config_lock = threading.RLock()
 
 def with_client_lock(func):
     """Decorator to ensure thread-safe access to client configuration."""
+    @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         with config_lock:
             return await func(*args, **kwargs)
