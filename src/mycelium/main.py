@@ -12,8 +12,8 @@ import uvicorn
 from typing_extensions import Annotated
 
 from mycelium.client import run_client
-from mycelium.client_config_yaml import MyceliumClientConfig
-from mycelium.config_yaml import MyceliumConfig
+from mycelium.client_config import MyceliumClientConfig
+from mycelium.config import MyceliumConfig
 
 app = typer.Typer(
     name="mycelium",
@@ -54,6 +54,7 @@ def run_frontend(server_config: MyceliumConfig = None,
 
     logger.info("Starting frontend development server...")
     try:
+        # TODO: Before release, this should be run with build and start
         subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True, env=env)
     except subprocess.CalledProcessError as e:
         logger.error(f"Frontend dev server failed with exit code {e.returncode}")

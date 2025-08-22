@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from ..client_config_yaml import MyceliumClientConfig
+from ..client_config import MyceliumClientConfig
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ async def save_config(config_request: ConfigRequest):
         logger.info("Client configuration save request received")
         
         # Create new config object with updated values
-        from ..client_config_yaml import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig
+        from ..client_config import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig
         
         clap_config = CLAPConfig(**config_request.clap)
         client_config = ClientConfig(**config_request.client)

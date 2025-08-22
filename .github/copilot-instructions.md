@@ -206,8 +206,7 @@ mycelium/
 │   ├── api/                # FastAPI web API endpoints
 │   ├── client.py           # GPU worker client for distributed processing
 │   ├── main.py             # CLI entry point with Typer
-│   ├── config.py           # Configuration management
-│   └── config_yaml.py      # NEW: YAML configuration manager
+│   └── config.py           # Configuration management
 ├── frontend/               # Next.js frontend  
 │   ├── src/app/            # Next.js app router pages
 │   ├── src/components/     # React components
@@ -218,7 +217,7 @@ mycelium/
 ```
 
 ### Important Files to Check
-- **Always check `src/mycelium/config.py` and `src/mycelium/config_yaml.py`** after configuration changes
+- **Always check `src/mycelium/config.py`** after configuration changes
 - **Check `frontend/src/components/LibraryStats.tsx`** for API integration and workflow UI
 - **Check `src/mycelium/api/app.py`** for API endpoints (`/scan`, `/process`, `/progress`)
 - **Check `src/mycelium/main.py`** for CLI command modifications (server, client)

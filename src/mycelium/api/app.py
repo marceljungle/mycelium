@@ -23,9 +23,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, setup_logging
-from ..config_yaml import MyceliumConfig as ConfigYAML
-from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, setup_logging, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -385,7 +383,7 @@ async def save_config(config_request: ConfigRequest):
         api_config = APIConfig(**config_request.api)
         logging_config = LoggingConfig(**config_request.logging)
 
-        yaml_config = ConfigYAML(
+        yaml_config = MyceliumConfig(
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
