@@ -4,10 +4,29 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional
 
-from .models import Track, TrackEmbedding, SearchResult
+from .models import Track, TrackEmbedding, SearchResult, Playlist
 
 
-class PlexRepository(ABC):
+class MediaServerRepository(ABC):
+    """Interface for media server operations (Plex, Jellyfin, etc.)."""
+    
+    @abstractmethod
+    def get_all_tracks(self) -> List[Track]:
+        """Get all tracks from the music library."""
+        pass
+    
+    @abstractmethod
+    def get_track_by_id(self, track_id: str) -> Optional[Track]:
+        """Get a specific track by its ID."""
+        pass
+    
+    @abstractmethod
+    def create_playlist(self, playlist: Playlist) -> Playlist:
+        """Create a playlist on the media server."""
+        pass
+
+
+class PlexRepository(MediaServerRepository):
     """Interface for Plex data access."""
     
     @abstractmethod

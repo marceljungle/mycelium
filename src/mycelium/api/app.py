@@ -47,6 +47,18 @@ class SearchResultResponse(BaseModel):
     distance: float
 
 
+class CreatePlaylistRequest(BaseModel):
+    name: str
+    track_ids: List[str]  # List of plex_rating_keys
+
+
+class PlaylistResponse(BaseModel):
+    name: str
+    track_count: int
+    created_at: str
+    server_id: Optional[str] = None
+
+
 class TrackDatabaseStats(BaseModel):
     total_tracks: int
     processed_tracks: int
@@ -207,6 +219,7 @@ async def root():
             "process_on_server": "/api/library/process/server",
             "stop_processing": "/api/library/process/stop",
             "processing_progress": "/api/library/progress",
+            "create_playlist": "/api/playlists/create",
             "worker_register": "/workers/register",
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
@@ -600,6 +613,23 @@ async def get_processing_progress():
         stats = service.get_processing_progress()
         return stats
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/playlists/create", response_model=PlaylistResponse)
+@with_service_lock
+async def create_playlist(request: CreatePlaylistRequest):
+    """Create a playlist from a list of track IDs."""
+    try:
+        playlist = service.create_playlist(request.name, request.track_ids)
+        return PlaylistResponse(
+            name=playlist.name,
+            track_count=playlist.track_count,
+            created_at=playlist.created_at.isoformat() if playlist.created_at else "",
+            server_id=playlist.server_id
+        )
+    except Exception as e:
+        logger.error(f"Error creating playlist '{request.name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

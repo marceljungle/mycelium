@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
+import PlaylistCreationModal from './PlaylistCreationModal';
 
 interface Track {
   id: string;
@@ -50,6 +51,10 @@ export default function LibraryPage() {
   const [albumSearch, setAlbumSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
   const [numResults, setNumResults] = useState(10);
+  
+  // Playlist creation state
+  const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const fetchTracks = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -332,6 +337,11 @@ export default function LibraryPage() {
     getRecommendations(track);
   };
 
+  const handlePlaylistCreated = (playlistName: string) => {
+    setSuccessMessage(`Successfully created playlist "${playlistName}" with ${recommendations.length} tracks!`);
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
       <div className="p-6 border-b border-gray-200 dark:border-gray-600">
@@ -521,30 +531,56 @@ export default function LibraryPage() {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               Recommendations
             </h3>
-            {selectedTrack && (
-              <div className="flex items-center space-x-2">
-                <label htmlFor="rec-num-results" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Results:
-                </label>
-                <input
-                  id="rec-num-results"
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={numResults}
-                  onChange={(e) => {
-                    const newValue = Math.max(1, Math.min(50, parseInt(e.target.value) || 10));
-                    setNumResults(newValue);
-                    // Re-fetch recommendations with new count if we have a selected track and no processing is happening
-                    if (selectedTrack && processingState === 'none' && !recommendationsLoading) {
-                      getRecommendations(selectedTrack);
-                    }
-                  }}
-                  className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-              </div>
-            )}
+            
+            <div className="flex items-center space-x-3">
+              {selectedTrack && recommendations.length > 0 && (
+                <button
+                  onClick={() => setIsPlaylistModalOpen(true)}
+                  className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 text-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
+                  </svg>
+                  <span>Create Playlist</span>
+                </button>
+              )}
+              
+              {selectedTrack && (
+                <div className="flex items-center space-x-2">
+                  <label htmlFor="rec-num-results" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Results:
+                  </label>
+                  <input
+                    id="rec-num-results"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={numResults}
+                    onChange={(e) => {
+                      const newValue = Math.max(1, Math.min(50, parseInt(e.target.value) || 10));
+                      setNumResults(newValue);
+                      // Re-fetch recommendations with new count if we have a selected track and no processing is happening
+                      if (selectedTrack && processingState === 'none' && !recommendationsLoading) {
+                        getRecommendations(selectedTrack);
+                      }
+                    }}
+                    className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+            </div>
           </div>
+
+          {successMessage && (
+            <div className="mb-4 p-4 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded-lg">
+              <p className="text-green-700 dark:text-green-300 flex items-center">
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                {successMessage}
+              </p>
+            </div>
+          )}
           
           {!selectedTrack ? (
             <div className="text-center py-8">
@@ -625,6 +661,13 @@ export default function LibraryPage() {
           )}
         </div>
       </div>
+      
+      <PlaylistCreationModal
+        isOpen={isPlaylistModalOpen}
+        onClose={() => setIsPlaylistModalOpen(false)}
+        trackIds={recommendations.map(result => result.track.plex_rating_key)}
+        onSuccess={handlePlaylistCreated}
+      />
     </div>
   );
 }
