@@ -72,7 +72,6 @@ class ConfigRequest(BaseModel):
     """Request model for updating configuration."""
     plex: Dict[str, Any]
     api: Dict[str, Any]
-    client: Dict[str, Any]
     chroma: Dict[str, Any]
     clap: Dict[str, Any]
     logging: Dict[str, Any]
