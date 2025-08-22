@@ -223,6 +223,7 @@ async def root():
 @with_service_lock
 async def get_library_stats():
     """Get statistics about the current music library database."""
+    logger.debug("Getting library stats")
     try:
         stats = service.get_database_stats()
         return LibraryStatsResponse(**stats)
@@ -594,6 +595,7 @@ async def stop_processing():
 @with_service_lock
 async def get_processing_progress():
     """Get current processing progress and statistics."""
+    logger.debug("Processing progress request received")
     try:
         stats = service.get_processing_progress()
         return stats
@@ -605,6 +607,7 @@ async def get_processing_progress():
 @app.post("/workers/register", response_model=WorkerRegistrationResponse)
 async def register_worker(request: WorkerRegistrationRequest):
     """Register a worker with the server."""
+    logger.info(f"Worker registration request received for worker ID {request.worker_id}")
     try:
         worker = job_queue.register_worker(request.worker_id, request.ip_address)
         return WorkerRegistrationResponse(
@@ -619,6 +622,7 @@ async def register_worker(request: WorkerRegistrationRequest):
 @app.get("/workers/get_job")
 async def get_job(worker_id: str = Query(..., description="Worker ID")):
     """Get the next job for a worker."""
+    logger.debug(f"Worker job request received for worker ID {worker_id}")
     try:
         task = job_queue.get_next_job(worker_id)
         if task is None:
@@ -646,6 +650,7 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 @app.post("/workers/submit_result", response_model=TaskResultResponse)
 async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
+    logger.debug(f"Submitting result for worker ID {request.worker_id} and task ID {request.task_id}")
     try:
         logger.info(
             f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
@@ -784,6 +789,7 @@ async def submit_result(request: TaskResultRequest):
 @app.get("/download_track/{track_id}")
 async def download_track(track_id: str):
     """Download an audio file for processing."""
+    logger.debug(f"Download request for track {track_id}")
     try:
         # Get track info from service
         track_info = service.get_track_by_id(track_id)
@@ -808,6 +814,7 @@ async def download_track(track_id: str):
 @app.get("/download_audio/{task_id}")
 async def download_audio(task_id: str):
     """Download an audio file for a search task."""
+    logger.debug(f"Download request for audio task {task_id}")
     try:
         # Get the temporary file path for this task
         temp_file_path = job_queue.get_audio_task_file(task_id)
