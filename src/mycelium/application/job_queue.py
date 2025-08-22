@@ -1,11 +1,14 @@
 """Job queue and worker management service."""
 
+import os
+import tempfile
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Lock
 from typing import List, Optional, Dict
 
-from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus
+from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
 
 class JobQueueService:
@@ -16,6 +19,9 @@ class JobQueueService:
         self._tasks: Dict[str, Task] = {}
         self._pending_tasks: List[str] = []
         self._lock = Lock()
+        # Temporary directory for audio files to avoid base64 encoding large files
+        self._temp_dir = Path(tempfile.mkdtemp(prefix="mycelium_audio_"))
+        self._temp_files: Dict[str, Path] = {}  # task_id -> temp_file_path
 
     def register_worker(self, worker_id: str, ip_address: str) -> Worker:
         """Register a new worker or update existing one."""
@@ -42,23 +48,81 @@ class JobQueueService:
     def get_active_workers(self) -> List[Worker]:
         """Get list of active workers."""
         with self._lock:
-            # Clean up inactive workers (no heartbeat for more than 5 minutes)
-            cutoff_time = datetime.now() - timedelta(minutes=5)
+            # Clean up inactive workers
+            cutoff_time = datetime.now() - timedelta(seconds=10)
             for worker in self._workers.values():
                 if worker.last_heartbeat < cutoff_time:
                     worker.is_active = False
             
             return [w for w in self._workers.values() if w.is_active]
 
-    def create_task(self, track_id: str, download_url: str, prioritize: bool) -> Task:
-        """Create a new task and add it to the queue."""
+    def create_task(self, track_id: str = "", download_url: str = "", 
+                    audio_data: bytes = None, audio_filename: str = "", 
+                    n_results: int = 10, prioritize: bool = True,
+                    context_type: ContextType = None) -> Task:
+        """Create a new task and add it to the queue.
+        
+        Can create either:
+        - Traditional embedding task: provide track_id and download_url
+        - Audio search task: provide audio_data and audio_filename
+        """
+        with self._lock:
+            task_id = str(uuid.uuid4())
+            
+            # Determine task type based on provided parameters
+            if audio_data is not None:
+                # Audio search task - create temporary file and internal URL
+                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
+                
+                # Create temporary file for audio data to avoid base64 encoding overhead
+                temp_file = self._temp_dir / f"audio_task_{task_id}.tmp"
+                temp_file.write_bytes(audio_data)
+                self._temp_files[task_id] = temp_file
+                
+                # Create download URL for the worker (internal URL)
+                download_url = f"/download_audio_task/{task_id}"
+                track_id = ""  # Not needed for audio search
+                
+                task = Task(
+                    task_id=task_id,
+                    task_type=task_type,
+                    track_id=track_id,
+                    download_url=download_url,
+                    audio_filename=audio_filename,
+                    n_results=n_results,
+                    context_type=context_type
+                )
+            else:
+                # Traditional embedding task
+                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
+
+                task = Task(
+                    task_id=task_id,
+                    task_type=task_type,
+                    track_id=track_id,
+                    download_url=download_url,
+                    context_type=context_type
+                )
+            
+            self._tasks[task_id] = task
+            if prioritize:
+                self._pending_tasks.insert(0, task_id)
+            else:
+                self._pending_tasks.append(task_id)
+            return task
+
+    def create_text_search_task(self, text_query: str, n_results: int = 10, prioritize: bool = True) -> Task:
+        """Create a new text search task and add it to the queue."""
         with self._lock:
             task_id = str(uuid.uuid4())
             task = Task(
                 task_id=task_id,
-                task_type=TaskType.COMPUTE_EMBEDDING,
-                track_id=track_id,
-                download_url=download_url
+                task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
+                context_type=ContextType.TEXT_SEARCH,
+                track_id="",  # Not needed for text search
+                download_url="",  # Not needed for text search
+                text_query=text_query,
+                n_results=n_results
             )
             self._tasks[task_id] = task
             if prioritize:
@@ -66,6 +130,7 @@ class JobQueueService:
             else:
                 self._pending_tasks.append(task_id)
             return task
+
 
     def get_next_job(self, worker_id: str) -> Optional[Task]:
         """Get the next job for a worker."""
@@ -98,6 +163,10 @@ class JobQueueService:
             
             if result.error_message:
                 task.error_message = result.error_message
+                
+            # Store search results for search tasks
+            if result.search_results:
+                task.search_results = result.search_results
             
             return True
 
@@ -196,11 +265,59 @@ class JobQueueService:
             return self._cleanup_stale_tasks()
 
     def has_active_processing(self) -> bool:
-        """Check if there are any tasks currently being processed or pending."""
+        """Check if there are any library processing tasks currently being processed or pending.
+        
+        Note: This excludes search tasks (text/audio search) which have their own loading states.
+        Only counts tasks with AUDIO_PROCESSING context for library processing status.
+        """
         with self._lock:
             # Clean up stale in-progress tasks from inactive workers first
             self._cleanup_stale_tasks()
             
-            return len(self._pending_tasks) > 0 or any(
-                t.status == TaskStatus.IN_PROGRESS for t in self._tasks.values()
-            )
+            # Only count library processing tasks, not search tasks
+            library_pending_tasks = [
+                task_id for task_id in self._pending_tasks
+                if self._tasks.get(task_id) and self._tasks[task_id].context_type == ContextType.AUDIO_PROCESSING
+            ]
+            
+            library_in_progress_tasks = [
+                t for t in self._tasks.values()
+                if t.status == TaskStatus.IN_PROGRESS and t.context_type == ContextType.AUDIO_PROCESSING
+            ]
+            
+            return len(library_pending_tasks) > 0 or len(library_in_progress_tasks) > 0
+
+    def get_audio_task_file(self, task_id: str) -> Optional[Path]:
+        """Get the temporary file path for an audio task."""
+        with self._lock:
+            return self._temp_files.get(task_id)
+
+    def cleanup_task_files(self, task_id: str) -> None:
+        """Clean up temporary files for a completed task."""
+        with self._lock:
+            if task_id in self._temp_files:
+                temp_file = self._temp_files[task_id]
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                except OSError:
+                    pass  # Ignore cleanup errors
+                del self._temp_files[task_id]
+
+    def cleanup_all_temp_files(self) -> None:
+        """Clean up all temporary files."""
+        with self._lock:
+            for temp_file in self._temp_files.values():
+                try:
+                    if temp_file.exists():
+                        temp_file.unlink()
+                except OSError:
+                    pass  # Ignore cleanup errors
+            self._temp_files.clear()
+            
+            # Clean up the temporary directory
+            try:
+                if self._temp_dir.exists():
+                    self._temp_dir.rmdir()
+            except OSError:
+                pass  # Directory might not be empty or accessible

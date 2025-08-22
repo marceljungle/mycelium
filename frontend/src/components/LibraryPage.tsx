@@ -10,7 +10,6 @@ interface Track {
   title: string;
   filepath: string;
   plex_rating_key: string;
-  processed: boolean;
 }
 
 interface TrackResponse {
@@ -50,6 +49,7 @@ export default function LibraryPage() {
   const [artistSearch, setArtistSearch] = useState('');
   const [albumSearch, setAlbumSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
+  const [numResults, setNumResults] = useState(10);
 
   const fetchTracks = useCallback(async (searchTerm?: string) => {
     setLoading(true);
@@ -249,7 +249,7 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=10`);
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=${numResults}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -261,7 +261,7 @@ export default function LibraryPage() {
         } else if (data.status === 'confirmation_required') {
           // Handle confirmation required case - offer processing options
           const shouldProcess = window.confirm(
-            `This track needs to be processed first. ${data.message}\n\nWould you like to process it now?`
+            `This track needs to be processed first.\n\nWould you like to process it now?`
           );
           
           if (shouldProcess) {
@@ -275,15 +275,8 @@ export default function LibraryPage() {
               });
               
               if (processResponse.ok) {
-                const processResult = await processResponse.json();
-                if (processResult.status === 'completed') {
-                  // Processing completed successfully, try getting recommendations again
                   setProcessingState('none');
                   await getRecommendations(track, true);
-                  return;
-                } else {
-                  setError('Processing completed but no recommendations found. Please try again.');
-                }
               } else {
                 const errorData = await processResponse.json().catch(() => ({}));
                 setError(errorData.detail || 'Failed to process track. Please try again later.');
@@ -516,11 +509,6 @@ export default function LibraryPage() {
                   <div className="text-sm text-gray-600 dark:text-gray-300">
                     {track.artist} • {track.album}
                   </div>
-                  {!track.processed && (
-                    <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                      Not yet processed for search
-                    </div>
-                  )}
                 </button>
               ))}
             </div>
@@ -529,9 +517,34 @@ export default function LibraryPage() {
 
         {/* Recommendations */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Recommendations
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Recommendations
+            </h3>
+            {selectedTrack && (
+              <div className="flex items-center space-x-2">
+                <label htmlFor="rec-num-results" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Results:
+                </label>
+                <input
+                  id="rec-num-results"
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={numResults}
+                  onChange={(e) => {
+                    const newValue = Math.max(1, Math.min(50, parseInt(e.target.value) || 10));
+                    setNumResults(newValue);
+                    // Re-fetch recommendations with new count if we have a selected track and no processing is happening
+                    if (selectedTrack && processingState === 'none' && !recommendationsLoading) {
+                      getRecommendations(selectedTrack);
+                    }
+                  }}
+                  className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+            )}
+          </div>
           
           {!selectedTrack ? (
             <div className="text-center py-8">

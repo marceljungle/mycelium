@@ -25,14 +25,14 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         self.chunk_duration_s = chunk_duration_s
         self.logger = logging.getLogger(__name__)
 
-        self.device = self._get_best_device()
+        self.device = self.get_best_device()
         self.logger.info(f"Selected device: {self.device}")
 
         ## Lazy loading. Model is not loaded on instantiation.
-        self._model: Optional[ClapModel] = None
-        self._processor: Optional[ClapProcessor] = None
+        self.model: Optional[ClapModel] = None
+        self.processor: Optional[ClapProcessor] = None
 
-        self.use_half = self._can_use_half_precision()
+        self.use_half = self.can_use_half_precision()
         if self.use_half:
             self.logger.info("Half precision (FP16) is supported and will be used.")
         else:
@@ -40,30 +40,35 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
     def _load_model_if_needed(self):
         """Loads the model and processor on the first call that needs them."""
-        if self._model is None or self._processor is None:
+        if self.model is None or self.processor is None:
             self.logger.info(f"Loading model '{self.model_id}' to device '{self.device}'...")
 
-            self._model = ClapModel.from_pretrained(self.model_id).to(self.device)
-            self._processor = ClapProcessor.from_pretrained(self.model_id)
+            self.model = ClapModel.from_pretrained(self.model_id).to(self.device)
+            self.processor = ClapProcessor.from_pretrained(self.model_id)
 
             if self.use_half and self.device == "cuda":
                 self.logger.info("Applying half precision (FP16) to model for CUDA device.")
-                self._model.half()
+                self.model.half()
             elif self.use_half and self.device == "mps":
                 self.logger.warning(
                     "Half precision is supported but disabled on MPS device to prevent potential crashes. Using FP32.")
 
-            self._model.eval()
+            self.model.eval()
             self.logger.info("Model loaded successfully.")
+            try:
+                self.logger.info(f"Model dtype after load: {next(self.model.parameters()).dtype}")
+            except StopIteration:
+                self.logger.debug("Could not determine model dtype (no parameters found).")
 
-    def _get_best_device(self) -> str:
+    @staticmethod
+    def get_best_device() -> str:
         if torch.cuda.is_available():
             return "cuda"
         if torch.backends.mps.is_available():
             return "mps"
         return "cpu"
 
-    def _can_use_half_precision(self) -> bool:
+    def can_use_half_precision(self) -> bool:
         """Checks once if the device supports half precision."""
         if self.device == "cuda":
             # Most modern CUDA devices support FP16.
@@ -81,14 +86,33 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
     def _get_processor(self) -> ClapProcessor:
         """Return a ready-to-use processor with a non-optional type."""
         self._load_model_if_needed()
-        assert self._processor is not None
-        return self._processor
+        assert self.processor is not None
+        return self.processor
 
     def _get_model(self) -> ClapModel:
         """Return a ready-to-use model with a non-optional type."""
         self._load_model_if_needed()
-        assert self._model is not None
-        return self._model
+        assert self.model is not None
+        return self.model
+
+    def _prepare_inputs(self, inputs: dict) -> dict:
+        """Move inputs to the correct device and cast floating tensors to the model's dtype.
+
+        This prevents dtype mismatches when the model runs in half precision on CUDA.
+        """
+        model = self._get_model()
+        # Determine model parameter dtype (e.g., torch.float32 or torch.float16)
+        model_dtype = next(model.parameters()).dtype
+        prepared = {}
+        for k, v in inputs.items():
+            if isinstance(v, torch.Tensor):
+                if v.is_floating_point():
+                    prepared[k] = v.to(device=self.device, dtype=model_dtype)
+                else:
+                    prepared[k] = v.to(device=self.device)
+            else:
+                prepared[k] = v
+        return prepared
 
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
         try:
@@ -112,7 +136,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 padding=True
             )
 
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            inputs = self._prepare_inputs(inputs)
 
             with torch.no_grad():
                 audio_features = model.get_audio_features(**inputs)
@@ -136,13 +160,13 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 padding=True
             )
 
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            inputs = self._prepare_inputs(inputs)
 
             with torch.no_grad():
                 text_features = model.get_text_features(**inputs)
                 text_embedding = torch.nn.functional.normalize(text_features, p=2, dim=-1)
 
-            return text_embedding.cpu().numpy().tolist()
+            return text_embedding.cpu().numpy().tolist()[0]
 
         except Exception as e:
             self.logger.error(f"Error generating text embedding for '{text}': {e}", exc_info=True)

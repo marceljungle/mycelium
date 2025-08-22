@@ -13,7 +13,6 @@ from typing import Optional, List, Dict
 
 import requests
 import torch
-from transformers import ClapModel, ClapProcessor
 
 from mycelium.infrastructure import CLAPEmbeddingGenerator
 
@@ -25,8 +24,8 @@ class DownloadedJob:
     """Represents a job with downloaded audio file."""
     task_id: str
     track_id: str
-    audio_file: Path
     original_job: dict
+    audio_file: Optional[Path]
 
 
 class MyceliumClient:
@@ -53,10 +52,10 @@ class MyceliumClient:
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
 
-        # Initialize model (will be loaded when first needed)
-        self.model = None
-        self.processor = None
-        self.device = self._get_best_device()
+        # Disable tokenizers parallelism to avoid warnings when using threading
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        self.device = CLAPEmbeddingGenerator().get_best_device()
 
         # Download queue management
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
@@ -94,7 +93,8 @@ class MyceliumClient:
         else:
             logging.info("  📭 Queue empty - waiting for downloads")
 
-    def _get_local_ip(self) -> str:
+    @staticmethod
+    def _get_local_ip() -> str:
         """Get the local IP address."""
         try:
             # Connect to a remote address to determine local IP
@@ -104,43 +104,13 @@ class MyceliumClient:
         except Exception:
             return "127.0.0.1"
 
-    def _get_best_device(self) -> str:
-        """Get the best available device for computation."""
-        if torch.cuda.is_available():
-            return "cuda"
-        elif torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
-
-    def _load_model(self):
-        """Load the CLAP model and processor."""
-        if self.model is None:
-            logging.info(f"Loading CLAP model: {self.model_id}")
-            self.model = ClapModel.from_pretrained(self.model_id).to(self.device)
-            self.processor = ClapProcessor.from_pretrained(self.model_id)
-            self.model.eval()
-
-            # Apply device-specific optimizations
-            if self.device == "cuda":
-                self.model.half()
-            elif self.device == "mps":
-                try:
-                    self.model.half()
-                    torch.backends.mps.enabled = True
-                    logging.info("MPS half precision enabled for optimal performance")
-                except RuntimeError as e:
-                    logging.warning(f"MPS half precision not supported, using FP32: {e}")
-
-            logging.info("Model loaded successfully")
-
     def _unload_model(self):
         """Unload model to free GPU memory."""
-        if self.model is not None:
-            del self.model
-            del self.processor
-            self.model = None
-            self.processor = None
+        if self.clap_embedding_generator.model is not None:
+            del self.clap_embedding_generator.model
+            del self.clap_embedding_generator.processor
+            self.clap_embedding_generator.model = None
+            self.clap_embedding_generator.processor = None
 
             if self.device == "cuda":
                 torch.cuda.empty_cache()
@@ -182,7 +152,7 @@ class MyceliumClient:
                 print("Registration interrupted by user.")
                 return False
             attempt += 1
-    
+
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
         try:
@@ -245,35 +215,61 @@ class MyceliumClient:
 
                 if job:
                     task_id = job["task_id"]
-                    logging.info(f"Download worker: Downloading audio for job {task_id}")
+                    task_type = job.get("task_type", "compute_audio_embedding")
+                    logging.info(f"Download worker: Got job {task_id} with task_type {task_type}")
 
-                    # Download audio file
-                    audio_file = self.download_audio_file(job["download_url"])
-
-                    if audio_file:
-                        # Create downloaded job object
+                    # Handle different task types
+                    if task_type == "compute_text_embedding":
+                        # Text search task - no download needed
                         downloaded_job = DownloadedJob(
                             task_id=task_id,
                             track_id=job["track_id"],
-                            audio_file=audio_file,
+                            audio_file=None,  # No audio file for text search
                             original_job=job
                         )
 
                         try:
-                            # Add to queue (this will block if queue is full)
                             self.download_queue.put(downloaded_job, timeout=5)
-                            logging.info(f"Download worker: Queued job {task_id} for processing")
-                            self._log_queue_status("after queuing")
+                            logging.info(f"Download worker: Queued text search job {task_id} for processing")
+                            self._log_queue_status("after queuing text search")
                         except:
-                            # Queue remained full; clean up the downloaded temp file
-                            logging.info(
-                                f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
-                            try:
-                                os.unlink(audio_file)
-                            except:
-                                pass
+                            logging.info(f"Download worker: Queue full, could not enqueue text search job {task_id}")
+
                     else:
-                        logging.info(f"Download worker: Failed to download audio for job {task_id}")
+                        download_url = job.get("download_url")
+
+                        if download_url:
+                            full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
+
+                            logging.info(f"Download worker: Downloading audio for job {task_id} from {full_url}")
+                            audio_file = self.download_audio_file(full_url)
+
+                            if audio_file:
+                                # Create downloaded job object
+                                downloaded_job = DownloadedJob(
+                                    task_id=task_id,
+                                    track_id=job["track_id"],
+                                    audio_file=audio_file,
+                                    original_job=job
+                                )
+
+                                try:
+                                    # Add to queue (this will block if queue is full)
+                                    self.download_queue.put(downloaded_job, timeout=5)
+                                    logging.info(f"Download worker: Queued job {task_id} for processing")
+                                    self._log_queue_status("after queuing")
+                                except:
+                                    # Queue remained full; clean up the downloaded temp file
+                                    logging.info(
+                                        f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
+                                    try:
+                                        os.unlink(audio_file)
+                                    except:
+                                        pass
+                            else:
+                                logging.info(f"Download worker: Failed to download audio for job {task_id}")
+                        else:
+                            logging.error(f"Download worker: Job {task_id} missing download URL")
                 else:
                     # No job available, wait before polling again
                     time.sleep(self.poll_interval)
@@ -309,24 +305,11 @@ class MyceliumClient:
             except Empty:
                 break
 
-    def _can_use_half_precision(self) -> bool:
-        """Check if the current device supports half precision."""
-        if self.device == "cuda":
-            return True
-        elif self.device == "mps":
-            # Test if MPS supports half precision on this device
-            try:
-                torch.rand(1, device=self.device, dtype=torch.half)
-                return True
-            except RuntimeError:
-                return False
-        return False
-
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
                       error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
         try:
-            status = "success" if embedding is not None else "failed"
+            status = "success" if (embedding is not None) else "failed"
 
             response = requests.post(
                 f"{self.server_url}/workers/submit_result",
@@ -355,33 +338,64 @@ class MyceliumClient:
         """Process a downloaded job."""
         task_id = downloaded_job.task_id
         track_id = downloaded_job.track_id
-        audio_file = downloaded_job.audio_file
+        original_job = downloaded_job.original_job
+        task_type = original_job.get("task_type", "compute_audio_embedding")
 
-        logging.info(f"Processing job {task_id} for track {track_id}")
+        logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
 
         try:
-            # Compute embedding
-            self._load_model()
-            embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
+            if task_type == "compute_audio_embedding":
+                # Traditional track embedding computation
+                audio_file = downloaded_job.audio_file
+                embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
 
-            # Submit result
-            if embedding:
-                success = self.submit_result(task_id, track_id, embedding)
-                if success:
-                    logging.info(f"Successfully processed job {task_id}")
+                if embedding:
+                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=embedding)
+                    if success:
+                        logging.info(f"Successfully processed embedding job {task_id}")
+                    else:
+                        logging.warning(f"Failed to submit embedding result for job {task_id}")
+                    return success
                 else:
-                    logging.warning(f"Failed to submit result for job {task_id}")
-                return success
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Failed to compute embedding")
+                    return False
+
+            elif task_type == "compute_text_embedding":
+                # Text search embedding computation
+                text_query = original_job.get("text_query")
+                if not text_query:
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Missing text query")
+                    return False
+
+                logging.info(f"Computing text embedding for query: '{text_query}'")
+                text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
+
+                if text_embedding:
+                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=text_embedding)
+                    if success:
+                        logging.info(f"Successfully processed text embedding job {task_id}")
+                    else:
+                        logging.warning(f"Failed to submit text embedding result for job {task_id}")
+                    return success
+                else:
+                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                       error_message="Failed to compute text embedding")
+                    return False
             else:
-                self.submit_result(task_id, track_id, None, "Failed to compute embedding")
+                logging.error(f"Unknown task type: {task_type}")
+                self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
+                                   error_message=f"Unknown task type: {task_type}")
                 return False
 
         finally:
             # Clean up temporary file
-            try:
-                os.unlink(audio_file)
-            except Exception:
-                pass
+            if hasattr(downloaded_job, 'audio_file') and downloaded_job.audio_file:
+                try:
+                    os.unlink(downloaded_job.audio_file)
+                except Exception:
+                    pass
 
     def run(self):
         """Main worker loop."""
@@ -391,10 +405,6 @@ class MyceliumClient:
         if not self.register_with_server():
             logging.info("Failed to register with server. Exiting.")
             return
-
-        # Pre-load model at start of session for efficiency
-        logging.info("Loading CLAP model for the session...")
-        self._load_model()
 
         # Start background download worker
         logging.info("Starting background download worker...")
