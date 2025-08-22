@@ -177,15 +177,28 @@ class MyceliumClientConfig:
         log_file_path = Path(self.logging.file)
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Setup logging
-        logging.basicConfig(
-            level=level,
-            format=self.logging.format,
-            handlers=[
-                logging.FileHandler(self.logging.file),
-                logging.StreamHandler()  # Also log to console
-            ]
-        )
+        # Get the root logger
+        root_logger = logging.getLogger()
+        
+        # Remove all existing handlers to ensure clean reconfiguration
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+            handler.close()
+        
+        # Set the new level on the root logger
+        root_logger.setLevel(level)
+        
+        # Create and add new handlers
+        file_handler = logging.FileHandler(self.logging.file)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(logging.Formatter(self.logging.format))
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        console_handler.setFormatter(logging.Formatter(self.logging.format))
+        
+        root_logger.addHandler(file_handler)
+        root_logger.addHandler(console_handler)
         
         # Set log level for third-party libraries to reduce noise
         logging.getLogger('chromadb').setLevel(logging.WARNING)
