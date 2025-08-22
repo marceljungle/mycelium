@@ -23,9 +23,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, setup_logging
-from ..config_yaml import MyceliumConfig as ConfigYAML
-from ..config_yaml import PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, setup_logging, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -153,7 +151,10 @@ async def root():
             "worker_get_job": "/workers/get_job",
             "worker_submit_result": "/workers/submit_result",
             "similar_by_track": "/similar/by_track/{track_id}",
-            "compute_on_server": "/compute/on_server"
+            "compute_on_server": "/compute/on_server",
+            "download_track": "/download_track/{track_id}",
+            "download_audio": "/download_audio/{task_id}",
+            "task_status": "/api/queue/task/{task_id}"
         }
     }
 
@@ -382,7 +383,7 @@ async def save_config(config_request: ConfigRequest):
         api_config = APIConfig(**config_request.api)
         logging_config = LoggingConfig(**config_request.logging)
 
-        yaml_config = ConfigYAML(
+        yaml_config = MyceliumConfig(
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
@@ -722,8 +723,8 @@ async def download_track(track_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/download_audio_task/{task_id}")
-async def download_audio_task(task_id: str):
+@app.get("/download_audio/{task_id}")
+async def download_audio(task_id: str):
     """Download an audio file for a search task."""
     try:
         # Get the temporary file path for this task

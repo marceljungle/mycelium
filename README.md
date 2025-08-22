@@ -272,7 +272,7 @@ The project follows clean architecture principles with modern development practi
 You can also use Mycelium programmatically:
 
 ```python
-from mycelium.config_yaml import MyceliumConfig
+from mycelium.config import MyceliumConfig
 from mycelium.application.services import MyceliumService
 
 # Load configuration
@@ -352,7 +352,7 @@ mycelium/
 │   │   └── track_database.py  # SQLite track metadata database
 │   ├── api/                   # FastAPI web API
 │   │   └── app.py             # API endpoints and routes
-│   ├── config_yaml.py         # YAML configuration management
+│   ├── config.py              # Configuration management
 │   ├── main.py                # CLI entry point with Typer
 │   └── client.py              # GPU worker client for distributed processing
 ├── frontend/                  # Next.js frontend
@@ -366,7 +366,6 @@ mycelium/
 │   │       └── LibraryStats.tsx    # Statistics and library operations
 │   └── package.json
 ├── config.example.yml         # YAML configuration template
-├── .env.example              # Environment variables (legacy support)
 ├── pyproject.toml            # Python project configuration
 ├── requirements.txt          # Python dependencies
 └── README.md
