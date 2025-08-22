@@ -1,6 +1,7 @@
 """Minimal FastAPI application for Mycelium client configuration."""
 
 import logging
+import threading
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -11,6 +12,45 @@ from ..client_config import MyceliumClientConfig
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
+
+# Global configuration instance
+config = MyceliumClientConfig.load_from_yaml()
+
+# Global lock for thread-safe config reloading
+config_lock = threading.RLock()
+
+def with_client_lock(func):
+    """Decorator to ensure thread-safe access to client configuration."""
+    async def wrapper(*args, **kwargs):
+        with config_lock:
+            return await func(*args, **kwargs)
+    return wrapper
+
+def reload_client_config() -> None:
+    """Reload client configuration safely."""
+    global config
+    
+    with config_lock:
+        try:
+            logger.info("Reloading client configuration...")
+            
+            # Load new configuration
+            new_config = MyceliumClientConfig.load_from_yaml()
+            
+            # Update logging if level changed
+            if new_config.logging.level != config.logging.level:
+                # Use the proper setup_logging method from the config
+                new_config.setup_logging()
+                logger.info(f"Updated logging level to {new_config.logging.level}")
+            
+            # Update global reference atomically
+            config = new_config
+            
+            logger.info("Client configuration reloaded successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to reload client configuration: {e}", exc_info=True)
+            raise
 
 
 class ConfigRequest(BaseModel):
@@ -52,14 +92,13 @@ async def root():
 
 
 @app.get("/api/config")
+@with_client_lock
 async def get_config():
     """Get current client configuration."""
     try:
         logger.info("Client configuration get request received")
-        # Load current configuration from YAML
-        config = MyceliumClientConfig.load_from_yaml()
         
-        # Return current configuration as dict
+        # Return current configuration as dict using global config
         config_dict = {
             "client": {
                 "server_host": config.client.server_host,
@@ -87,7 +126,7 @@ async def get_config():
 
 @app.post("/api/config")
 async def save_config(config_request: ConfigRequest):
-    """Save client configuration to YAML file."""
+    """Save client configuration to YAML file and hot-reload the application."""
     try:
         logger.info("Client configuration save request received")
         
@@ -110,11 +149,23 @@ async def save_config(config_request: ConfigRequest):
         yaml_config.save_to_yaml()
         logger.info("Client configuration saved successfully to YAML file")
         
-        return {
-            "message": "Configuration saved successfully! Changes will take effect for new operations.",
-            "status": "success",
-            "reloaded": True
-        }
+        # Hot-reload the configuration
+        try:
+            reload_client_config()
+            logger.info("Client configuration hot-reloaded successfully")
+            return {
+                "message": "Configuration saved and reloaded successfully! Changes are now active.",
+                "status": "success",
+                "reloaded": True
+            }
+        except Exception as reload_error:
+            logger.error(f"Client configuration saved but hot-reload failed: {reload_error}", exc_info=True)
+            return {
+                "message": "Configuration saved successfully, but hot-reload failed. Please restart the client to apply changes.",
+                "status": "warning",
+                "reloaded": False,
+                "reload_error": str(reload_error)
+            }
     except Exception as e:
         logger.error(f"Failed to save client configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
