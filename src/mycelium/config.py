@@ -230,40 +230,16 @@ class MyceliumConfig:
         logging.getLogger('urllib3').setLevel(logging.WARNING)
         logging.getLogger('requests').setLevel(logging.WARNING)
 
-
-def setup_logging(level: str = "INFO") -> None:
-    """Setup logging configuration (standalone function for backward compatibility)."""
-    log_dir = get_user_log_dir()
-    log_file = log_dir / "mycelium.log"
-    
-    # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    
-    # Setup root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    
-    # Clear existing handlers
-    root_logger.handlers.clear()
-    
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    root_logger.addHandler(console_handler)
-    
-    # File handler
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(formatter)
-    root_logger.addHandler(file_handler)
+        # Configure Uvicorn loggers to prevent unwanted access logs
+        logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+        logging.getLogger('uvicorn').setLevel(logging.WARNING)
 
 
 # Export all necessary components
 __all__ = [
-    "MyceliumConfig", 
+    "MyceliumConfig",
     "PlexConfig",
-    "CLAPConfig", 
+    "CLAPConfig",
     "ChromaConfig",
     "DatabaseConfig",
     "APIConfig",
@@ -271,6 +247,5 @@ __all__ = [
     "get_config_file_path",
     "get_user_data_dir",
     "get_user_log_dir",
-    "get_config_dir",
-    "setup_logging"
+    "get_config_dir"
 ]

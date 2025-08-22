@@ -25,7 +25,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, setup_logging, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -91,7 +91,7 @@ class TracksListResponse(BaseModel):
 config = MyceliumConfig.load_from_yaml()
 
 # Setup logging
-setup_logging(config.logging.level)
+config.setup_logging()
 
 logger.info("Initializing Mycelium service...")
 
@@ -136,7 +136,7 @@ def reload_config() -> None:
             
             # Update logging if level changed
             if new_config.logging.level != config.logging.level:
-                setup_logging(new_config.logging.level)
+                new_config.setup_logging()
                 logger.info(f"Updated logging level to {new_config.logging.level}")
             
             # Reinitialize service with new configuration
