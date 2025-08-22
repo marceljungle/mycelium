@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -110,6 +111,64 @@ job_queue = JobQueueService()
 # Initialize worker processing in the service
 service.initialize_worker_processing(job_queue, config.api.host, config.api.port)
 
+# Global lock for thread-safe config reloading
+config_lock = threading.RLock()
+
+def with_service_lock(func):
+    """Decorator to ensure thread-safe access to service and config."""
+    async def wrapper(*args, **kwargs):
+        with config_lock:
+            return await func(*args, **kwargs)
+    return wrapper
+
+def reload_config() -> None:
+    """Reload configuration and reinitialize services."""
+    global config, service, job_queue
+    
+    with config_lock:
+        try:
+            logger.info("Reloading configuration...")
+            
+            # Load new configuration
+            new_config = MyceliumConfig.load_from_yaml()
+            
+            # Update logging if level changed
+            if new_config.logging.level != config.logging.level:
+                setup_logging(new_config.logging.level)
+                logger.info(f"Updated logging level to {new_config.logging.level}")
+            
+            # Reinitialize service with new configuration
+            new_service = MyceliumService(
+                plex_url=new_config.plex.url,
+                plex_token=new_config.plex.token,
+                music_library_name=new_config.plex.music_library_name,
+                db_path=new_config.chroma.get_db_path(),
+                collection_name=new_config.chroma.collection_name,
+                model_id=new_config.clap.model_id,
+                track_db_path=new_config.database.get_db_path()
+            )
+            
+            # Reinitialize job queue service
+            new_job_queue = JobQueueService()
+            
+            # Initialize worker processing in the new service
+            new_service.initialize_worker_processing(new_job_queue, new_config.api.host, new_config.api.port)
+            
+            # Update global references atomically
+            old_config = config
+            old_service = service
+            old_job_queue = job_queue
+            
+            config = new_config
+            service = new_service
+            job_queue = new_job_queue
+            
+            logger.info("Configuration reloaded successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to reload configuration: {e}", exc_info=True)
+            raise
+
 # Create FastAPI app
 app = FastAPI(
     title="Mycelium API",
@@ -160,6 +219,7 @@ async def root():
 
 
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
+@with_service_lock
 async def get_library_stats():
     """Get statistics about the current music library database."""
     try:
@@ -338,31 +398,33 @@ async def get_config():
     """Get current configuration."""
     try:
         logger.info("Configuration get request received")
-        # Return current configuration as dict
-        config_dict = {
-            "plex": {
-                "url": config.plex.url,
-                "token": config.plex.token,
-                "music_library_name": config.plex.music_library_name
-            },
-            "api": {
-                "host": config.api.host,
-                "port": config.api.port,
-                "reload": config.api.reload
-            },
-            "chroma": {
-                "collection_name": config.chroma.collection_name,
-                "batch_size": config.chroma.batch_size
-            },
-            "clap": {
-                "model_id": config.clap.model_id,
-                "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s
-            },
-            "logging": {
-                "level": config.logging.level
+        # Use thread-safe access to config
+        with config_lock:
+            # Return current configuration as dict
+            config_dict = {
+                "plex": {
+                    "url": config.plex.url,
+                    "token": config.plex.token,
+                    "music_library_name": config.plex.music_library_name
+                },
+                "api": {
+                    "host": config.api.host,
+                    "port": config.api.port,
+                    "reload": config.api.reload
+                },
+                "chroma": {
+                    "collection_name": config.chroma.collection_name,
+                    "batch_size": config.chroma.batch_size
+                },
+                "clap": {
+                    "model_id": config.clap.model_id,
+                    "target_sr": config.clap.target_sr,
+                    "chunk_duration_s": config.clap.chunk_duration_s
+                },
+                "logging": {
+                    "level": config.logging.level
+                }
             }
-        }
         logger.info("Configuration retrieved successfully")
         return config_dict
     except Exception as e:
@@ -372,7 +434,7 @@ async def get_config():
 
 @app.post("/api/config")
 async def save_config(config_request: ConfigRequest):
-    """Save configuration to YAML file."""
+    """Save configuration to YAML file and hot-reload the application."""
     try:
         logger.info("Configuration save request received")
 
@@ -396,16 +458,31 @@ async def save_config(config_request: ConfigRequest):
         yaml_config.save_to_yaml()
         logger.info("Configuration saved successfully to YAML file")
 
-        return {
-            "message": "Configuration saved successfully. Restart the server to apply changes.",
-            "status": "success"
-        }
+        # Hot-reload the configuration and services
+        try:
+            reload_config()
+            logger.info("Configuration hot-reloaded successfully")
+            return {
+                "message": "Configuration saved and reloaded successfully! Changes are now active.",
+                "status": "success",
+                "reloaded": True
+            }
+        except Exception as reload_error:
+            logger.error(f"Configuration saved but hot-reload failed: {reload_error}", exc_info=True)
+            return {
+                "message": "Configuration saved successfully, but hot-reload failed. Please restart the server to apply changes.",
+                "status": "warning",
+                "reloaded": False,
+                "reload_error": str(reload_error)
+            }
+            
     except Exception as e:
         logger.error(f"Failed to save configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
 
 
 @app.post("/api/library/scan")
+@with_service_lock
 async def scan_library():
     """Scan the Plex music library and save metadata to database."""
     try:
@@ -422,6 +499,7 @@ async def scan_library():
 
 
 @app.post("/api/library/process")
+@with_service_lock
 async def process_library():
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
@@ -465,6 +543,7 @@ async def process_library():
 
 
 @app.post("/api/library/process/server")
+@with_service_lock
 async def process_library_on_server(background_tasks: BackgroundTasks):
     """Process embeddings on server after user confirmation."""
     try:
@@ -487,6 +566,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
 
 
 @app.post("/api/library/process/stop")
+@with_service_lock
 async def stop_processing():
     """Stop the current embedding processing."""
     try:
@@ -510,6 +590,7 @@ async def stop_processing():
 
 
 @app.get("/api/library/progress")
+@with_service_lock
 async def get_processing_progress():
     """Get current processing progress and statistics."""
     try:

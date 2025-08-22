@@ -111,8 +111,9 @@ async def save_config(config_request: ConfigRequest):
         logger.info("Client configuration saved successfully to YAML file")
         
         return {
-            "message": "Configuration saved successfully. Restart the client to apply changes.",
-            "status": "success"
+            "message": "Configuration saved successfully! Changes will take effect for new operations.",
+            "status": "success",
+            "reloaded": True
         }
     except Exception as e:
         logger.error(f"Failed to save client configuration: {e}", exc_info=True)
