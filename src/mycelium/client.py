@@ -48,34 +48,31 @@ class MyceliumClient:
         self.model_id = model_id
         self.poll_interval = poll_interval
         self.download_queue_size = download_queue_size
-        self.download_workers = download_workers  # Number of parallel download threads
+        self.download_workers = download_workers
         self.config = MyceliumClientConfig.load_from_yaml()
-
-        # Track config file modification time for hot-reload
 
         self.config_file_path = get_client_config_file_path()
         self.last_config_mtime = self._get_config_mtime()
 
-        # Generate unique worker ID
         self.worker_id = f"worker-{uuid.uuid4().hex[:8]}"
         self.ip_address = self._get_local_ip()
 
-        # Disable tokenizers parallelism to avoid warnings when using threading
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        self.device = CLAPEmbeddingGenerator().get_best_device()
+        self.device = CLAPEmbeddingGenerator.get_best_device()
 
-        # Download queue management
+        self.job_queue: Queue[dict] = Queue(maxsize=download_queue_size * 2)
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
-        self.pending_downloads: Dict[str, threading.Event] = {}
-        self.download_threads: List[threading.Thread] = []  # Multiple download threads
-        self.stop_download_thread = threading.Event()
+
+        self.job_fetcher_thread: Optional[threading.Thread] = None
+        self.download_threads: List[threading.Thread] = []
+        self.stop_event = threading.Event()
 
         self.clap_embedding_generator = CLAPEmbeddingGenerator(model_id=self.config.clap.model_id,
                                                                target_sr=self.config.clap.target_sr,
                                                                chunk_duration_s=self.config.clap.chunk_duration_s)
 
-        logging.info(f"Mycelium Client initialized")
+        logging.info("Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
         logging.info(f"Server: {self.server_url}")
         logging.info(f"Device: {self.device}")
@@ -84,30 +81,22 @@ class MyceliumClient:
 
     def _log_queue_status(self, context: str = ""):
         """Log current queue status with context."""
-        queue_size = self.download_queue.qsize()
-        queue_capacity = self.download_queue.maxsize
-        queue_percent = (queue_size / queue_capacity) * 100 if queue_capacity > 0 else 0
+        job_q_size = self.job_queue.qsize()
+        dl_q_size = self.download_queue.qsize()
+        dl_q_cap = self.download_queue.maxsize
+        dl_q_percent = (dl_q_size / dl_q_cap) * 100 if dl_q_cap > 0 else 0
 
-        status_msg = f"Queue status{' (' + context + ')' if context else ''}: {queue_size}/{queue_capacity} jobs ({queue_percent:.1f}% full)"
+        status_msg = (
+            f"Queue status ({context}): "
+            f"Jobs to download: {job_q_size}, "
+            f"Jobs ready for GPU: {dl_q_size}/{dl_q_cap} ({dl_q_percent:.1f}%)"
+        )
         logging.info(status_msg)
-
-        # Add visual indicator for queue fullness
-        if queue_percent >= 90:
-            logging.info("  📦 Queue nearly full - download workers will pause fetching new jobs")
-        elif queue_percent >= 70:
-            logging.info("  ⚠️  Queue getting full")
-        elif queue_percent >= 50:
-            logging.info("  🔄 Queue half full")
-        elif queue_size > 0:
-            logging.info("  📥 Queue has jobs ready for processing")
-        else:
-            logging.info("  📭 Queue empty - waiting for downloads")
 
     @staticmethod
     def _get_local_ip() -> str:
         """Get the local IP address."""
         try:
-            # Connect to a remote address to determine local IP
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.connect(("8.8.8.8", 80))
                 return s.getsockname()[0]
@@ -146,86 +135,59 @@ class MyceliumClient:
             if self.device == "cuda":
                 torch.cuda.empty_cache()
             elif self.device == "mps":
-                torch.mps.empty_cache()  # Clear MPS cache
+                torch.mps.empty_cache()
 
             logging.info("Model unloaded")
 
     def reload_config(self):
-        """Reload configuration and recreate CLAPEmbeddingGenerator with new settings."""
+        """Reload configuration and recreate CLAPEmbeddingGenerator."""
         try:
             logging.info("Reloading client configuration...")
-
-            # Load new configuration
             new_config = MyceliumClientConfig.load_from_yaml()
 
-            # Check if CLAP config has changed
             clap_changed = (
-                    new_config.clap.model_id != self.config.clap.model_id or
-                    new_config.clap.target_sr != self.config.clap.target_sr or
-                    new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
+                new_config.clap.model_id != self.config.clap.model_id or
+                new_config.clap.target_sr != self.config.clap.target_sr or
+                new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
             )
 
             if clap_changed:
                 logging.info("CLAP configuration changed, recreating embedding generator...")
-
-                # Unload current model to free memory
                 self._unload_model()
-
-                # Create new embedding generator with updated config
                 self.clap_embedding_generator = CLAPEmbeddingGenerator(
                     model_id=new_config.clap.model_id,
                     target_sr=new_config.clap.target_sr,
                     chunk_duration_s=new_config.clap.chunk_duration_s
                 )
+                logging.info("CLAP embedding generator updated.")
 
-                logging.info(f"Updated CLAP embedding generator:")
-                logging.info(f"  Model ID: {new_config.clap.model_id}")
-                logging.info(f"  Target SR: {new_config.clap.target_sr}")
-                logging.info(f"  Chunk duration: {new_config.clap.chunk_duration_s}s")
-            else:
-                logging.info("CLAP configuration unchanged")
-
-            # Update configuration reference
             self.config = new_config
-
             logging.info("Client configuration reloaded successfully")
-
         except Exception as e:
             logging.error(f"Failed to reload client configuration: {e}", exc_info=True)
 
+
     def register_with_server(self) -> bool:
-        """Register this worker with the server.
-        Keeps retrying until successful, with a small delay between attempts.
-        Returns False only if interrupted (Ctrl+C).
-        """
+        """Register this worker with the server, retrying on failure."""
         delay_seconds = 3
         attempt = 1
         print("Attempting to register with server...")
-        while True:
+        while not self.stop_event.is_set():
             try:
                 response = requests.post(
                     f"{self.server_url}/workers/register",
-                    json={
-                        "worker_id": self.worker_id,
-                        "ip_address": self.ip_address
-                    },
+                    json={"worker_id": self.worker_id, "ip_address": self.ip_address},
                     timeout=10
                 )
-
-                if response.status_code == 200:
-                    print(f"Successfully registered with server (attempt {attempt})")
-                    return True
-                else:
-                    print(f"Failed to register (attempt {attempt}): {response.status_code} - {response.text}")
-            except Exception as e:
+                response.raise_for_status()
+                print(f"Successfully registered with server (attempt {attempt})")
+                return True
+            except requests.exceptions.RequestException as e:
                 print(f"Error registering with server (attempt {attempt}): {e}")
 
-            try:
-                time.sleep(delay_seconds)
-            except KeyboardInterrupt:
-                print("Registration interrupted by user.")
-                return False
+            time.sleep(delay_seconds)
             attempt += 1
+        return False
 
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
@@ -233,158 +195,153 @@ class MyceliumClient:
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
                 params={"worker_id": self.worker_id},
-                timeout=3600
+                timeout=30
             )
-
-            if response.status_code == 200:
-                if response.text.strip():  # Check if response has content
-                    return response.json()
-                else:
-                    return None  # No job available
-            else:
-                logging.error(f"Error getting job: {response.status_code}")
-                return None
-
-        except Exception as e:
+            response.raise_for_status()
+            if response.status_code == 200 and response.text.strip():
+                return response.json()
+            return None
+        except requests.exceptions.RequestException as e:
             logging.error(f"Error getting job from server: {e}")
             return None
 
-    def download_audio_file(self, download_url: str) -> Optional[Path]:
+    @staticmethod
+    def download_audio_file(download_url: str) -> Optional[Path]:
         """Download audio file from server."""
         try:
-            response = requests.get(download_url, stream=True, timeout=30)
-            if response.status_code == 200:
-                # Create temporary file
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
-
-                # Write downloaded content
-                for chunk in response.iter_content(chunk_size=8192):
-                    temp_file.write(chunk)
-
-                temp_file.close()
-                return Path(temp_file.name)
-            else:
-                logging.error(f"Failed to download file: {response.status_code}")
-                return None
-
-        except Exception as e:
-            logging.error(f"Error downloading file: {e}")
+            response = requests.get(download_url, stream=True, timeout=60)
+            response.raise_for_status()
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+            for chunk in response.iter_content(chunk_size=8192):
+                temp_file.write(chunk)
+            temp_file.close()
+            return Path(temp_file.name)
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error downloading file from {download_url}: {e}")
             return None
 
-    def _download_worker(self):
-        """Background thread worker for downloading audio files."""
-        logging.info("Download worker thread started")
-
-        while not self.stop_download_thread.is_set():
+    def _job_fetcher(self):
+        """
+        A single thread that requests jobs from the server and puts them in the job_queue.
+        """
+        logging.info("Job fetcher thread started")
+        while not self.stop_event.is_set():
             try:
-                # If the processing queue is full, pause fetching new jobs
+                if not self.job_queue.full():
+                    job = self.get_job()
+                    if job:
+                        logging.info(f"Job fetcher: Got job {job['task_id']}, adding to download queue.")
+                        self.job_queue.put(job)
+                    else:
+                        time.sleep(self.poll_interval)
+                else:
+                    logging.info("Job fetcher: Job queue is full, pausing.")
+                    time.sleep(1)
+            except Exception as e:
+                logging.error(f"Job fetcher error: {e}")
+                time.sleep(self.poll_interval)
+        logging.info("Job fetcher thread stopped")
+
+    def _download_worker(self):
+        """
+        Takes jobs from the job_queue, downloads the audio, and puts them in the download_queue.
+        """
+        logging.info("Download worker thread started")
+        while not self.stop_event.is_set():
+            try:
+                job = self.job_queue.get(timeout=1)
+
                 if self.download_queue.full():
-                    logging.info("Download worker: Queue full, pausing job fetch")
-                    self._log_queue_status("queue full - pausing fetch")
+                    logging.warning("Download queue is full. Waiting...")
+                    self.job_queue.put(job)
                     time.sleep(1)
                     continue
 
-                # Get next job from server
-                job = self.get_job()
+                task_id = job["task_id"]
+                task_type = job.get("task_type", "compute_audio_embedding")
 
-                if job:
-                    task_id = job["task_id"]
-                    task_type = job.get("task_type", "compute_audio_embedding")
-                    logging.info(f"Download worker: Got job {task_id} with task_type {task_type}")
+                if task_type == "compute_text_embedding":
+                    downloaded_job = DownloadedJob(
+                        task_id=task_id,
+                        track_id=job["track_id"],
+                        audio_file=None,
+                        original_job=job
+                    )
+                    self.download_queue.put(downloaded_job)
+                    logging.info(f"Queued text search job {task_id} for processing.")
+                    self.job_queue.task_done()
+                    continue
 
-                    # Handle different task types
-                    if task_type == "compute_text_embedding":
-                        # Text search task - no download needed
-                        downloaded_job = DownloadedJob(
-                            task_id=task_id,
-                            track_id=job["track_id"],
-                            audio_file=None,  # No audio file for text search
-                            original_job=job
-                        )
+                download_url = job.get("download_url")
+                if not download_url:
+                    logging.error(f"Job {task_id} is missing download_url.")
+                    self.job_queue.task_done()
+                    continue
 
-                        try:
-                            self.download_queue.put(downloaded_job, timeout=5)
-                            logging.info(f"Download worker: Queued text search job {task_id} for processing")
-                            self._log_queue_status("after queuing text search")
-                        except:
-                            logging.info(f"Download worker: Queue full, could not enqueue text search job {task_id}")
+                full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
+                logging.info(f"Downloading audio for job {task_id} from {full_url}")
+                audio_file = self.download_audio_file(full_url)
 
-                    else:
-                        download_url = job.get("download_url")
-
-                        if download_url:
-                            full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
-
-                            logging.info(f"Download worker: Downloading audio for job {task_id} from {full_url}")
-                            audio_file = self.download_audio_file(full_url)
-
-                            if audio_file:
-                                # Create downloaded job object
-                                downloaded_job = DownloadedJob(
-                                    task_id=task_id,
-                                    track_id=job["track_id"],
-                                    audio_file=audio_file,
-                                    original_job=job
-                                )
-
-                                try:
-                                    # Add to queue (this will block if queue is full)
-                                    self.download_queue.put(downloaded_job, timeout=5)
-                                    logging.info(f"Download worker: Queued job {task_id} for processing")
-                                    self._log_queue_status("after queuing")
-                                except:
-                                    # Queue remained full; clean up the downloaded temp file
-                                    logging.info(
-                                        f"Download worker: Queue full, could not enqueue job {task_id} within timeout; cleaning up temp file")
-                                    try:
-                                        os.unlink(audio_file)
-                                    except:
-                                        pass
-                            else:
-                                logging.info(f"Download worker: Failed to download audio for job {task_id}")
-                        else:
-                            logging.error(f"Download worker: Job {task_id} missing download URL")
+                if audio_file:
+                    downloaded_job = DownloadedJob(
+                        task_id=task_id,
+                        track_id=job["track_id"],
+                        audio_file=audio_file,
+                        original_job=job
+                    )
+                    self.download_queue.put(downloaded_job)
+                    logging.info(f"Queued audio job {task_id} for processing.")
                 else:
-                    # No job available, wait before polling again
-                    time.sleep(self.poll_interval)
+                    logging.error(f"Failed to download audio for job {task_id}. Job discarded.")
 
+                self.job_queue.task_done()
+
+            except Empty:
+                continue
             except Exception as e:
                 logging.error(f"Download worker error: {e}")
-                time.sleep(1)
 
         logging.info("Download worker thread stopped")
 
-    def _start_download_worker(self):
-        """Start the background download worker thread."""
+    def _start_workers(self):
+        """Start job fetcher and download worker threads."""
+        self.stop_event.clear()
+
+        self.job_fetcher_thread = threading.Thread(target=self._job_fetcher, daemon=True)
+        self.job_fetcher_thread.start()
+
         for i in range(self.download_workers):
             thread = threading.Thread(target=self._download_worker, daemon=True)
             thread.start()
             self.download_threads.append(thread)
-            logging.info(f"Started download worker thread {i + 1}/{self.download_workers}")
+        logging.info(f"Started 1 job fetcher and {self.download_workers} download workers.")
 
-    def _stop_download_worker(self):
-        """Stop the background download worker thread."""
-        self.stop_download_thread.set()
+    def _stop_workers(self):
+        """Stop all worker threads."""
+        logging.info("Stopping all worker threads...")
+        self.stop_event.set()
+
+        if self.job_fetcher_thread:
+            self.job_fetcher_thread.join(timeout=5)
+
         for thread in self.download_threads:
             thread.join(timeout=5)
 
-        # Clean up any remaining files in queue
         while not self.download_queue.empty():
             try:
-                downloaded_job = self.download_queue.get_nowait()
-                try:
-                    os.unlink(downloaded_job.audio_file)
-                except:
-                    pass
-            except Empty:
+                job = self.download_queue.get_nowait()
+                if job.audio_file:
+                    os.unlink(job.audio_file)
+            except (Empty, OSError):
                 break
+        logging.info("All worker threads stopped.")
+
 
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
                       error_message: Optional[str] = None) -> bool:
         """Submit task result to server."""
         try:
             status = "success" if (embedding is not None) else "failed"
-
             response = requests.post(
                 f"{self.server_url}/workers/submit_result",
                 json={
@@ -396,16 +353,10 @@ class MyceliumClient:
                 },
                 timeout=30
             )
-
-            if response.status_code == 200:
-                result = response.json()
-                return result.get("success", False)
-            else:
-                logging.warning(f"Failed to submit result: {response.status_code}")
-                return False
-
-        except Exception as e:
-            logging.error(f"Error submitting result: {e}")
+            response.raise_for_status()
+            return response.json().get("success", False)
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error submitting result for task {task_id}: {e}")
             return False
 
     def process_job(self, downloaded_job: DownloadedJob) -> bool:
@@ -416,119 +367,83 @@ class MyceliumClient:
         task_type = original_job.get("task_type", "compute_audio_embedding")
 
         logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
+        embedding = None
+        error_message = None
 
         try:
             if task_type == "compute_audio_embedding":
-                # Traditional track embedding computation
-                audio_file = downloaded_job.audio_file
-                embedding = self.clap_embedding_generator.generate_embedding(filepath=audio_file)
-
-                if embedding:
-                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=embedding)
-                    if success:
-                        logging.info(f"Successfully processed embedding job {task_id}")
-                    else:
-                        logging.warning(f"Failed to submit embedding result for job {task_id}")
-                    return success
+                if downloaded_job.audio_file:
+                    embedding = self.clap_embedding_generator.generate_embedding(filepath=downloaded_job.audio_file)
+                    if not embedding:
+                        error_message = "Failed to compute audio embedding"
                 else:
-                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
-                                       error_message="Failed to compute embedding")
-                    return False
+                    error_message = "Audio file not available for processing"
 
             elif task_type == "compute_text_embedding":
-                # Text search embedding computation
                 text_query = original_job.get("text_query")
-                if not text_query:
-                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
-                                       error_message="Missing text query")
-                    return False
-
-                logging.info(f"Computing text embedding for query: '{text_query}'")
-                text_embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
-
-                if text_embedding:
-                    success = self.submit_result(task_id=task_id, track_id=track_id, embedding=text_embedding)
-                    if success:
-                        logging.info(f"Successfully processed text embedding job {task_id}")
-                    else:
-                        logging.warning(f"Failed to submit text embedding result for job {task_id}")
-                    return success
+                if text_query:
+                    embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
+                    if not embedding:
+                        error_message = "Failed to compute text embedding"
                 else:
-                    self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
-                                       error_message="Failed to compute text embedding")
-                    return False
+                    error_message = "Missing text query for text embedding task"
             else:
-                logging.error(f"Unknown task type: {task_type}")
-                self.submit_result(task_id=task_id, track_id=track_id, embedding=None,
-                                   error_message=f"Unknown task type: {task_type}")
-                return False
+                error_message = f"Unknown task type: {task_type}"
+
+            success = self.submit_result(task_id, track_id, embedding, error_message)
+            if success:
+                logging.info(f"Successfully processed and submitted job {task_id}")
+            else:
+                logging.warning(f"Failed to submit result for job {task_id}")
+
+            return success
 
         finally:
-            # Clean up temporary file
-            if hasattr(downloaded_job, 'audio_file') and downloaded_job.audio_file:
+            if downloaded_job.audio_file:
                 try:
                     os.unlink(downloaded_job.audio_file)
-                except Exception:
-                    pass
+                except OSError as e:
+                    logging.error(f"Error deleting temp file {downloaded_job.audio_file}: {e}")
 
     def run(self):
         """Main worker loop."""
-        logging.info(f"Starting Mycelium client worker loop...")
+        logging.info("Starting Mycelium client worker loop...")
 
-        # Register with server
         if not self.register_with_server():
-            logging.info("Failed to register with server. Exiting.")
+            logging.error("Failed to register with server. Exiting.")
             return
 
-        # Start background download worker
-        logging.info("Starting background download worker...")
-        self._start_download_worker()
-
-        # Log initial queue status
+        self._start_workers()
         self._log_queue_status("worker started")
 
-        logging.info(f"Worker loop started. Processing downloaded audio files...")
-
-        # Add periodic queue status logging
         last_status_log = time.time()
-        status_log_interval = 30  # Log queue status every 30 seconds
+        status_log_interval = 30
 
         try:
             while True:
                 try:
-                    # Get next downloaded job from queue (with timeout)
-                    downloaded_job = self.download_queue.get(timeout=self.poll_interval)
-
-                    logging.info(f"Retrieved job {downloaded_job.task_id} from queue")
-                    self._log_queue_status("after retrieval")
-
-                    # Process the job (model is already loaded, audio is already downloaded)
+                    downloaded_job = self.download_queue.get(timeout=1)
                     self.process_job(downloaded_job)
+                    self.download_queue.task_done()
 
-                    # Log queue status after processing
-                    self._log_queue_status("after processing")
+                    if time.time() - last_status_log > status_log_interval:
+                        self._log_queue_status("processing")
+                        last_status_log = time.time()
 
                 except Empty:
-                    # No downloaded job available, continue polling
-                    current_time = time.time()
-                    if current_time - last_status_log >= status_log_interval:
-                        self._log_queue_status("periodic check")
-                        last_status_log = current_time
-
-                    # Check for config reload (runs every poll_interval)
+                    if self.stop_event.is_set():
+                        break
+                    if time.time() - last_status_log > status_log_interval:
+                        self._log_queue_status("idle")
+                        last_status_log = time.time()
                     self._check_config_reload()
                     continue
 
         except KeyboardInterrupt:
             logging.info("\nShutting down worker...")
         finally:
-            # Log final queue status
             self._log_queue_status("shutdown")
-
-            # Stop download worker
-            self._stop_download_worker()
-
-            # Only unload model when shutting down
+            self._stop_workers()
             self._unload_model()
             logging.info("Worker stopped")
 
