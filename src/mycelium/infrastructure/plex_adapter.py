@@ -3,12 +3,13 @@
 import logging
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
 
 from plexapi.audio import Artist
 from plexapi.server import PlexServer
 from tqdm import tqdm
 
-from ..domain.models import Track
+from ..domain.models import Track, Playlist
 from ..domain.repositories import PlexRepository
 
 
@@ -85,3 +86,36 @@ class PlexMusicRepository(PlexRepository):
         except Exception as e:
             self.logger.error(f"Error getting track {track_id}: {e}", exc_info=True)
             return None
+
+    def create_playlist(self, playlist: Playlist) -> Playlist:
+        """Create a playlist on the Plex server."""
+        try:
+            plex = PlexServer(self.plex_url, self.plex_token)
+            
+            # Get Plex track objects for all tracks in the playlist
+            plex_tracks = []
+            for track in playlist.tracks:
+                try:
+                    plex_track = plex.fetchItem(int(track.plex_rating_key))
+                    plex_tracks.append(plex_track)
+                except Exception as e:
+                    self.logger.warning(f"Could not fetch track {track.plex_rating_key}: {e}")
+                    continue
+            
+            if not plex_tracks:
+                raise ValueError("No valid tracks found for playlist creation")
+            
+            # Create the playlist on Plex
+            created_playlist = plex.createPlaylist(title=playlist.name, items=plex_tracks)
+            
+            # Return the playlist with server ID and creation time
+            return Playlist(
+                name=playlist.name,
+                tracks=playlist.tracks,
+                created_at=datetime.now(),
+                server_id=str(created_playlist.ratingKey)
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error creating playlist '{playlist.name}': {e}", exc_info=True)
+            raise

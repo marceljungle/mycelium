@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 
 
 @dataclass
@@ -36,3 +37,18 @@ class SearchResult:
     track: Track
     similarity_score: float
     distance: float
+
+
+@dataclass
+class Playlist:
+    """Represents a playlist created from recommendations."""
+    
+    name: str
+    tracks: List[Track]
+    created_at: Optional[datetime] = None
+    server_id: Optional[str] = None  # ID from the media server (Plex, Jellyfin, etc.)
+    
+    @property
+    def track_count(self) -> int:
+        """Get the number of tracks in the playlist."""
+        return len(self.tracks)

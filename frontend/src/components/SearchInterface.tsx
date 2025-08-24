@@ -30,7 +30,6 @@ export default function SearchInterface() {
   
   // Worker processing state
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Cleanup polling on unmount
@@ -79,7 +78,6 @@ export default function SearchInterface() {
 
   const startTaskPolling = (taskId: string) => {
     console.log('Starting task polling for search task:', taskId);
-    setCurrentTaskId(taskId);
     setProcessingState('worker');
 
     let pollCount = 0;
@@ -93,7 +91,6 @@ export default function SearchInterface() {
         console.log(`Search task ${taskId} completed, clearing polling after ${pollCount} polls`);
         clearInterval(interval);
         setPollInterval(null);
-        setCurrentTaskId(null);
         setProcessingState('none');
         setLoading(false);
         setAudioLoading(false);
@@ -101,7 +98,6 @@ export default function SearchInterface() {
         console.warn(`Search task ${taskId} polling timeout after ${pollCount} polls (${maxPolls * 2} seconds)`);
         clearInterval(interval);
         setPollInterval(null);
-        setCurrentTaskId(null);
         setProcessingState('none');
         setLoading(false);
         setAudioLoading(false);

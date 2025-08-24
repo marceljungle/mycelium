@@ -279,3 +279,33 @@ class MyceliumService:
         if not hasattr(self, 'worker_processing'):
             return 0
         return self.worker_processing.job_queue.cleanup_stale_tasks()
+
+    def create_playlist(self, name: str, track_ids: List[str]) -> "Playlist":
+        """Create a playlist from a list of track IDs."""
+        from mycelium.domain.models import Playlist
+        
+        try:
+            # Get tracks by their IDs
+            tracks = []
+            for track_id in track_ids:
+                track = self.get_track_by_id(track_id)
+                if track:
+                    tracks.append(track)
+                else:
+                    self.logger.warning(f"Track with ID {track_id} not found, skipping")
+            
+            if not tracks:
+                raise ValueError("No valid tracks found for playlist creation")
+            
+            # Create playlist object
+            playlist = Playlist(name=name, tracks=tracks)
+            
+            # Create playlist on the media server (Plex)
+            created_playlist = self.plex_repository.create_playlist(playlist)
+            
+            self.logger.info(f"Successfully created playlist '{name}' with {len(tracks)} tracks")
+            return created_playlist
+            
+        except Exception as e:
+            self.logger.error(f"Failed to create playlist '{name}': {e}", exc_info=True)
+            raise
