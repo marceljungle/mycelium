@@ -134,6 +134,7 @@ class MyceliumClient:
         except Exception as e:
             logging.error(f"Error checking config reload: {e}")
 
+    # TODO: move this to clap adapter and also unload for the server side when app is closed
     def _unload_model(self):
         """Unload model to free GPU memory."""
         if self.clap_embedding_generator.model is not None:

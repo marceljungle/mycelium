@@ -13,6 +13,7 @@ from mycelium.application.workflow_use_cases import (
     ProcessingProgressUseCase,
     WorkerBasedProcessingUseCase
 )
+from mycelium.domain.models import Playlist
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
 from mycelium.infrastructure import (
     PlexMusicRepository,
@@ -282,8 +283,6 @@ class MyceliumService:
 
     def create_playlist(self, name: str, track_ids: List[str]) -> "Playlist":
         """Create a playlist from a list of track IDs."""
-        from mycelium.domain.models import Playlist
-        
         try:
             # Get tracks by their IDs
             tracks = []
