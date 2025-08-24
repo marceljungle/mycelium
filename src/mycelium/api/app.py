@@ -49,7 +49,7 @@ class SearchResultResponse(BaseModel):
 
 class CreatePlaylistRequest(BaseModel):
     name: str
-    track_ids: List[str]  # List of plex_rating_keys
+    track_ids: List[str]
 
 
 class PlaylistResponse(BaseModel):

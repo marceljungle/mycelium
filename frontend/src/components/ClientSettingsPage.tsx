@@ -90,8 +90,7 @@ export default function ClientSettingsPage() {
 
       const result = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
-      
-      // Show the message from the server response which now includes hot-reload info
+
       setSuccessMessage(result.message || 'Configuration saved successfully!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');

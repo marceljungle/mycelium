@@ -46,7 +46,7 @@ class Playlist:
     name: str
     tracks: List[Track]
     created_at: Optional[datetime] = None
-    server_id: Optional[str] = None  # ID from the media server (Plex, Jellyfin, etc.)
+    server_id: Optional[str] = None
     
     @property
     def track_count(self) -> int:
