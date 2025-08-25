@@ -30,7 +30,7 @@ class PlexMusicRepository(PlexRepository):
     def get_all_tracks(self) -> List[Track]:
         """Get all tracks from the Plex music library."""
         try:
-            plex = PlexServer(self.plex_url, self.plex_token)
+            plex = PlexServer(self.plex_url, self.plex_token, timeout=3600)
             music_lib = plex.library.section(self.music_library_name)
             self.logger.info(f"Connected to Plex. Scanning library '{self.music_library_name}'...")
         except Exception as e:
