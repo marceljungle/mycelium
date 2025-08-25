@@ -67,7 +67,8 @@ class MyceliumService:
         self.resumable_processing = ResumableEmbeddingProcessingUseCase(
             self.embedding_generator,
             self.embedding_repository,
-            self.track_database
+            self.track_database,
+            model_id
         )
         self.progress_tracker = ProcessingProgressUseCase(self.track_database)
         
@@ -116,9 +117,11 @@ class MyceliumService:
         """Check if any processing is currently active (server or worker)."""
         return self._processing_in_progress or self.has_active_worker_processing()
     
-    def get_processing_progress(self) -> Dict[str, Any]:
+    def get_processing_progress(self, model_id: Optional[str] = None) -> Dict[str, Any]:
         """Get current processing progress and statistics."""
-        stats = self.progress_tracker.get_current_stats()
+        if model_id is None:
+            model_id = self.embedding_repository.model_id
+        stats = self.progress_tracker.get_current_stats(model_id)
         # Processing is active if either server-side processing is running OR workers have active tasks
         stats["is_processing"] = self.is_processing_active()
         return stats

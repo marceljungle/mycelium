@@ -38,7 +38,26 @@ class TrackResponse(BaseModel):
     album: str
     title: str
     filepath: str
-    plex_rating_key: str
+    media_server_rating_key: str
+    media_server_type: str
+    
+    # Backward compatibility
+    @property
+    def plex_rating_key(self) -> str:
+        """Backward compatibility property."""
+        return self.media_server_rating_key
+    
+    @classmethod
+    def from_domain(cls, track) -> "TrackResponse":
+        """Create from domain Track object."""
+        return cls(
+            artist=track.artist,
+            album=track.album,
+            title=track.title,
+            filepath=str(track.filepath),
+            media_server_rating_key=track.media_server_rating_key,
+            media_server_type=track.media_server_type.value
+        )
 
 
 class SearchResultResponse(BaseModel):
@@ -606,11 +625,11 @@ async def stop_processing():
 
 @app.get("/api/library/progress")
 @with_service_lock
-async def get_processing_progress():
+async def get_processing_progress(model_id: Optional[str] = Query(None, description="Model ID to get progress for")):
     """Get current processing progress and statistics."""
     logger.debug("Processing progress request received")
     try:
-        stats = service.get_processing_progress()
+        stats = service.get_processing_progress(model_id)
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

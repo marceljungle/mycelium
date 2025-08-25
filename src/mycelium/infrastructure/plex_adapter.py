@@ -9,7 +9,7 @@ from plexapi.audio import Artist
 from plexapi.server import PlexServer
 from tqdm import tqdm
 
-from ..domain.models import Track, Playlist
+from ..domain.models import Track, Playlist, MediaServerType
 from ..domain.repositories import PlexRepository
 
 
@@ -53,7 +53,8 @@ class PlexMusicRepository(PlexRepository):
                                     album=album.title,
                                     title=track.title,
                                     filepath=filepath,
-                                    plex_rating_key=str(track.ratingKey)
+                                    media_server_rating_key=str(track.ratingKey),
+                                    media_server_type=MediaServerType.PLEX
                                 )
                                 all_tracks.append(track_obj)
                             else:
@@ -78,7 +79,8 @@ class PlexMusicRepository(PlexRepository):
                         album=track.parentTitle or "Unknown Album",
                         title=track.title,
                         filepath=filepath,
-                        plex_rating_key=str(track.ratingKey)
+                        media_server_rating_key=str(track.ratingKey),
+                        media_server_type=MediaServerType.PLEX
                     )
             
             return None

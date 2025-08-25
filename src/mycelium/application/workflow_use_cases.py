@@ -75,11 +75,13 @@ class ResumableEmbeddingProcessingUseCase:
             self,
             embedding_generator: EmbeddingGenerator,
             embedding_repository: EmbeddingRepository,
-            track_database: TrackDatabase
+            track_database: TrackDatabase,
+            model_id: str
     ):
         self.embedding_generator = embedding_generator
         self.embedding_repository = embedding_repository
         self.track_database = track_database
+        self.model_id = model_id
         self._should_stop = False
 
     def execute(
@@ -88,10 +90,10 @@ class ResumableEmbeddingProcessingUseCase:
             max_tracks: Optional[int] = None
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
-        logger.info("Starting embedding processing...")
+        logger.info(f"Starting embedding processing with model: {self.model_id}")
 
-        # Get unprocessed tracks
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
+        # Get unprocessed tracks for this specific model
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(self.model_id, limit=max_tracks)
 
         if not unprocessed_tracks:
             logger.info("No unprocessed tracks found")
@@ -105,7 +107,7 @@ class ResumableEmbeddingProcessingUseCase:
         logger.info(f"Found {len(unprocessed_tracks)} unprocessed tracks")
 
         # Start processing session
-        session_id = self.track_database.start_processing_session(len(unprocessed_tracks))
+        session_id = self.track_database.start_processing_session(len(unprocessed_tracks), self.model_id)
 
         processed_count = 0
         failed_count = 0
@@ -125,14 +127,23 @@ class ResumableEmbeddingProcessingUseCase:
                     embedding = self.embedding_generator.generate_embedding(track.filepath)
 
                     if embedding:
-                        # Create track embedding object
-                        track_embedding = TrackEmbedding(track=track, embedding=embedding)
+                        # Create track embedding object with model info
+                        track_embedding = TrackEmbedding(
+                            track=track, 
+                            embedding=embedding, 
+                            model_id=self.model_id,
+                            processed_at=datetime.utcnow()
+                        )
 
                         # Save to vector database
                         self.embedding_repository.save_embeddings([track_embedding])
 
                         # Mark as processed in metadata database
-                        self.track_database.mark_track_processed(stored_track.plex_rating_key)
+                        self.track_database.mark_track_processed(
+                            stored_track.media_server_rating_key,
+                            stored_track.media_server_type,
+                            self.model_id
+                        )
 
                         processed_count += 1
 
@@ -150,7 +161,7 @@ class ResumableEmbeddingProcessingUseCase:
                         failed_count += 1
 
                 except Exception as e:
-                    logger.error(f"Error processing track {stored_track.plex_rating_key}: {e}")
+                    logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
                     failed_count += 1
 
                 # Update session progress periodically
@@ -200,9 +211,9 @@ class ProcessingProgressUseCase:
     def __init__(self, track_database: TrackDatabase):
         self.track_database = track_database
 
-    def get_current_stats(self) -> Dict[str, Any]:
-        """Get current processing statistics."""
-        stats = self.track_database.get_processing_stats()
+    def get_current_stats(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get current processing statistics, optionally filtered by model."""
+        stats = self.track_database.get_processing_stats(model_id)
         latest_session = self.track_database.get_latest_processing_session()
 
         return {
@@ -211,6 +222,7 @@ class ProcessingProgressUseCase:
             "unprocessed_tracks": stats["unprocessed_tracks"],
             "progress_percentage": (stats["processed_tracks"] / stats["total_tracks"] * 100) if stats[
                                                                                                     "total_tracks"] > 0 else 0,
+            "model_id": model_id,
             "latest_session": latest_session
         }
 
