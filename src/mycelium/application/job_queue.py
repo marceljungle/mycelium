@@ -1,6 +1,7 @@
 """Job queue and worker management service."""
-
+import logging
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from typing import List, Optional, Dict
 
 from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
+logger = logging.getLogger(__name__)
 
 class JobQueueService:
     """Service for managing job queue and worker coordination."""
@@ -21,6 +23,7 @@ class JobQueueService:
         self._lock = Lock()
         # Temporary directory for audio files to avoid base64 encoding large files
         self._temp_dir = Path(tempfile.mkdtemp(prefix="mycelium_audio_"))
+        self._cleanup_orphan_files()
         self._temp_files: Dict[str, Path] = {}  # task_id -> temp_file_path
 
     def register_worker(self, worker_id: str, ip_address: str) -> Worker:
@@ -304,20 +307,12 @@ class JobQueueService:
                     pass  # Ignore cleanup errors
                 del self._temp_files[task_id]
 
-    def cleanup_all_temp_files(self) -> None:
-        """Clean up all temporary files."""
-        with self._lock:
-            for temp_file in self._temp_files.values():
-                try:
-                    if temp_file.exists():
-                        temp_file.unlink()
-                except OSError:
-                    pass  # Ignore cleanup errors
-            self._temp_files.clear()
-            
-            # Clean up the temporary directory
-            try:
-                if self._temp_dir.exists():
-                    self._temp_dir.rmdir()
-            except OSError:
-                pass  # Directory might not be empty or accessible
+    def _cleanup_orphan_files(self):
+        """ Clean up any orphaned temporary files in the temp directory on startup. """
+        try:
+            if self._temp_dir.exists():
+                shutil.rmtree(self._temp_dir)
+            self._temp_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Temp dir recreated in: {self._temp_dir}")
+        except Exception as e:
+            logging.error(f"Failed to clean up temp dir {self._temp_dir}: {e}")

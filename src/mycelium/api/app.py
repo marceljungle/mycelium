@@ -680,7 +680,6 @@ async def get_job(worker_id: str = Query(..., description="Worker ID")):
 @app.post("/workers/submit_result", response_model=TaskResultResponse)
 async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
-    logger.debug(f"Submitting result for worker ID {request.worker_id} and task ID {request.task_id}")
     try:
         logger.info(
             f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}")
