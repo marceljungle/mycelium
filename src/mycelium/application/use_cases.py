@@ -89,7 +89,7 @@ class MusicSearchUseCase:
         # Filter out the same track (it will be the first result with distance 0)
         results = [
             result for result in results 
-            if result.track.plex_rating_key != track_id
+            if result.track.unique_id != track_id
         ][:n_results]
         
         self.logger.info(f"Found {len(results)} similar tracks for track {track_id}")
