@@ -98,10 +98,10 @@ class PlexMusicRepository(PlexRepository):
             plex_tracks = []
             for track in playlist.tracks:
                 try:
-                    plex_track = plex.fetchItem(int(track.plex_rating_key))
+                    plex_track = plex.fetchItem(int(track.media_server_rating_key))
                     plex_tracks.append(plex_track)
                 except Exception as e:
-                    self.logger.warning(f"Could not fetch track {track.plex_rating_key}: {e}")
+                    self.logger.warning(f"Could not fetch track {track.media_server_rating_key}: {e}")
                     continue
             
             if not plex_tracks:

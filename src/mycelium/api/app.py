@@ -41,12 +41,6 @@ class TrackResponse(BaseModel):
     media_server_rating_key: str
     media_server_type: str
     
-    # Backward compatibility
-    @property
-    def plex_rating_key(self) -> str:
-        """Backward compatibility property."""
-        return self.media_server_rating_key
-    
     @classmethod
     def from_domain(cls, track) -> "TrackResponse":
         """Create from domain Track object."""
@@ -392,7 +386,7 @@ async def get_library_tracks(
             )
             total_count = service.count_tracks_advanced(artist=artist, album=album, title=title)
         elif search and search.strip():
-            # Use simple search with OR logic (backward compatibility)
+            # Simple search query
             logger.info(f"Performing simple library search for: '{search.strip()}'")
             tracks = service.search_tracks_in_database(search.strip(), limit=limit, offset=(page - 1) * limit)
             total_count = service.count_tracks_in_database(search.strip())
@@ -414,7 +408,8 @@ async def get_library_tracks(
                     album=track.album,
                     title=track.title,
                     filepath=str(track.filepath),
-                    plex_rating_key=track.plex_rating_key
+                    media_server_rating_key=track.media_server_rating_key,
+                    media_server_type=track.media_server_type.value
                 )
                 for track in tracks
             ],
@@ -745,7 +740,8 @@ async def submit_result(request: TaskResultRequest):
                                     "album": result.track.album,
                                     "title": result.track.title,
                                     "filepath": str(result.track.filepath),
-                                    "plex_rating_key": result.track.plex_rating_key
+                                    "media_server_rating_key": result.track.media_server_rating_key,
+                                    "media_server_type": result.track.media_server_type.value
                                 },
                                 "similarity_score": result.similarity_score,
                                 "distance": result.distance
@@ -790,7 +786,8 @@ async def submit_result(request: TaskResultRequest):
                                 "album": result.track.album,
                                 "title": result.track.title,
                                 "filepath": str(result.track.filepath),
-                                "plex_rating_key": result.track.plex_rating_key
+                                "media_server_rating_key": result.track.media_server_rating_key,
+                                "media_server_type": result.track.media_server_type.value
                             },
                             "similarity_score": result.similarity_score,
                             "distance": result.distance
@@ -901,7 +898,8 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
                         album=result.track.album,
                         title=result.track.title,
                         filepath=str(result.track.filepath),
-                        plex_rating_key=result.track.plex_rating_key
+                        media_server_rating_key=result.track.media_server_rating_key,
+                        media_server_type=result.track.media_server_type.value
                     ),
                     similarity_score=result.similarity_score,
                     distance=result.distance
@@ -1005,7 +1003,8 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
                     album=result.track.album,
                     title=result.track.title,
                     filepath=str(result.track.filepath),
-                    plex_rating_key=result.track.plex_rating_key
+                    media_server_rating_key=result.track.media_server_rating_key,
+                    media_server_type=result.track.media_server_type.value
                 ),
                 similarity_score=result.similarity_score,
                 distance=result.distance
@@ -1061,7 +1060,8 @@ async def compute_audio_search_on_server(
                         album=result.track.album,
                         title=result.track.title,
                         filepath=str(result.track.filepath),
-                        plex_rating_key=result.track.plex_rating_key
+                        media_server_rating_key=result.track.media_server_rating_key,
+                        media_server_type=result.track.media_server_type.value
                     ),
                     similarity_score=result.similarity_score,
                     distance=result.distance

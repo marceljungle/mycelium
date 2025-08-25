@@ -125,12 +125,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             unique_id = results['ids'][0][i]
             
             # Parse unique_id to get media server info
-            if ':' in unique_id:
-                media_server_type_str, media_server_rating_key = unique_id.split(':', 1)
-            else:
-                # Backward compatibility for old IDs
-                media_server_type_str = 'plex'
-                media_server_rating_key = unique_id
+            media_server_type_str, media_server_rating_key = unique_id.split(':', 1)
             
             from ..domain.models import MediaServerType
             try:

@@ -34,11 +34,7 @@ class Track:
         """Get a unique identifier for the track across media servers."""
         return f"{self.media_server_type.value}:{self.media_server_rating_key}"
     
-    # Backward compatibility property
-    @property
-    def plex_rating_key(self) -> str:
-        """Backward compatibility property for existing code."""
-        return self.media_server_rating_key
+
 
 
 @dataclass
