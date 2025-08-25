@@ -1,6 +1,7 @@
 """ChromaDB integration for storing and searching embeddings."""
 
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -14,19 +15,21 @@ logger = logging.getLogger(__name__)
 
 
 class ChromaEmbeddingRepository(EmbeddingRepository):
-    """Implementation of EmbeddingRepository using ChromaDB."""
+    """Implementation of EmbeddingRepository using ChromaDB with model-specific collections."""
     
     def __init__(
         self,
         db_path: str,
         collection_name: str = "my_music_library",
+        model_id: str = "laion/larger_clap_music_and_speech",
         batch_size: int = 1000
     ):
         self.db_path = db_path
-        self.collection_name = collection_name
+        self.base_collection_name = collection_name
+        self.model_id = model_id
         self.batch_size = batch_size
         
-        # Initialize ChromaDB client and collection
+        # Initialize ChromaDB client
         try:
             Path(db_path).mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -34,13 +37,26 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             pass
         self.client = chromadb.PersistentClient(path=db_path)
 
+        # Create model-specific collection name
+        self.collection_name = self._get_collection_name_for_model(model_id)
+        
         # Specify 'cosine' distance metric for normalized embeddings
         self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"}
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine", "model_id": model_id}
         )
         
-        logger.info(f"Collection '{collection_name}' ready. Current elements: {self.collection.count()}")
+        logger.info(f"Collection '{self.collection_name}' ready for model '{model_id}'. Current elements: {self.collection.count()}")
+    
+    def _get_collection_name_for_model(self, model_id: str) -> str:
+        """Generate a safe collection name for the given model ID."""
+        # Make model ID safe for collection name (alphanumeric and underscores only)
+        safe_model_id = re.sub(r'[^a-zA-Z0-9_]', '_', model_id.replace('/', '_'))
+        return f"{self.base_collection_name}_{safe_model_id}"
+    
+    def _get_track_unique_id(self, track: Track) -> str:
+        """Generate a unique ID for a track across media servers."""
+        return track.unique_id
     
     def save_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
         """Save track embeddings to ChromaDB."""
@@ -54,13 +70,16 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
 
         for track_embedding in embeddings:
             track = track_embedding.track
-            ids.append(track.plex_rating_key)
+            ids.append(self._get_track_unique_id(track))
             embedding_vectors.append(track_embedding.embedding)
             metadatas.append({
                 "filepath": str(track.filepath),
                 "artist": track.artist,
                 "album": track.album,
-                "title": track.title
+                "title": track.title,
+                "media_server_type": track.media_server_type.value,
+                "media_server_rating_key": track.media_server_rating_key,
+                "model_id": self.model_id
             })
 
         # Insert in batches for maximum efficiency
@@ -103,13 +122,29 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         for i in range(len(results['ids'][0])):
             metadata = results['metadatas'][0][i]
             distance = results['distances'][0][i]
+            unique_id = results['ids'][0][i]
+            
+            # Parse unique_id to get media server info
+            if ':' in unique_id:
+                media_server_type_str, media_server_rating_key = unique_id.split(':', 1)
+            else:
+                # Backward compatibility for old IDs
+                media_server_type_str = 'plex'
+                media_server_rating_key = unique_id
+            
+            from ..domain.models import MediaServerType
+            try:
+                media_server_type = MediaServerType(media_server_type_str)
+            except ValueError:
+                media_server_type = MediaServerType.PLEX  # Default fallback
             
             track = Track(
                 artist=metadata['artist'],
                 album=metadata['album'],
                 title=metadata['title'],
                 filepath=Path(metadata['filepath']),
-                plex_rating_key=results['ids'][0][i]
+                media_server_rating_key=media_server_rating_key,
+                media_server_type=media_server_type
             )
             
             # Convert distance to similarity score (1 - distance for cosine)
@@ -134,42 +169,54 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             logger.error(f"Error checking embedding for track {track_id}: {e}")
             return False
     
+    def has_embedding_for_track(self, track: Track) -> bool:
+        """Check if an embedding exists for a track object."""
+        track_id = self._get_track_unique_id(track)
+        return self.has_embedding(track_id)
+    
     def save_embedding(self, track_embedding: TrackEmbedding) -> None:
         """Save a single track embedding to ChromaDB."""
         track = track_embedding.track
+        track_id = self._get_track_unique_id(track)
         
-        logger.info(f"Saving embedding to ChromaDB for track {track.plex_rating_key}: {track.artist} - {track.title}")
+        logger.info(f"Saving embedding to ChromaDB for track {track_id}: {track.artist} - {track.title}")
         logger.info(f"Collection count before save: {self.collection.count()}")
         
         # Check if embedding already exists, if so, update it
-        existing = self.collection.get(ids=[track.plex_rating_key])
+        existing = self.collection.get(ids=[track_id])
         if existing['ids']:
-            logger.info(f"Updating existing embedding for track {track.plex_rating_key}")
+            logger.info(f"Updating existing embedding for track {track_id}")
             self.collection.update(
-                ids=[track.plex_rating_key],
+                ids=[track_id],
                 embeddings=[track_embedding.embedding],
                 metadatas=[{
                     "filepath": str(track.filepath),
                     "artist": track.artist,
                     "album": track.album,
-                    "title": track.title
+                    "title": track.title,
+                    "media_server_type": track.media_server_type.value,
+                    "media_server_rating_key": track.media_server_rating_key,
+                    "model_id": self.model_id
                 }]
             )
         else:
-            logger.info(f"Adding new embedding for track {track.plex_rating_key}")
+            logger.info(f"Adding new embedding for track {track_id}")
             self.collection.add(
-                ids=[track.plex_rating_key],
+                ids=[track_id],
                 embeddings=[track_embedding.embedding],
                 metadatas=[{
                     "filepath": str(track.filepath),
                     "artist": track.artist,
                     "album": track.album,
-                    "title": track.title
+                    "title": track.title,
+                    "media_server_type": track.media_server_type.value,
+                    "media_server_rating_key": track.media_server_rating_key,
+                    "model_id": self.model_id
                 }]
             )
         
         logger.info(f"Collection count after save: {self.collection.count()}")
-        logger.info(f"Successfully saved embedding to ChromaDB for track {track.plex_rating_key}")
+        logger.info(f"Successfully saved embedding to ChromaDB for track {track_id}")
 
     
     def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
@@ -189,3 +236,8 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         except Exception as e:
             logger.error(f"Error retrieving embedding for track {track_id}: {e}")
             return None
+    
+    def get_embedding_for_track(self, track: Track) -> Optional[List[float]]:
+        """Get embedding for a specific track object."""
+        track_id = self._get_track_unique_id(track)
+        return self.get_embedding_by_track_id(track_id)

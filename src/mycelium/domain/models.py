@@ -1,33 +1,54 @@
 """Domain models for the Mycelium application."""
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
 
+class MediaServerType(Enum):
+    """Supported media server types."""
+    PLEX = "plex"
+    JELLYFIN = "jellyfin"
+
+
 @dataclass
 class Track:
-    """Represents a music track from Plex."""
+    """Represents a music track from a media server."""
 
     artist: str
     album: str
     title: str
     filepath: Path
-    plex_rating_key: str
+    media_server_rating_key: str
+    media_server_type: MediaServerType = MediaServerType.PLEX
 
     @property
     def display_name(self) -> str:
         """Get a display-friendly name for the track."""
         return f"{self.artist} - {self.title}"
+    
+    @property
+    def unique_id(self) -> str:
+        """Get a unique identifier for the track across media servers."""
+        return f"{self.media_server_type.value}:{self.media_server_rating_key}"
+    
+    # Backward compatibility property
+    @property
+    def plex_rating_key(self) -> str:
+        """Backward compatibility property for existing code."""
+        return self.media_server_rating_key
 
 
 @dataclass
 class TrackEmbedding:
-    """Represents a track with its CLAP embedding."""
+    """Represents a track with its embedding from a specific model."""
 
     track: Track
     embedding: List[float]
+    model_id: str
+    processed_at: Optional[datetime] = None
 
 
 @dataclass
