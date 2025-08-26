@@ -148,7 +148,9 @@ class MyceliumService:
             n_results: int = 10
     ) -> List[SearchResult]:
         """Search for tracks similar to a given track ID."""
-        return self.music_search.search_by_track_id(track_id, n_results)
+        return self.music_search.search_by_track_id(track_id=track_id,
+                                                    media_server_type=self._config.media_server.type,
+                                                    n_results=n_results)
 
     def get_database_stats(self) -> dict:
         """Get statistics about the current databases."""

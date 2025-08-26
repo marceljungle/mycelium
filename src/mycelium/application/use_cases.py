@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import List
 
-from ..domain.models import SearchResult
+from ..domain.models import SearchResult, MediaServerType, Track
 from ..domain.repositories import EmbeddingRepository, EmbeddingGenerator
 
 class MusicSearchUseCase:
@@ -67,21 +67,22 @@ class MusicSearchUseCase:
         
         return results
     
-    def search_by_track_id(self, track_id: str, n_results: int = 10) -> List[SearchResult]:
+    def search_by_track_id(self, track_id: str, media_server_type: MediaServerType, n_results: int = 10) -> List[SearchResult]:
         """Find songs similar to a track identified by its ID."""
-        self.logger.info(f"Searching for songs similar to track ID: {track_id}")
+        track = Track(media_server_type=media_server_type, media_server_rating_key=track_id)
+        self.logger.info(f"Searching for songs similar to track ID: {track.unique_id}")
         
         # Get the embedding for this track
-        embedding = self.embedding_repository.get_embedding_by_track_id(track_id)
+        embedding = self.embedding_repository.get_embedding_by_track_id(track.unique_id)
         
         if embedding is None:
-            self.logger.error(f"No embedding found for track ID: {track_id}")
+            self.logger.error(f"No embedding found for track ID: {track.unique_id}")
             # Try to check if the embedding exists using has_embedding
-            has_emb = self.embedding_repository.has_embedding(track_id)
-            self.logger.error(f"Double-check has_embedding for track {track_id}: {has_emb}")
+            has_emb = self.embedding_repository.has_embedding(track)
+            self.logger.error(f"Double-check has_embedding for track {track.unique_id}: {has_emb}")
             return []
         
-        self.logger.info(f"Found embedding for track {track_id}, size: {len(embedding)}")
+        self.logger.info(f"Found embedding for track {track.unique_id}, size: {len(embedding)}")
         
         # Search for similar tracks
         results = self.embedding_repository.search_by_embedding(embedding, n_results + 1)
@@ -89,8 +90,8 @@ class MusicSearchUseCase:
         # Filter out the same track (it will be the first result with distance 0)
         results = [
             result for result in results 
-            if result.track.unique_id != track_id
+            if result.track.unique_id != track.unique_id
         ][:n_results]
         
-        self.logger.info(f"Found {len(results)} similar tracks for track {track_id}")
+        self.logger.info(f"Found {len(results)} similar tracks for track {track.unique_id}")
         return results

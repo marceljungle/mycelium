@@ -208,22 +208,22 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         logger.info(f"Successfully saved embedding to ChromaDB for track {track_id}")
 
     
-    def get_embedding_by_track_id(self, track_id: str) -> Optional[List[float]]:
+    def get_embedding_by_track_id(self, track_unique_id: str) -> Optional[List[float]]:
         """Get embedding for a specific track."""
         try:
             result = self.collection.get(
-                ids=[track_id],
+                ids=[track_unique_id],
                 include=['embeddings']
             )
             if result['embeddings'] is not None and len(result['embeddings']) > 0:
                 embedding = result['embeddings'][0]
-                logger.debug(f"Retrieved embedding for track {track_id}, size: {len(embedding) if embedding is not None else 0}")
+                logger.debug(f"Retrieved embedding for track {track_unique_id}, size: {len(embedding) if embedding is not None else 0}")
                 return embedding
             else:
-                logger.debug(f"No embedding found in ChromaDB for track {track_id}")
+                logger.debug(f"No embedding found in ChromaDB for track {track_unique_id}")
                 return None
         except Exception as e:
-            logger.error(f"Error retrieving embedding for track {track_id}: {e}")
+            logger.error(f"Error retrieving embedding for track {track_unique_id}: {e}")
             return None
     
     def get_embedding_for_track(self, track: Track) -> Optional[List[float]]:
