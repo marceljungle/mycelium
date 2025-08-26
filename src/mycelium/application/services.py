@@ -160,11 +160,11 @@ class MyceliumService:
             "track_database_stats": processing_stats
         }
 
-    def get_track_by_id(self, track_id: str, media_server_type: MediaServerType) -> Optional[Track]:
+    def get_track_by_id(self, track_id: str) -> Optional[Track]:
         """Get track information by Plex rating key."""
         # Try database first (faster)
         stored_track = self.track_database.get_track_by_id(media_server_rating_key=track_id,
-                                                           media_server_type=media_server_type.value)
+                                                           media_server_type=self._config.media_server.type.value)
         if stored_track:
             return stored_track.to_track()
 
@@ -215,7 +215,7 @@ class MyceliumService:
     def save_embedding(self, track_id: str, embedding: List[float]) -> None:
         """Save an embedding for a track."""
         # Get track info first
-        track = self.get_track_by_id(track_id=track_id, media_server_type=self._config.media_server.type)
+        track = self.get_track_by_id(track_id=track_id)
         if track:
             track_embedding = TrackEmbedding(
                 track=track,
@@ -294,7 +294,7 @@ class MyceliumService:
             # Get tracks by their IDs
             tracks = []
             for track_id in track_ids:
-                track = self.get_track_by_id(track_id=track_id, media_server_type=self._config.media_server.type)
+                track = self.get_track_by_id(track_id=track_id)
                 if track:
                     tracks.append(track)
                 else:
