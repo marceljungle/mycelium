@@ -35,23 +35,19 @@ class MyceliumClient:
 
     def __init__(
             self,
-            server_host: Optional[str] = None,
-            server_port: Optional[int] = None,
-            model_id: str = "laion/larger_clap_music_and_speech",
             poll_interval: int = 5,
-            download_queue_size: Optional[int] = None,
             download_workers: int = 10
     ):
         # Load configuration first
         self.config = MyceliumClientConfig.load_from_yaml()
         
         # Use config values with fallback to parameters for backward compatibility
-        self.server_host = server_host or self.config.client.server_host
-        self.server_port = server_port or self.config.client.server_port
+        self.server_host = self.config.client.server_host
+        self.server_port = self.config.client.server_port
         self.server_url = f"http://{self.server_host}:{self.server_port}"
-        self.model_id = model_id
+        self.model_id = self.config.clap.model_id
         self.poll_interval = poll_interval
-        self.download_queue_size = download_queue_size or self.config.client.download_queue_size
+        self.download_queue_size = self.config.client.download_queue_size
         self.download_workers = download_workers
 
         self.config_file_path = get_client_config_file_path()
@@ -79,7 +75,7 @@ class MyceliumClient:
         logging.info(f"Worker ID: {self.worker_id}")
         logging.info(f"Server: {self.server_url}")
         logging.info(f"Device: {self.device}")
-        logging.info(f"Download queue size: {download_queue_size}")
+        logging.info(f"Download queue size: {self.download_queue_size}")
         logging.info(f"Parallel download workers: {download_workers}")
 
     def _log_queue_status(self, context: str = ""):
@@ -452,18 +448,10 @@ class MyceliumClient:
 
 
 def run_client(
-        server_host: str = "localhost",
-        server_port: int = 8000,
-        model_id: str = "laion/larger_clap_music_and_speech",
-        download_queue_size: int = 15,
         download_workers: int = 10
 ):
     """Run the Mycelium client."""
     client = MyceliumClient(
-        server_host=server_host,
-        server_port=server_port,
-        model_id=model_id,
-        download_queue_size=download_queue_size,
         download_workers=download_workers
     )
     client.run()
