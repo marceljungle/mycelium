@@ -637,9 +637,9 @@ export default function LibraryPage() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {recommendations.map((result, index) => (
+              {recommendations.map((result) => (
                 <div
-                  key={index}
+                  key={result.track.id}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
                   <div className="flex justify-between items-start">
