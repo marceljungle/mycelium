@@ -10,7 +10,8 @@ interface SearchResult {
     album: string;
     title: string;
     filepath: string;
-    plex_rating_key: string;
+    media_server_rating_key: string;
+    media_server_type: string;
   };
   similarity_score: number;
   distance: number;
