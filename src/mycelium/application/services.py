@@ -13,6 +13,7 @@ from mycelium.application.workflow_use_cases import (
     ProcessingProgressUseCase,
     WorkerBasedProcessingUseCase
 )
+from mycelium.config import MyceliumConfig
 from mycelium.domain.models import Playlist
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
 from mycelium.infrastructure import (
@@ -28,52 +29,45 @@ class MyceliumService:
 
     def __init__(
             self,
-            db_path: str,
-            track_db_path: str,
-            plex_url: str = None,
-            plex_token: str = None,
-            music_library_name: str = "Music",
-            collection_name: str = "my_music_library",
-            model_id: str = "laion/larger_clap_music_and_speech",
-            chromadb_batch_size: int = 1000
+            config: MyceliumConfig
     ):
         self.logger = logging.getLogger(__name__)
 
         # Initialize repositories and adapters
         self.plex_repository = PlexMusicRepository(
-            plex_url=plex_url,
-            plex_token=plex_token,
-            music_library_name=music_library_name
+            plex_url=config.plex.url,
+            plex_token=config.plex.token,
+            music_library_name=config.plex.music_library_name
         )
 
-        self.embedding_generator = CLAPEmbeddingGenerator(model_id=model_id)
+        self.embedding_generator = CLAPEmbeddingGenerator(model_id=config.clap.model_id)
 
         self.embedding_repository = ChromaEmbeddingRepository(
-            db_path=db_path,
-            collection_name=collection_name,
-            model_id=model_id,
-            batch_size=chromadb_batch_size
+            db_path=config.chroma.get_db_path(),
+            collection_name=config.chroma.collection_name,
+            model_id=config.clap.model_id,
+            batch_size=config.chroma.batch_size
         )
 
-        self.track_database = TrackDatabase(track_db_path)
+        self.track_database = TrackDatabase(db_path=config.database.get_db_path())
 
         self.music_search = MusicSearchUseCase(
-            self.embedding_repository,
-            self.embedding_generator
+            embedding_repository=self.embedding_repository,
+            embedding_generator=self.embedding_generator
         )
 
         # Initialize new use cases
         self.separated_scan = SeparatedLibraryScanUseCase(
-            self.plex_repository,
-            self.track_database
+            plex_repository=self.plex_repository,
+            track_database=self.track_database
         )
         self.resumable_processing = ResumableEmbeddingProcessingUseCase(
-            self.embedding_generator,
-            self.embedding_repository,
-            self.track_database,
-            model_id
+            embedding_generator=self.embedding_generator,
+            embedding_repository=self.embedding_repository,
+            track_database=self.track_database,
+            model_id=config.clap.model_id,
         )
-        self.progress_tracker = ProcessingProgressUseCase(self.track_database)
+        self.progress_tracker = ProcessingProgressUseCase(track_database=self.track_database)
 
         # Processing state tracking
         self._processing_in_progress = False

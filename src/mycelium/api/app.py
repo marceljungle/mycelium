@@ -121,14 +121,7 @@ logger.info("Initializing Mycelium service...")
 
 # Initialize the main service
 service = MyceliumService(
-    plex_url=config.plex.url,
-    plex_token=config.plex.token,
-    music_library_name=config.plex.music_library_name,
-    db_path=config.chroma.get_db_path(),
-    collection_name=config.chroma.collection_name,
-    model_id=config.clap.model_id,
-    track_db_path=config.database.get_db_path(),
-    chromadb_batch_size=config.chroma.batch_size
+    config=config
 )
 
 # Initialize job queue service
@@ -166,14 +159,7 @@ def reload_config() -> None:
             
             # Reinitialize service with new configuration
             new_service = MyceliumService(
-                plex_url=new_config.plex.url,
-                plex_token=new_config.plex.token,
-                music_library_name=new_config.plex.music_library_name,
-                db_path=new_config.chroma.get_db_path(),
-                collection_name=new_config.chroma.collection_name,
-                model_id=new_config.clap.model_id,
-                track_db_path=new_config.database.get_db_path(),
-                chromadb_batch_size=new_config.chroma.batch_size
+                config=new_config
             )
             
             # Reinitialize job queue service
