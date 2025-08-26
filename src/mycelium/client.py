@@ -33,22 +33,18 @@ class DownloadedJob:
 class MyceliumClient:
     """Client for processing CLAP embeddings on GPU hardware."""
 
-    def __init__(
-            self,
-            poll_interval: int = 5,
-            download_workers: int = 10
-    ):
-        # Load configuration first
+    def __init__(self):
+        # Load configuration
         self.config = MyceliumClientConfig.load_from_yaml()
         
-        # Use config values with fallback to parameters for backward compatibility
+        # Use config values for all settings
         self.server_host = self.config.client.server_host
         self.server_port = self.config.client.server_port
         self.server_url = f"http://{self.server_host}:{self.server_port}"
         self.model_id = self.config.clap.model_id
-        self.poll_interval = poll_interval
+        self.poll_interval = self.config.client.poll_interval
         self.download_queue_size = self.config.client.download_queue_size
-        self.download_workers = download_workers
+        self.download_workers = self.config.client.download_workers
 
         self.config_file_path = get_client_config_file_path()
         self.last_config_mtime = self._get_config_mtime()
@@ -76,7 +72,9 @@ class MyceliumClient:
         logging.info(f"Server: {self.server_url}")
         logging.info(f"Device: {self.device}")
         logging.info(f"Download queue size: {self.download_queue_size}")
-        logging.info(f"Parallel download workers: {download_workers}")
+        logging.info(f"Job queue size: {self.config.client.job_queue_size}")
+        logging.info(f"Poll interval: {self.poll_interval}s")
+        logging.info(f"Parallel download workers: {self.download_workers}")
 
     def _log_queue_status(self, context: str = ""):
         """Log current queue status with context."""
@@ -139,15 +137,25 @@ class MyceliumClient:
             logging.info("Model unloaded")
 
     def reload_config(self):
-        """Reload configuration and recreate CLAPEmbeddingGenerator."""
+        """Reload configuration and apply changes that can be hot-reloaded."""
         try:
             logging.info("Reloading client configuration...")
             new_config = MyceliumClientConfig.load_from_yaml()
 
+            # Check for CLAP model changes
             clap_changed = (
                 new_config.clap.model_id != self.config.clap.model_id or
                 new_config.clap.target_sr != self.config.clap.target_sr or
                 new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
+            )
+
+            # Check for client configuration changes that require worker restart
+            client_changed = (
+                new_config.client.server_host != self.config.client.server_host or
+                new_config.client.server_port != self.config.client.server_port or
+                new_config.client.download_workers != self.config.client.download_workers or
+                new_config.client.download_queue_size != self.config.client.download_queue_size or
+                new_config.client.job_queue_size != self.config.client.job_queue_size
             )
 
             if clap_changed:
@@ -159,6 +167,24 @@ class MyceliumClient:
                     chunk_duration_s=new_config.clap.chunk_duration_s
                 )
                 logging.info("CLAP embedding generator updated.")
+
+            if client_changed:
+                logging.warning("Client configuration changed. Some changes require restart:")
+                if new_config.client.server_host != self.config.client.server_host:
+                    logging.warning(f"  - Server host: {self.config.client.server_host} -> {new_config.client.server_host} (requires restart)")
+                if new_config.client.server_port != self.config.client.server_port:
+                    logging.warning(f"  - Server port: {self.config.client.server_port} -> {new_config.client.server_port} (requires restart)")
+                if new_config.client.download_workers != self.config.client.download_workers:
+                    logging.warning(f"  - Download workers: {self.config.client.download_workers} -> {new_config.client.download_workers} (requires restart)")
+                if new_config.client.download_queue_size != self.config.client.download_queue_size:
+                    logging.warning(f"  - Download queue size: {self.config.client.download_queue_size} -> {new_config.client.download_queue_size} (requires restart)")
+                if new_config.client.job_queue_size != self.config.client.job_queue_size:
+                    logging.warning(f"  - Job queue size: {self.config.client.job_queue_size} -> {new_config.client.job_queue_size} (requires restart)")
+
+            # Apply hot-reloadable changes
+            self.poll_interval = new_config.client.poll_interval
+            if new_config.client.poll_interval != self.config.client.poll_interval:
+                logging.info(f"Poll interval updated: {self.config.client.poll_interval}s -> {new_config.client.poll_interval}s")
 
             self.config = new_config
             logging.info("Client configuration reloaded successfully")
@@ -447,11 +473,7 @@ class MyceliumClient:
             logging.info("Worker stopped")
 
 
-def run_client(
-        download_workers: int = 10
-):
+def run_client():
     """Run the Mycelium client."""
-    client = MyceliumClient(
-        download_workers=download_workers
-    )
+    client = MyceliumClient()
     client.run()

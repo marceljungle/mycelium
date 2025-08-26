@@ -8,6 +8,8 @@ interface ClientConfigData {
     server_port: number;
     download_queue_size: number;
     job_queue_size: number;
+    poll_interval: number;
+    download_workers: number;
   };
   client_api: {
     host: string;
@@ -174,7 +176,7 @@ export default function ClientSettingsPage() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 🖥️ Client Worker
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Server Host
@@ -231,6 +233,40 @@ export default function ClientSettingsPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Max jobs to queue for processing
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Poll Interval (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.poll_interval}
+                    onChange={(e) => updateConfig('client', 'poll_interval', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="5"
+                    min="1"
+                    max="60"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Seconds between job requests
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Download Workers
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.download_workers}
+                    onChange={(e) => updateConfig('client', 'download_workers', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="10"
+                    min="1"
+                    max="50"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Parallel download threads
                   </p>
                 </div>
               </div>

@@ -115,8 +115,7 @@ def run_client_mode(
 
     # Start client worker in a separate thread
     client_thread = threading.Thread(
-        target=run_client, 
-        args=(server_host, server_port, model_id)
+        target=run_client
     )
     client_thread.daemon = True
     client_thread.start()

@@ -69,6 +69,8 @@ class ClientConfig:
     server_port: int = 8000
     download_queue_size: int = 15
     job_queue_size: int = 30
+    poll_interval: int = 5
+    download_workers: int = 10
 
 
 @dataclass
@@ -118,7 +120,9 @@ class MyceliumClientConfig:
             server_host=config_data.get("client", {}).get("server_host", "localhost"),
             server_port=config_data.get("client", {}).get("server_port", 8000),
             download_queue_size=config_data.get("client", {}).get("download_queue_size", 15),
-            job_queue_size=config_data.get("client", {}).get("job_queue_size", 30)
+            job_queue_size=config_data.get("client", {}).get("job_queue_size", 30),
+            poll_interval=config_data.get("client", {}).get("poll_interval", 5),
+            download_workers=config_data.get("client", {}).get("download_workers", 10)
         )
         
         client_api_config = ClientAPIConfig(
