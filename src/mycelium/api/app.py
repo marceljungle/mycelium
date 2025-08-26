@@ -127,7 +127,8 @@ service = MyceliumService(
     db_path=config.chroma.get_db_path(),
     collection_name=config.chroma.collection_name,
     model_id=config.clap.model_id,
-    track_db_path=config.database.get_db_path()
+    track_db_path=config.database.get_db_path(),
+    chromadb_batch_size=config.chroma.batch_size
 )
 
 # Initialize job queue service
@@ -171,7 +172,8 @@ def reload_config() -> None:
                 db_path=new_config.chroma.get_db_path(),
                 collection_name=new_config.chroma.collection_name,
                 model_id=new_config.clap.model_id,
-                track_db_path=new_config.database.get_db_path()
+                track_db_path=new_config.database.get_db_path(),
+                chromadb_batch_size=new_config.chroma.batch_size
             )
             
             # Reinitialize job queue service

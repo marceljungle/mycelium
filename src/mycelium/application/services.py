@@ -35,7 +35,7 @@ class MyceliumService:
             music_library_name: str = "Music",
             collection_name: str = "my_music_library",
             model_id: str = "laion/larger_clap_music_and_speech",
-            clap_batch_size: int = 1000
+            chromadb_batch_size: int = 1000
     ):
         self.logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class MyceliumService:
             db_path=db_path,
             collection_name=collection_name,
             model_id=model_id,
-            batch_size=clap_batch_size
+            batch_size=chromadb_batch_size
         )
 
         self.track_database = TrackDatabase(track_db_path)
