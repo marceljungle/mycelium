@@ -265,7 +265,7 @@ class WorkerBasedProcessingUseCase:
             "queue_stats": queue_stats
         }
 
-    def create_worker_tasks(self, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+    def create_worker_tasks(self, model_id: str, max_tracks: Optional[int] = None) -> Dict[str, Any]:
         """Create tasks for all unprocessed tracks to be handled by workers."""
         if not self.can_use_workers():
             return {
@@ -275,7 +275,7 @@ class WorkerBasedProcessingUseCase:
             }
 
         # Get unprocessed tracks
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks, model_id=model_id)
 
         if not unprocessed_tracks:
             return {

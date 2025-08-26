@@ -72,6 +72,8 @@ class MyceliumService:
         # Processing state tracking
         self._processing_in_progress = False
 
+        self._config = config
+
     def scan_library_to_database(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan the Plex library and store metadata to database."""
         return self.separated_scan.execute(progress_callback)
@@ -254,7 +256,7 @@ class MyceliumService:
                 "message": "Worker processing not initialized",
                 "tasks_created": 0
             }
-        return self.worker_processing.create_worker_tasks(max_tracks)
+        return self.worker_processing.create_worker_tasks(max_tracks=max_tracks, model_id=self._config.clap.model_id)
 
     def stop_worker_processing(self) -> Dict[str, Any]:
         """Stop worker processing by clearing pending tasks."""
