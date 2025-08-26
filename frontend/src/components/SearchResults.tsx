@@ -56,7 +56,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const trackIds = results.map(result => `${result.track.media_server_type}:${result.track.media_server_rating_key}`);
+  const trackIds = results.map(result => `${result.track.media_server_rating_key}`);
 
   return (
     <div className="space-y-4">
