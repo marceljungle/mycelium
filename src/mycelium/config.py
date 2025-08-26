@@ -73,8 +73,13 @@ class CLAPConfig:
 
 @dataclass
 class MediaServerConfig:
-    """Configuration for CLAP model."""
+    """Configuration for media server."""
     type: MediaServerType
+    
+    def __post_init__(self):
+        """Convert string type to MediaServerType enum if needed."""
+        if isinstance(self.type, str):
+            self.type = MediaServerType(self.type.lower())
 
 @dataclass
 class ChromaConfig:

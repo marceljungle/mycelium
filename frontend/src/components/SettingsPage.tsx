@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 
 interface ConfigData {
+  media_server: {
+    type: string;
+  };
   plex: {
     url: string;
     token: string;
@@ -160,6 +163,31 @@ export default function SettingsPage() {
 
         {config && (
           <>
+            {/* Media Server Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 Media Server
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Media Server Type
+                  </label>
+                  <select
+                    value={config.media_server.type}
+                    onChange={(e) => updateConfig('media_server', 'type', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="plex">Plex Media Server</option>
+                    <option value="jellyfin">Jellyfin (Coming Soon)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Choose your preferred media server platform
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Plex Configuration */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

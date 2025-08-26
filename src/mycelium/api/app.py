@@ -26,7 +26,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig, MediaServerConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -96,6 +96,7 @@ class SearchRequest(BaseModel):
 
 class ConfigRequest(BaseModel):
     """Request model for updating configuration."""
+    media_server: Dict[str, Any]
     plex: Dict[str, Any]
     api: Dict[str, Any]
     chroma: Dict[str, Any]
@@ -416,6 +417,9 @@ async def get_config():
         with config_lock:
             # Return current configuration as dict
             config_dict = {
+                "media_server": {
+                    "type": config.media_server.type.value
+                },
                 "plex": {
                     "url": config.plex.url,
                     "token": config.plex.token,
@@ -452,6 +456,7 @@ async def save_config(config_request: ConfigRequest):
     try:
         logger.info("Configuration save request received")
 
+        media_server_config = MediaServerConfig(**config_request.media_server)
         plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
         chroma_config = ChromaConfig(**config_request.chroma)
@@ -460,6 +465,7 @@ async def save_config(config_request: ConfigRequest):
         logging_config = LoggingConfig(**config_request.logging)
 
         yaml_config = MyceliumConfig(
+            media_server=media_server_config,
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
