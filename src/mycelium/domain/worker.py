@@ -47,7 +47,7 @@ class Task:
     download_url: str
     status: TaskStatus = TaskStatus.PENDING
     assigned_worker_id: Optional[str] = None
-    created_at: datetime = None
+    created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None

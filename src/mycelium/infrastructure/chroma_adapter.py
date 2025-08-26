@@ -34,7 +34,6 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             Path(db_path).mkdir(parents=True, exist_ok=True)
         except Exception:
             logger.error(f"Failed to create database directory at {db_path}. Please check permissions.")
-            pass
         self.client = chromadb.PersistentClient(path=db_path)
 
         # Create model-specific collection name
@@ -51,7 +50,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
     def _get_collection_name_for_model(self, model_id: str) -> str:
         """Generate a safe collection name for the given model ID."""
         # Make model ID safe for collection name (alphanumeric and underscores only)
-        safe_model_id = re.sub(r'[^a-zA-Z0-9_]', '_', model_id.replace('/', '_'))
+        safe_model_id = re.sub(r'\W', '_', model_id.replace('/', '_'))
         return f"{self.base_collection_name}_{safe_model_id}"
     
     def _get_track_unique_id(self, track: Track) -> str:

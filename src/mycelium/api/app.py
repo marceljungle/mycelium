@@ -169,10 +169,6 @@ def reload_config() -> None:
             new_service.initialize_worker_processing(new_job_queue, new_config.api.host, new_config.api.port)
             
             # Update global references atomically
-            old_config = config
-            old_service = service
-            old_job_queue = job_queue
-            
             config = new_config
             service = new_service
             job_queue = new_job_queue

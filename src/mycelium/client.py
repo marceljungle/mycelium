@@ -310,7 +310,7 @@ class MyceliumClient:
         self.job_fetcher_thread = threading.Thread(target=self._job_fetcher, daemon=True)
         self.job_fetcher_thread.start()
 
-        for i in range(self.download_workers):
+        for _ in range(self.download_workers):
             thread = threading.Thread(target=self._download_worker, daemon=True)
             thread.start()
             self.download_threads.append(thread)

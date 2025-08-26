@@ -3,7 +3,7 @@
 import sqlite3
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -37,7 +37,7 @@ class StoredTrack:
     @classmethod
     def from_track(cls, track: Track, added_at: datetime = None) -> "StoredTrack":
         """Create StoredTrack from domain Track model."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         return cls(
             media_server_rating_key=track.media_server_rating_key,
             media_server_type=track.media_server_type.value,
@@ -144,7 +144,7 @@ class TrackDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "INSERT INTO scan_sessions (started_at) VALUES (?)",
-                (datetime.utcnow(),)
+                (datetime.now(timezone.utc),)
             )
             return cursor.lastrowid
     
@@ -155,13 +155,13 @@ class TrackDatabase:
                 UPDATE scan_sessions 
                 SET completed_at = ?, tracks_found = ?, tracks_new = ?, tracks_updated = ?
                 WHERE id = ?
-            """, (datetime.utcnow(), tracks_found, tracks_new, tracks_updated, session_id))
+            """, (datetime.now(timezone.utc), tracks_found, tracks_new, tracks_updated, session_id))
             conn.commit()
     
     def save_tracks(self, tracks: List[Track], scan_timestamp: datetime = None) -> Dict[str, int]:
         """Save tracks to database, return statistics."""
         if scan_timestamp is None:
-            scan_timestamp = datetime.utcnow()
+            scan_timestamp = datetime.now(timezone.utc)
         
         stats = {"new": 0, "updated": 0, "total": len(tracks)}
         
@@ -236,7 +236,7 @@ class TrackDatabase:
     def mark_track_processed(self, media_server_rating_key: str, media_server_type: str, model_id: str, processed_at: datetime = None) -> None:
         """Mark a track as processed for embeddings with a specific model."""
         if processed_at is None:
-            processed_at = datetime.utcnow()
+            processed_at = datetime.now(timezone.utc)
         
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
@@ -286,7 +286,7 @@ class TrackDatabase:
             cursor = conn.execute("""
                 INSERT INTO processing_sessions (started_at, total_tracks, model_id)
                 VALUES (?, ?, ?)
-            """, (datetime.utcnow(), total_tracks, model_id))
+            """, (datetime.now(timezone.utc), total_tracks, model_id))
             return cursor.lastrowid
     
     def update_processing_session(self, session_id: int, processed_count: int, failed_count: int = 0) -> None:
@@ -306,7 +306,7 @@ class TrackDatabase:
                 UPDATE processing_sessions 
                 SET completed_at = ?, is_resumable = FALSE
                 WHERE id = ?
-            """, (datetime.utcnow(), session_id))
+            """, (datetime.now(timezone.utc), session_id))
             conn.commit()
     
     def get_latest_processing_session(self) -> Optional[Dict[str, Any]]:

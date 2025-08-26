@@ -217,7 +217,8 @@ class MyceliumService:
         if track:
             track_embedding = TrackEmbedding(
                 track=track,
-                embedding=embedding
+                embedding=embedding,
+                model_id=self._config.clap.model_id
             )
             self.embedding_repository.save_embedding(track_embedding)
             # Also mark as processed in track database

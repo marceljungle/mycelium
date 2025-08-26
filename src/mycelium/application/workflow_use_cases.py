@@ -1,6 +1,6 @@
 """New use cases for separated scanning and processing workflow."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from tqdm import tqdm
@@ -37,7 +37,7 @@ class SeparatedLibraryScanUseCase:
                 progress_callback({"stage": "scanning", "current": len(tracks), "total": len(tracks)})
 
             # Save tracks to database
-            scan_timestamp = datetime.utcnow()
+            scan_timestamp = datetime.now(timezone.utc)
             stats = self.track_database.save_tracks(tracks, scan_timestamp)
 
             # Complete scan session
@@ -132,7 +132,7 @@ class ResumableEmbeddingProcessingUseCase:
                             track=track, 
                             embedding=embedding, 
                             model_id=self.model_id,
-                            processed_at=datetime.utcnow()
+                            processed_at=datetime.now(timezone.utc)
                         )
 
                         # Save to vector database
