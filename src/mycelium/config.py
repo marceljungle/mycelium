@@ -211,8 +211,17 @@ class MyceliumConfig:
         if config_path is None:
             config_path = get_config_file_path()
 
+        def custom_dict_factory(data):
+            result = []
+            for k, v in data:
+                if isinstance(v, MediaServerType):
+                    result.append((k, v.value))
+                else:
+                    result.append((k, v))
+            return dict(result)
+
         config_dict = {
-            "media_server": asdict(self.media_server),
+            "media_server": asdict(self.media_server, dict_factory=custom_dict_factory),
             "plex": asdict(self.plex),
             "clap": asdict(self.clap),
             "chroma": asdict(self.chroma),
