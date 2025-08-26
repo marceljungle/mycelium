@@ -208,9 +208,9 @@ class MyceliumService:
         """Count tracks matching advanced search criteria in the database."""
         return self.track_database.count_search_tracks_advanced(artist=artist, album=album, title=title)
 
-    def has_embedding(self, track_id: str) -> bool:
+    def has_embedding(self, track: Track) -> bool:
         """Check if embedding exists for a track."""
-        return self.embedding_repository.has_embedding(track_id)
+        return self.embedding_repository.has_embedding(track)
 
     def save_embedding(self, track_id: str, embedding: List[float]) -> None:
         """Save an embedding for a track."""

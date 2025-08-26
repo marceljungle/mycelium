@@ -17,12 +17,12 @@ class MediaServerType(Enum):
 class Track:
     """Represents a music track from a media server."""
 
-    artist: str
-    album: str
-    title: str
-    filepath: Path
     media_server_rating_key: str
-    media_server_type: MediaServerType = MediaServerType.PLEX
+    media_server_type: MediaServerType
+    artist: str = ""
+    album: str = ""
+    title: str = ""
+    filepath: Optional[Path] = None
 
     @property
     def display_name(self) -> str:

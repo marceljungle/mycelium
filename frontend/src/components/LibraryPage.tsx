@@ -256,7 +256,7 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.media_server_type}:${track.media_server_rating_key}?n_results=${numResults}`);
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.media_server_rating_key}?n_results=${numResults}`);
       
       if (response.ok) {
         const data = await response.json();

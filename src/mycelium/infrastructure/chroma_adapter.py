@@ -52,11 +52,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         # Make model ID safe for collection name (alphanumeric and underscores only)
         safe_model_id = re.sub(r'\W', '_', model_id.replace('/', '_'))
         return f"{self.base_collection_name}_{safe_model_id}"
-    
-    def _get_track_unique_id(self, track: Track) -> str:
-        """Generate a unique ID for a track across media servers."""
-        return track.unique_id
-    
+
     def save_embeddings(self, embeddings: List[TrackEmbedding]) -> None:
         """Save track embeddings to ChromaDB."""
         if not embeddings:
@@ -69,7 +65,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
 
         for track_embedding in embeddings:
             track = track_embedding.track
-            ids.append(self._get_track_unique_id(track))
+            ids.append(track.unique_id)
             embedding_vectors.append(track_embedding.embedding)
             metadatas.append({
                 "filepath": str(track.filepath),
@@ -152,26 +148,25 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
         
         return search_results
     
-    def has_embedding(self, track_id: str) -> bool:
+    def has_embedding(self, track: Track) -> bool:
         """Check if an embedding exists for a track."""
         try:
-            result = self.collection.get(ids=[track_id])
+            result = self.collection.get(ids=[track.unique_id])
             exists = len(result['ids']) > 0
-            logger.debug(f"Checking embedding for track {track_id}: exists={exists}")
+            logger.debug(f"Checking embedding for track {track.unique_id}: exists={exists}")
             return exists
         except Exception as e:
-            logger.error(f"Error checking embedding for track {track_id}: {e}")
+            logger.error(f"Error checking embedding for track {track.unique_id}: {e}")
             return False
     
     def has_embedding_for_track(self, track: Track) -> bool:
         """Check if an embedding exists for a track object."""
-        track_id = self._get_track_unique_id(track)
-        return self.has_embedding(track_id)
+        return self.has_embedding(track)
     
     def save_embedding(self, track_embedding: TrackEmbedding) -> None:
         """Save a single track embedding to ChromaDB."""
         track = track_embedding.track
-        track_id = self._get_track_unique_id(track)
+        track_id = track.unique_id
         
         logger.info(f"Saving embedding to ChromaDB for track {track_id}: {track.artist} - {track.title}")
         logger.info(f"Collection count before save: {self.collection.count()}")
@@ -233,5 +228,4 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
     
     def get_embedding_for_track(self, track: Track) -> Optional[List[float]]:
         """Get embedding for a specific track object."""
-        track_id = self._get_track_unique_id(track)
-        return self.get_embedding_by_track_id(track_id)
+        return self.get_embedding_by_track_id(track.unique_id)
