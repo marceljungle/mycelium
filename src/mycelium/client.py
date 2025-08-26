@@ -35,21 +35,24 @@ class MyceliumClient:
 
     def __init__(
             self,
-            server_host: str = "localhost",
-            server_port: int = 8000,
+            server_host: Optional[str] = None,
+            server_port: Optional[int] = None,
             model_id: str = "laion/larger_clap_music_and_speech",
             poll_interval: int = 5,
-            download_queue_size: int = 15,
+            download_queue_size: Optional[int] = None,
             download_workers: int = 10
     ):
-        self.server_host = server_host
-        self.server_port = server_port
-        self.server_url = f"http://{server_host}:{server_port}"
+        # Load configuration first
+        self.config = MyceliumClientConfig.load_from_yaml()
+        
+        # Use config values with fallback to parameters for backward compatibility
+        self.server_host = server_host or self.config.client.server_host
+        self.server_port = server_port or self.config.client.server_port
+        self.server_url = f"http://{self.server_host}:{self.server_port}"
         self.model_id = model_id
         self.poll_interval = poll_interval
-        self.download_queue_size = download_queue_size
+        self.download_queue_size = download_queue_size or self.config.client.download_queue_size
         self.download_workers = download_workers
-        self.config = MyceliumClientConfig.load_from_yaml()
 
         self.config_file_path = get_client_config_file_path()
         self.last_config_mtime = self._get_config_mtime()
@@ -61,8 +64,8 @@ class MyceliumClient:
 
         self.device = CLAPEmbeddingGenerator.get_best_device()
 
-        self.job_queue: Queue[dict] = Queue(maxsize=download_queue_size * 2)
-        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
+        self.job_queue: Queue[dict] = Queue(maxsize=self.config.client.job_queue_size)
+        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=self.download_queue_size)
 
         self.job_fetcher_thread: Optional[threading.Thread] = None
         self.download_threads: List[threading.Thread] = []

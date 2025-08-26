@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config/api';
 
 interface ClientConfigData {
   client: {
     server_host: string;
     server_port: number;
+    download_queue_size: number;
+    job_queue_size: number;
   };
   client_api: {
     host: string;
@@ -38,7 +39,9 @@ export default function ClientSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/config`);
+      // Use port 3001 for client configuration API
+      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+      const response = await fetch(`${clientApiUrl}/api/config`);
       if (!response.ok) {
         throw new Error('Failed to fetch configuration');
       }
@@ -52,7 +55,7 @@ export default function ClientSettingsPage() {
       setConfig(clientConfig);
       setOriginalConfig(JSON.parse(JSON.stringify(clientConfig)));
     } catch {
-      setError('Unable to fetch configuration. Make sure the API server is running.');
+      setError('Unable to fetch client configuration. Make sure the client API server is running on port 3001.');
     } finally {
       setLoading(false);
     }
@@ -66,7 +69,9 @@ export default function ClientSettingsPage() {
     setSuccessMessage(null);
 
     try {
-      const currentResponse = await fetch(`${API_BASE_URL}/api/config`);
+      // Use port 3001 for client configuration API
+      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
+      const currentResponse = await fetch(`${clientApiUrl}/api/config`);
       if (!currentResponse.ok) {
         throw new Error('Failed to fetch current configuration');
       }
@@ -78,7 +83,7 @@ export default function ClientSettingsPage() {
         logging: config.logging
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/config`, {
+      const response = await fetch(`${clientApiUrl}/api/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedConfig)
@@ -169,7 +174,7 @@ export default function ClientSettingsPage() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 🖥️ Client Worker
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Server Host
@@ -193,6 +198,40 @@ export default function ClientSettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="8000"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Download Queue Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.download_queue_size}
+                    onChange={(e) => updateConfig('client', 'download_queue_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="15"
+                    min="1"
+                    max="100"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Max audio files to download simultaneously
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Job Queue Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.job_queue_size}
+                    onChange={(e) => updateConfig('client', 'job_queue_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="30"
+                    min="1"
+                    max="500"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Max jobs to queue for processing
+                  </p>
                 </div>
               </div>
             </div>

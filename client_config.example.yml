@@ -11,6 +11,8 @@ clap:
 client:
   server_host: localhost
   server_port: 8000
+  download_queue_size: 15
+  job_queue_size: 30
 
 # Client API server configuration for local configuration management
 client_api:

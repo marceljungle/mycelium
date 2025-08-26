@@ -67,6 +67,8 @@ class ClientConfig:
     """Configuration for client worker connections."""
     server_host: str = "localhost"
     server_port: int = 8000
+    download_queue_size: int = 15
+    job_queue_size: int = 30
 
 
 @dataclass
@@ -114,7 +116,9 @@ class MyceliumClientConfig:
         
         client_config = ClientConfig(
             server_host=config_data.get("client", {}).get("server_host", "localhost"),
-            server_port=config_data.get("client", {}).get("server_port", 8000)
+            server_port=config_data.get("client", {}).get("server_port", 8000),
+            download_queue_size=config_data.get("client", {}).get("download_queue_size", 15),
+            job_queue_size=config_data.get("client", {}).get("job_queue_size", 30)
         )
         
         client_api_config = ClientAPIConfig(
