@@ -14,7 +14,7 @@ from mycelium.application.workflow_use_cases import (
     WorkerBasedProcessingUseCase
 )
 from mycelium.config import MyceliumConfig
-from mycelium.domain.models import Playlist
+from mycelium.domain.models import Playlist, MediaServerType
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
 from mycelium.infrastructure import (
     PlexMusicRepository,
@@ -31,6 +31,7 @@ class MyceliumService:
             self,
             config: MyceliumConfig
     ):
+        self.worker_processing = None
         self.logger = logging.getLogger(__name__)
 
         # Initialize repositories and adapters
@@ -159,10 +160,11 @@ class MyceliumService:
             "track_database_stats": processing_stats
         }
 
-    def get_track_by_id(self, track_id: str) -> Optional[Track]:
+    def get_track_by_id(self, track_id: str, media_server_type: MediaServerType) -> Optional[Track]:
         """Get track information by Plex rating key."""
         # Try database first (faster)
-        stored_track = self.track_database.get_track_by_id(track_id)
+        stored_track = self.track_database.get_track_by_id(media_server_rating_key=track_id,
+                                                           media_server_type=media_server_type.value)
         if stored_track:
             return stored_track.to_track()
 
@@ -213,7 +215,7 @@ class MyceliumService:
     def save_embedding(self, track_id: str, embedding: List[float]) -> None:
         """Save an embedding for a track."""
         # Get track info first
-        track = self.get_track_by_id(track_id)
+        track = self.get_track_by_id(track_id=track_id, media_server_type=self._config.media_server.type)
         if track:
             track_embedding = TrackEmbedding(
                 track=track,
@@ -222,7 +224,9 @@ class MyceliumService:
             )
             self.embedding_repository.save_embedding(track_embedding)
             # Also mark as processed in track database
-            self.track_database.mark_track_processed(track_id)
+            self.track_database.mark_track_processed(media_server_rating_key=track_id,
+                                                     media_server_type=track.media_server_type.value,
+                                                     model_id=self._config.clap.model_id)
 
     def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
         """Compute embedding on CPU (fallback)."""
@@ -290,7 +294,7 @@ class MyceliumService:
             # Get tracks by their IDs
             tracks = []
             for track_id in track_ids:
-                track = self.get_track_by_id(track_id)
+                track = self.get_track_by_id(track_id=track_id, media_server_type=self._config.media_server.type)
                 if track:
                     tracks.append(track)
                 else:
