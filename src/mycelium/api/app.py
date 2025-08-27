@@ -655,11 +655,12 @@ async def register_worker(request: WorkerRegistrationRequest):
 
 
 @app.get("/workers/get_job")
-async def get_job(worker_id: str = Query(..., description="Worker ID")):
+async def get_job(worker_id: str = Query(..., description="Worker ID"),
+                  ip_address: str = Query(..., description="Client IP address")):
     """Get the next job for a worker."""
     logger.debug(f"Worker job request received for worker ID {worker_id}")
     try:
-        task = job_queue.get_next_job(worker_id)
+        task = job_queue.get_next_job(worker_id=worker_id, ip_address=ip_address)
         if task is None:
             # No job available - return 204 No Content
             logger.debug(f"No job available for worker {worker_id}")

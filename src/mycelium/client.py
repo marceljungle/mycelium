@@ -203,7 +203,7 @@ class MyceliumClient:
         try:
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
-                params={"worker_id": self.worker_id},
+                params={"worker_id": self.worker_id, "ip_address": self.ip_address},
                 timeout=30
             )
             response.raise_for_status()

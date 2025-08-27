@@ -135,12 +135,15 @@ class JobQueueService:
             return task
 
 
-    def get_next_job(self, worker_id: str) -> Optional[Task]:
+    def get_next_job(self, worker_id: str, ip_address: str) -> Optional[Task]:
         """Get the next job for a worker."""
         with self._lock:
             # Update worker heartbeat
             if worker_id in self._workers:
                 self._workers[worker_id].last_heartbeat = datetime.now()
+            else:
+                logger.warning(f"Received heartbeat from unknown worker, registering {worker_id}...")
+                self.register_worker(worker_id=worker_id, ip_address=ip_address)
             
             # Get next pending task
             if not self._pending_tasks:
