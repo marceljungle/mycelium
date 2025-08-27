@@ -876,7 +876,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
     try:
         # Check if embedding already exists
-        has_emb = service.has_embedding(track_id)
+        has_emb = service.has_embedding(track_id=track_id)
         logger.info(f"Embedding check for track {track_id}: {has_emb}")
 
         if has_emb:

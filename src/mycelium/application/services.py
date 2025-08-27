@@ -212,8 +212,6 @@ class MyceliumService:
 
     def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""
-        track_id = Track(media_server_type=self._config.media_server.type,
-              media_server_rating_key=track_id).unique_id
         return self.embedding_repository.has_embedding(track_id)
 
     def save_embedding(self, track_id: str, embedding: List[float]) -> None:
