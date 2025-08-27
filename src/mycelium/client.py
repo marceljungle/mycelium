@@ -9,10 +9,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue, Empty
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 import requests
-import torch
 
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
