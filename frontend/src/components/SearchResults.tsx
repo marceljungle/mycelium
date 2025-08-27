@@ -91,7 +91,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
       
       {results.map((result, index) => (
         <div 
-          key={`${result.track.media_server_type}:${result.track.media_server_rating_key}`}
+          key={`${result.track.media_server_rating_key}`}
           className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
         >
           <div className="flex items-center justify-between">

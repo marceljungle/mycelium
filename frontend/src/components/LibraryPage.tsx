@@ -507,10 +507,10 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredTracks.map((track) => (
                 <button
-                  key={`${track.media_server_type}:${track.media_server_rating_key}`}
+                  key={`${track.media_server_rating_key}`}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack && `${selectedTrack.media_server_type}:${selectedTrack.media_server_rating_key}` === `${track.media_server_type}:${track.media_server_rating_key}`
+                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
@@ -641,7 +641,7 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {recommendations.map((result) => (
                 <div
-                  key={`${result.track.media_server_type}:${result.track.media_server_rating_key}`}
+                  key={`${result.track.media_server_rating_key}`}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
                   <div className="flex justify-between items-start">
