@@ -1,4 +1,5 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
+import gc
 import logging
 import os
 import socket
@@ -491,6 +492,11 @@ class MyceliumClient:
                         os.unlink(job.audio_file)
                     except OSError as e:
                         logging.error(f"Error deleting temp file {job.audio_file}: {e}")
+            
+            # Force garbage collection after batch processing
+            collected = gc.collect()
+            if collected > 0:
+                logging.debug(f"Post-batch cleanup: collected {collected} objects")
     
     def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
         """Process a batch of text embedding jobs."""

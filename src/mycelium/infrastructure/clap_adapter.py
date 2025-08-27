@@ -150,7 +150,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             return None
 
     def generate_embedding_batch(self, filepaths: List[Path]) -> List[Optional[List[float]]]:
-        """Generate embeddings for multiple audio files in a single GPU batch for better utilization."""
+        """Generate embeddings for multiple audio files in a single GPU batch"""
         if not filepaths:
             return []
         
@@ -160,11 +160,19 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             
             all_chunks = []
             file_chunk_counts = []
+            loaded_waveforms = []  # Keep track for cleanup
             
             # Load and prepare all audio files
             for filepath in filepaths:
                 try:
-                    waveform, _ = librosa.load(str(filepath), sr=self.target_sr, mono=True)
+                    waveform, _ = librosa.load(
+                        str(filepath), 
+                        sr=self.target_sr, 
+                        mono=True,
+                        duration=120
+                    )
+                    loaded_waveforms.append(waveform)  # Keep reference for cleanup
+                    
                     chunk_size = self.chunk_duration_s * self.target_sr
                     chunks = [waveform[i:i + chunk_size] for i in range(0, len(waveform), chunk_size)]
                     
@@ -182,39 +190,67 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 except Exception as e:
                     self.logger.error(f"Error loading audio file {filepath}: {e}")
                     file_chunk_counts.append(0)
+                    loaded_waveforms.append(None)  # Maintain list alignment
             
-            if not all_chunks:
-                return [None] * len(filepaths)
-            
-            # Process all chunks in a single batch
-            inputs = processor(
-                audios=all_chunks,
-                sampling_rate=self.target_sr,
-                return_tensors="pt",
-                padding=True
-            )
-            
-            inputs = self._prepare_inputs(inputs)
-            
-            with torch.no_grad():
-                audio_features = model.get_audio_features(**inputs)
-            
-            # Split results back to individual files and compute mean embeddings
-            results = []
-            chunk_idx = 0
-            
-            for chunk_count in file_chunk_counts:
-                if chunk_count == 0:
-                    results.append(None)
-                else:
-                    file_features = audio_features[chunk_idx:chunk_idx + chunk_count]
-                    mean_embedding = torch.mean(file_features, dim=0)
-                    normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-                    results.append(normalized_embedding.cpu().numpy().tolist())
-                    chunk_idx += chunk_count
-            
-            self.logger.info(f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
-            return results
+            try:
+                if not all_chunks:
+                    return [None] * len(filepaths)
+                
+                # Process all chunks in a single batch with memory management
+                inputs = processor(
+                    audios=all_chunks,
+                    sampling_rate=self.target_sr,
+                    return_tensors="pt",
+                    padding=True
+                )
+                
+                inputs = self._prepare_inputs(inputs)
+                
+                with torch.no_grad():
+                    audio_features = model.get_audio_features(**inputs)
+                
+                # Clear input tensors from memory immediately
+                del inputs
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+                elif self.device == "mps":
+                    torch.mps.empty_cache()
+                
+                # Split results back to individual files and compute mean embeddings
+                results = []
+                chunk_idx = 0
+                
+                for chunk_count in file_chunk_counts:
+                    if chunk_count == 0:
+                        results.append(None)
+                    else:
+                        file_features = audio_features[chunk_idx:chunk_idx + chunk_count]
+                        mean_embedding = torch.mean(file_features, dim=0)
+                        normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
+                        results.append(normalized_embedding.cpu().numpy().tolist())
+                        chunk_idx += chunk_count
+                
+                self.logger.info(f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
+                return results
+                
+            finally:
+                # Aggressive cleanup
+                del loaded_waveforms
+                del all_chunks
+                if 'audio_features' in locals():
+                    del audio_features
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                if collected > 0:
+                    self.logger.debug(f"Audio batch cleanup: collected {collected} objects")
+                
+                # Clear GPU cache
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+                elif self.device == "mps":
+                    torch.mps.empty_cache()
             
         except Exception as e:
             self.logger.error(f"Error in batch audio embedding generation: {e}", exc_info=True)
