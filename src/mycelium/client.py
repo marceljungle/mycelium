@@ -244,7 +244,7 @@ class MyceliumClient:
                         time.sleep(self.poll_interval)
                 else:
                     logging.info("Job fetcher: Job queue is full, pausing.")
-                    time.sleep(1)
+                    time.sleep(5)
             except Exception as e:
                 logging.error(f"Job fetcher error: {e}")
                 time.sleep(self.poll_interval)
@@ -260,9 +260,8 @@ class MyceliumClient:
                 job = self.job_queue.get(timeout=1)
 
                 if self.download_queue.full():
-                    logging.warning("Download queue is full. Waiting...")
                     self.job_queue.put(job)
-                    time.sleep(1)
+                    time.sleep(5)
                     continue
 
                 task_id = job["task_id"]
