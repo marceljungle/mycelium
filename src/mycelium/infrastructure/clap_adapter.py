@@ -21,7 +21,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             target_sr: int = 48000,
             chunk_duration_s: int = 10,
             num_chunks: int = 3,
-            max_load_duration_s: Optional[int] = 180
+            max_load_duration_s: Optional[int] = 120
     ):
         self.model_id = model_id
         self.target_sr = target_sr
