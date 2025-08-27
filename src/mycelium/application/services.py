@@ -318,3 +318,13 @@ class MyceliumService:
         except Exception as e:
             self.logger.error(f"Failed to create playlist '{name}': {e}", exc_info=True)
             raise
+
+    def cleanup(self) -> None:
+        """Clean up resources, including unloading the CLAP model."""
+        try:
+            self.logger.info("Cleaning up MyceliumService resources...")
+            if hasattr(self, 'embedding_generator') and self.embedding_generator:
+                self.embedding_generator.unload_model()
+            self.logger.info("MyceliumService cleanup completed successfully")
+        except Exception as e:
+            self.logger.error(f"Error during MyceliumService cleanup: {e}", exc_info=True)

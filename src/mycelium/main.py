@@ -1,9 +1,11 @@
 """Main entry point for the Mycelium application."""
 
+import atexit
 import logging
 import os
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +24,42 @@ app = typer.Typer(
 )
 
 logger = logging.getLogger(__name__)
+
+# Global reference for service cleanup
+_server_service = None
+
+# Register cleanup on exit
+atexit.register(lambda: cleanup_server_resources())
+
+
+def cleanup_server_resources():
+    """Clean up server resources, including model unloading."""
+    global _server_service
+    if _server_service is not None:
+        try:
+            logger.info("Cleaning up server resources...")
+            _server_service.cleanup()
+            logger.info("Server resources cleaned up successfully")
+        except Exception as e:
+            logger.error(f"Error during server cleanup: {e}")
+        finally:
+            _server_service = None
+
+
+def get_server_service():
+    """Get the server service instance for cleanup."""
+    global _server_service
+    if _server_service is None:
+        # Import here to get the service from app.py
+        from mycelium.api.app import service
+        try:
+            _server_service = service
+            logger.debug("Server service reference acquired for cleanup")
+        except ImportError as e:
+            logger.warning(f"Could not import service for cleanup: {e}")
+        except Exception as e:
+            logger.warning(f"Error getting service reference: {e}")
+    return _server_service
 
 
 def run_server_api(config: MyceliumConfig) -> None:
@@ -70,11 +108,22 @@ def run_server_mode(config: MyceliumConfig) -> None:
     api_thread.daemon = True
     api_thread.start()
 
+    # Give the API server time to start and initialize
+    time.sleep(2)
+    
+    # Get service reference for cleanup
+    get_server_service()
+
     # Start frontend (this will run in the main thread)
     try:
         run_frontend(server_config=config)
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
+        cleanup_server_resources()
+    except Exception as e:
+        logger.error(f"Frontend error: {e}")
+        cleanup_server_resources()
+        raise
 
 
 def run_client_api(client_config: MyceliumClientConfig) -> None:
@@ -146,7 +195,13 @@ def server(
             config.api.reload = reload
 
         run_server_mode(config)
+    except KeyboardInterrupt:
+        logger.info("Server interrupted by user")
+        cleanup_server_resources()
+        typer.echo("\nServer stopped")
+        raise typer.Exit(130)
     except Exception as e:
+        cleanup_server_resources()
         typer.echo(f"Server error: {e}", err=True)
         raise typer.Exit(1)
 
@@ -181,8 +236,13 @@ def main() -> None:
     try:
         app()
     except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        cleanup_server_resources()
         typer.echo("\nOperation cancelled by user")
         raise typer.Exit(130)
+    except Exception as e:
+        cleanup_server_resources()
+        raise
 
 
 if __name__ == "__main__":
