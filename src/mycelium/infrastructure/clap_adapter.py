@@ -19,7 +19,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             self,
             model_id: str = "laion/larger_clap_music_and_speech",
             target_sr: int = 48000,
-            chunk_duration_s: int = 20,
+            chunk_duration_s: int = 10,
             num_chunks: int = 3,
             max_load_duration_s: Optional[int] = 180
     ):
@@ -128,59 +128,71 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         """Generate embeddings for multiple audio files in a single GPU batch"""
         if not filepaths:
             return []
-        
+
         try:
             processor = self._get_processor()
             model = self._get_model()
-            
+
             all_chunks = []
             file_chunk_counts = []
-            
+
             chunk_size_samples = self.chunk_duration_s * self.target_sr
 
             # Load and prepare all audio files
             for filepath in filepaths:
                 try:
                     waveform, _ = librosa.load(
-                        str(filepath), 
-                        sr=self.target_sr, 
+                        str(filepath),
+                        sr=self.target_sr,
                         mono=True,
                         duration=self.max_load_duration_s
                     )
-                    
+
                     total_samples = len(waveform)
-                    
-                    # Need at least enough samples for a single chunk
-                    if total_samples < chunk_size_samples:
-                        self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for sampling. Need at least {self.chunk_duration_s:.1f}s.")
+                    chunks = []
+
+                    # Calculate how many full, non-overlapping chunks can fit.
+                    num_possible_bins = total_samples // chunk_size_samples
+
+                    if num_possible_bins == 0:
+                        self.logger.warning(
+                            f"File {filepath} is too short ({total_samples / self.target_sr:.1f}s) for even one chunk of {self.chunk_duration_s:.1f}s.")
                         file_chunk_counts.append(0)
                         continue
-                    
-                    chunks = []
-                    
-                    # Sample random non-overlapping chunks
-                    for _ in range(self.num_chunks):
-                        max_start = total_samples - chunk_size_samples
-                        start_idx = random.randint(0, max_start)
+
+                    # Determine which bin indices to sample from.
+                    if num_possible_bins < self.num_chunks:
+                        self.logger.warning(
+                            f"File {filepath} only has space for {num_possible_bins} non-overlapping chunks, "
+                            f"less than the requested {self.num_chunks}. Using all available chunks."
+                        )
+                        chosen_bin_indices = range(num_possible_bins)
+                    else:
+                        possible_bin_indices = range(num_possible_bins)
+                        chosen_bin_indices = random.sample(possible_bin_indices, k=self.num_chunks)
+
+                    # Create chunks based on the chosen indices.
+                    for bin_index in chosen_bin_indices:
+                        start_idx = bin_index * chunk_size_samples
                         end_idx = start_idx + chunk_size_samples
                         chunk = waveform[start_idx:end_idx]
                         chunks.append(chunk)
-                    
+
                     if not chunks:
                         self.logger.warning(f"No valid chunks generated for {filepath}.")
                         file_chunk_counts.append(0)
                         continue
-                    
+
                     all_chunks.extend(chunks)
                     file_chunk_counts.append(len(chunks))
-                    
+
                 except Exception as e:
                     self.logger.error(f"Error loading audio file {filepath}: {e}")
                     file_chunk_counts.append(0)
-            
+
             if not all_chunks:
                 return [None] * len(filepaths)
-            
+
             # Process all chunks in a single batch
             inputs = processor(
                 audios=all_chunks,
@@ -188,16 +200,16 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 return_tensors="pt",
                 padding=True
             )
-            
+
             inputs = self._prepare_inputs(inputs)
-            
+
             with torch.no_grad():
                 audio_features = model.get_audio_features(**inputs)
-            
+
             # Split results back to individual files and compute mean embeddings
             results = []
             chunk_idx = 0
-            
+
             for chunk_count in file_chunk_counts:
                 if chunk_count == 0:
                     results.append(None)
@@ -207,10 +219,11 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                     normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
                     results.append(normalized_embedding.cpu().numpy().tolist())
                     chunk_idx += chunk_count
-            
-            self.logger.info(f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
+
+            self.logger.info(
+                f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Error in batch audio embedding generation: {e}", exc_info=True)
             return [None] * len(filepaths)
@@ -224,28 +237,28 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         """Generate embeddings for multiple text queries in a single GPU batch for better utilization."""
         if not texts:
             return []
-        
+
         try:
             processor = self._get_processor()
             model = self._get_model()
-            
+
             inputs = processor(
                 text=texts,
                 return_tensors="pt",
                 padding=True
             )
-            
+
             inputs = self._prepare_inputs(inputs)
-            
+
             with torch.no_grad():
                 text_features = model.get_text_features(**inputs)
                 text_embeddings = torch.nn.functional.normalize(text_features, p=2, dim=-1)
-            
+
             # Convert to list of lists
             results = text_embeddings.cpu().numpy().tolist()
             self.logger.info(f"Successfully processed batch of {len(texts)} text queries")
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Error in batch text embedding generation: {e}", exc_info=True)
             return [None] * len(texts)
