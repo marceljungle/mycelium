@@ -168,6 +168,12 @@ class MyceliumClient:
             self.poll_interval = new_config.client.poll_interval
             if new_config.client.poll_interval != self.config.client.poll_interval:
                 logging.info(f"Poll interval updated: {self.config.client.poll_interval}s -> {new_config.client.poll_interval}s")
+            
+            # GPU batch settings can be hot-reloaded
+            if new_config.client.gpu_batch_size != self.config.client.gpu_batch_size:
+                logging.info(f"GPU batch size updated: {self.config.client.gpu_batch_size} -> {new_config.client.gpu_batch_size}")
+            if new_config.client.gpu_batch_timeout != self.config.client.gpu_batch_timeout:
+                logging.info(f"GPU batch timeout updated: {self.config.client.gpu_batch_timeout}s -> {new_config.client.gpu_batch_timeout}s")
 
             self.config = new_config
             logging.info("Client configuration reloaded successfully")
@@ -412,8 +418,129 @@ class MyceliumClient:
                 except OSError as e:
                     logging.error(f"Error deleting temp file {downloaded_job.audio_file}: {e}")
 
+    def _process_batch(self, batch: List[DownloadedJob]) -> None:
+        """Process a batch of jobs to improve GPU utilization."""
+        if not batch:
+            return
+            
+        logging.info(f"Processing batch of {len(batch)} jobs")
+        
+        # Separate jobs by type for more efficient batching
+        audio_jobs = []
+        text_jobs = []
+        
+        for job in batch:
+            task_type = job.original_job.get("task_type", "compute_audio_embedding")
+            if task_type == "compute_audio_embedding":
+                audio_jobs.append(job)
+            elif task_type == "compute_text_embedding":
+                text_jobs.append(job)
+        
+        # Process audio jobs in batch
+        if audio_jobs:
+            self._process_audio_batch(audio_jobs)
+        
+        # Process text jobs in batch  
+        if text_jobs:
+            self._process_text_batch(text_jobs)
+    
+    def _process_audio_batch(self, audio_jobs: List[DownloadedJob]) -> None:
+        """Process a batch of audio embedding jobs."""
+        self._process_audio_batch_gpu(audio_jobs)
+    
+    def _process_audio_batch_gpu(self, audio_jobs: List[DownloadedJob]) -> None:
+        """Process audio jobs using GPU batch processing."""
+        # Prepare batch data
+        audio_files = []
+        job_metadata = []
+        
+        for job in audio_jobs:
+            if job.audio_file and job.audio_file.exists():
+                audio_files.append(job.audio_file)
+                job_metadata.append(job)
+            else:
+                # Handle jobs with missing files individually
+                self.submit_result(job.task_id, job.track_id, None, "Audio file not available")
+        
+        if not audio_files:
+            return
+        
+        try:
+            # Generate embeddings in batch
+            embeddings = self.clap_embedding_generator.generate_embedding_batch(audio_files)
+            
+            # Submit results
+            for job, embedding in zip(job_metadata, embeddings):
+                success = self.submit_result(job.task_id, job.track_id, embedding, 
+                                           None if embedding else "Failed to compute audio embedding")
+                if success:
+                    logging.debug(f"Successfully submitted batch job {job.task_id}")
+                else:
+                    logging.warning(f"Failed to submit batch job {job.task_id}")
+                    
+        except Exception as e:
+            logging.error(f"Batch processing failed: {e}", exc_info=True)
+            # Fall back to individual processing
+            for job in job_metadata:
+                self.process_job(job)
+        finally:
+            # Clean up audio files
+            for job in audio_jobs:
+                if job.audio_file:
+                    try:
+                        os.unlink(job.audio_file)
+                    except OSError as e:
+                        logging.error(f"Error deleting temp file {job.audio_file}: {e}")
+    
+    def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
+        """Process a batch of text embedding jobs."""
+        # Try to use batch processing if available, otherwise fall back to sequential
+        if hasattr(self.clap_embedding_generator, 'generate_text_embedding_batch'):
+            self._process_text_batch_gpu(text_jobs)
+        else:
+            # Fall back to sequential processing
+            for job in text_jobs:
+                self.process_job(job)
+    
+    def _process_text_batch_gpu(self, text_jobs: List[DownloadedJob]) -> None:
+        """Process text jobs using GPU batch processing."""
+        # Prepare batch data
+        text_queries = []
+        job_metadata = []
+        
+        for job in text_jobs:
+            text_query = job.original_job.get("text_query")
+            if text_query:
+                text_queries.append(text_query)
+                job_metadata.append(job)
+            else:
+                # Handle jobs with missing text individually
+                self.submit_result(job.task_id, job.track_id, None, "Missing text query")
+        
+        if not text_queries:
+            return
+        
+        try:
+            # Generate embeddings in batch
+            embeddings = self.clap_embedding_generator.generate_text_embedding_batch(text_queries)
+            
+            # Submit results
+            for job, embedding in zip(job_metadata, embeddings):
+                success = self.submit_result(job.task_id, job.track_id, embedding,
+                                           None if embedding else "Failed to compute text embedding")
+                if success:
+                    logging.debug(f"Successfully submitted batch text job {job.task_id}")
+                else:
+                    logging.warning(f"Failed to submit batch text job {job.task_id}")
+                    
+        except Exception as e:
+            logging.error(f"Text batch processing failed: {e}", exc_info=True)
+            # Fall back to individual processing
+            for job in text_jobs:
+                self.process_job(job)
+
     def run(self):
-        """Main worker loop."""
+        """Main worker loop with batch processing for better GPU utilization."""
         logging.info("Starting Mycelium client worker loop...")
 
         # TODO: refactor this, and think what to do with _check_config_reload()
@@ -426,26 +553,45 @@ class MyceliumClient:
 
         last_status_log = time.time()
         status_log_interval = 30
+        batch_size = self.config.client.gpu_batch_size
+        batch_timeout = self.config.client.gpu_batch_timeout
 
         try:
             while True:
-                try:
-                    downloaded_job = self.download_queue.get(timeout=1)
-                    self.process_job(downloaded_job)
-                    self.download_queue.task_done()
-
+                # Collect a batch of jobs for processing
+                batch = []
+                batch_start_time = time.time()
+                
+                # Try to collect up to batch_size jobs within batch_timeout seconds
+                while len(batch) < batch_size and (time.time() - batch_start_time) < batch_timeout:
+                    try:
+                        downloaded_job = self.download_queue.get(timeout=0.5)
+                        batch.append(downloaded_job)
+                    except Empty:
+                        if self.stop_event.is_set():
+                            break
+                        continue
+                
+                # Process the batch if we have any jobs
+                if batch:
+                    self._process_batch(batch)
+                    
+                    # Mark all jobs as done
+                    for _ in batch:
+                        self.download_queue.task_done()
+                    
                     if time.time() - last_status_log > status_log_interval:
                         self._log_queue_status("processing")
                         last_status_log = time.time()
-
-                except Empty:
+                        logging.info(f"Processed batch of {len(batch)} jobs")
+                else:
+                    # No jobs available
                     if self.stop_event.is_set():
                         break
                     if time.time() - last_status_log > status_log_interval:
                         self._log_queue_status("idle")
                         last_status_log = time.time()
                     self._check_config_reload()
-                    continue
 
         except KeyboardInterrupt:
             logging.info("\nShutting down worker...")

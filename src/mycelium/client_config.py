@@ -71,6 +71,8 @@ class ClientConfig:
     job_queue_size: int = 30
     poll_interval: int = 5
     download_workers: int = 10
+    gpu_batch_size: int = 4
+    gpu_batch_timeout: float = 2.0
 
 
 @dataclass
@@ -122,7 +124,9 @@ class MyceliumClientConfig:
             download_queue_size=config_data.get("client", {}).get("download_queue_size", 15),
             job_queue_size=config_data.get("client", {}).get("job_queue_size", 30),
             poll_interval=config_data.get("client", {}).get("poll_interval", 5),
-            download_workers=config_data.get("client", {}).get("download_workers", 10)
+            download_workers=config_data.get("client", {}).get("download_workers", 10),
+            gpu_batch_size=config_data.get("client", {}).get("gpu_batch_size", 4),
+            gpu_batch_timeout=config_data.get("client", {}).get("gpu_batch_timeout", 2.0)
         )
         
         client_api_config = ClientAPIConfig(
