@@ -212,3 +212,6 @@ class MyceliumClientConfig:
         logging.getLogger('chromadb').setLevel(logging.WARNING)
         logging.getLogger('urllib3').setLevel(logging.WARNING)
         logging.getLogger('requests').setLevel(logging.WARNING)
+        
+        # Disable verbose numba logging
+        logging.getLogger('numba.core.byteflow').setLevel(logging.WARNING)

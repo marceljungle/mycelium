@@ -273,6 +273,9 @@ class MyceliumConfig:
         # Configure Uvicorn loggers to prevent unwanted access logs
         logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
         logging.getLogger('uvicorn').setLevel(logging.WARNING)
+        
+        # Disable verbose numba logging
+        logging.getLogger('numba.core.byteflow').setLevel(logging.WARNING)
 
 
 # Export all necessary components
