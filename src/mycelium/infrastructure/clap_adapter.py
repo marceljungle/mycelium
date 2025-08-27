@@ -1,6 +1,7 @@
 """CLAP model integration for generating embeddings."""
 
 import logging
+import random
 from pathlib import Path
 from typing import List, Optional
 
@@ -18,11 +19,13 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             self,
             model_id: str = "laion/larger_clap_music_and_speech",
             target_sr: int = 48000,
-            chunk_duration_s: int = 10
+            chunk_duration_s: int = 20,
+            num_chunks: int = 3
     ):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
+        self.num_chunks = num_chunks
         self.logger = logging.getLogger(__name__)
 
         self.device = self.get_best_device()
@@ -119,14 +122,34 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             processor = self._get_processor()
             model = self._get_model()
 
-            waveform, _ = librosa.load(str(filepath), sr=self.target_sr, mono=True)
-            chunk_size = self.chunk_duration_s * self.target_sr
-            chunks = [waveform[i:i + chunk_size] for i in range(0, len(waveform), chunk_size)]
+            waveform, _ = librosa.load(
+                str(filepath),
+                sr=self.target_sr,
+                mono=True,
+                duration=180)
+            
+            # Calculate chunk size based on total duration divided by number of chunks
+            chunk_size = (self.chunk_duration_s * self.target_sr) // self.num_chunks
+            total_samples = len(waveform)
+            
+            # Need at least enough samples for all chunks
+            min_required_samples = self.num_chunks * chunk_size
+            if total_samples < min_required_samples:
+                self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for random sampling. Need at least {min_required_samples/self.target_sr:.1f}s.")
+                return None
+            
+            chunks = []
+            
+            # Sample random non-overlapping chunks
+            for _ in range(self.num_chunks):
+                max_start = total_samples - chunk_size
+                start_idx = random.randint(0, max_start)
+                end_idx = start_idx + chunk_size
+                chunk = waveform[start_idx:end_idx]
+                chunks.append(chunk)
 
-            if len(chunks) > 1 and len(chunks[-1]) < self.target_sr:
-                chunks.pop(-1)
             if not chunks:
-                self.logger.warning(f"File {filepath} is too short to process.")
+                self.logger.warning(f"No valid chunks generated for {filepath}.")
                 return None
 
             inputs = processor(
@@ -169,18 +192,33 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                         str(filepath), 
                         sr=self.target_sr, 
                         mono=True,
-                        duration=120
+                        duration=180
                     )
                     loaded_waveforms.append(waveform)  # Keep reference for cleanup
                     
-                    chunk_size = self.chunk_duration_s * self.target_sr
-                    chunks = [waveform[i:i + chunk_size] for i in range(0, len(waveform), chunk_size)]
+                    # Calculate chunk size based on total duration divided by number of chunks
+                    chunk_size = (self.chunk_duration_s * self.target_sr) // self.num_chunks
+                    total_samples = len(waveform)
                     
-                    if len(chunks) > 1 and len(chunks[-1]) < self.target_sr:
-                        chunks.pop(-1)
+                    # Need at least enough samples for all chunks
+                    min_required_samples = self.num_chunks * chunk_size
+                    if total_samples < min_required_samples:
+                        self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for random sampling. Need at least {min_required_samples/self.target_sr:.1f}s.")
+                        file_chunk_counts.append(0)
+                        continue
+                    
+                    chunks = []
+                    
+                    # Sample random non-overlapping chunks
+                    for _ in range(self.num_chunks):
+                        max_start = total_samples - chunk_size
+                        start_idx = random.randint(0, max_start)
+                        end_idx = start_idx + chunk_size
+                        chunk = waveform[start_idx:end_idx]
+                        chunks.append(chunk)
                     
                     if not chunks:
-                        self.logger.warning(f"File {filepath} is too short to process.")
+                        self.logger.warning(f"No valid chunks generated for {filepath}.")
                         file_chunk_counts.append(0)
                         continue
                     
