@@ -20,12 +20,14 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             model_id: str = "laion/larger_clap_music_and_speech",
             target_sr: int = 48000,
             chunk_duration_s: int = 20,
-            num_chunks: int = 3
+            num_chunks: int = 3,
+            max_load_duration_s: Optional[int] = 180
     ):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
         self.num_chunks = num_chunks
+        self.max_load_duration_s = max_load_duration_s
         self.logger = logging.getLogger(__name__)
 
         self.device = self.get_best_device()
@@ -133,8 +135,9 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             
             all_chunks = []
             file_chunk_counts = []
-            loaded_waveforms = []  # Keep track for cleanup
             
+            chunk_size_samples = self.chunk_duration_s * self.target_sr
+
             # Load and prepare all audio files
             for filepath in filepaths:
                 try:
@@ -142,18 +145,14 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                         str(filepath), 
                         sr=self.target_sr, 
                         mono=True,
-                        duration=180
+                        duration=self.max_load_duration_s
                     )
-                    loaded_waveforms.append(waveform)  # Keep reference for cleanup
                     
-                    # Calculate chunk size based on total duration divided by number of chunks
-                    chunk_size = (self.chunk_duration_s * self.target_sr) // self.num_chunks
                     total_samples = len(waveform)
                     
-                    # Need at least enough samples for all chunks
-                    min_required_samples = self.num_chunks * chunk_size
-                    if total_samples < min_required_samples:
-                        self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for random sampling. Need at least {min_required_samples/self.target_sr:.1f}s.")
+                    # Need at least enough samples for a single chunk
+                    if total_samples < chunk_size_samples:
+                        self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for sampling. Need at least {self.chunk_duration_s:.1f}s.")
                         file_chunk_counts.append(0)
                         continue
                     
@@ -161,9 +160,9 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                     
                     # Sample random non-overlapping chunks
                     for _ in range(self.num_chunks):
-                        max_start = total_samples - chunk_size
+                        max_start = total_samples - chunk_size_samples
                         start_idx = random.randint(0, max_start)
-                        end_idx = start_idx + chunk_size
+                        end_idx = start_idx + chunk_size_samples
                         chunk = waveform[start_idx:end_idx]
                         chunks.append(chunk)
                     
@@ -178,67 +177,39 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
                 except Exception as e:
                     self.logger.error(f"Error loading audio file {filepath}: {e}")
                     file_chunk_counts.append(0)
-                    loaded_waveforms.append(None)  # Maintain list alignment
             
-            try:
-                if not all_chunks:
-                    return [None] * len(filepaths)
-                
-                # Process all chunks in a single batch with memory management
-                inputs = processor(
-                    audios=all_chunks,
-                    sampling_rate=self.target_sr,
-                    return_tensors="pt",
-                    padding=True
-                )
-                
-                inputs = self._prepare_inputs(inputs)
-                
-                with torch.no_grad():
-                    audio_features = model.get_audio_features(**inputs)
-                
-                # Clear input tensors from memory immediately
-                del inputs
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
-                elif self.device == "mps":
-                    torch.mps.empty_cache()
-                
-                # Split results back to individual files and compute mean embeddings
-                results = []
-                chunk_idx = 0
-                
-                for chunk_count in file_chunk_counts:
-                    if chunk_count == 0:
-                        results.append(None)
-                    else:
-                        file_features = audio_features[chunk_idx:chunk_idx + chunk_count]
-                        mean_embedding = torch.mean(file_features, dim=0)
-                        normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-                        results.append(normalized_embedding.cpu().numpy().tolist())
-                        chunk_idx += chunk_count
-                
-                self.logger.info(f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
-                return results
-                
-            finally:
-                # Aggressive cleanup
-                del loaded_waveforms
-                del all_chunks
-                if 'audio_features' in locals():
-                    del audio_features
-                
-                # Force garbage collection
-                import gc
-                collected = gc.collect()
-                if collected > 0:
-                    self.logger.debug(f"Audio batch cleanup: collected {collected} objects")
-                
-                # Clear GPU cache
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
-                elif self.device == "mps":
-                    torch.mps.empty_cache()
+            if not all_chunks:
+                return [None] * len(filepaths)
+            
+            # Process all chunks in a single batch
+            inputs = processor(
+                audios=all_chunks,
+                sampling_rate=self.target_sr,
+                return_tensors="pt",
+                padding=True
+            )
+            
+            inputs = self._prepare_inputs(inputs)
+            
+            with torch.no_grad():
+                audio_features = model.get_audio_features(**inputs)
+            
+            # Split results back to individual files and compute mean embeddings
+            results = []
+            chunk_idx = 0
+            
+            for chunk_count in file_chunk_counts:
+                if chunk_count == 0:
+                    results.append(None)
+                else:
+                    file_features = audio_features[chunk_idx:chunk_idx + chunk_count]
+                    mean_embedding = torch.mean(file_features, dim=0)
+                    normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
+                    results.append(normalized_embedding.cpu().numpy().tolist())
+                    chunk_idx += chunk_count
+            
+            self.logger.info(f"Successfully processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)")
+            return results
             
         except Exception as e:
             self.logger.error(f"Error in batch audio embedding generation: {e}", exc_info=True)
