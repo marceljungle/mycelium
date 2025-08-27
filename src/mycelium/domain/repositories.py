@@ -78,8 +78,18 @@ class EmbeddingGenerator(ABC):
         pass
     
     @abstractmethod
+    def generate_embedding_batch(self, filepaths: List[Path]) -> List[Optional[List[float]]]:
+        """Generate embeddings for multiple audio files in a batch."""
+        pass
+    
+    @abstractmethod
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
         """Generate embedding for text description."""
+        pass
+
+    @abstractmethod
+    def generate_text_embedding_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """Generate embeddings for multiple text queries in a batch."""
         pass
 
     @staticmethod

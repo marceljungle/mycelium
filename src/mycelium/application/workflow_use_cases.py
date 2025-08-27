@@ -3,8 +3,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from tqdm import tqdm
-
 from .job_queue import JobQueueService
 from ..domain.models import TrackEmbedding
 from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
@@ -85,10 +83,11 @@ class ResumableEmbeddingProcessingUseCase:
         self.model_id = model_id
         self._should_stop = False
 
-    def execute(
+    def process_embeddings(
             self,
             progress_callback: Optional[callable] = None,
-            max_tracks: Optional[int] = None
+            max_tracks: Optional[int] = None,
+            batch_size: int = 16
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
         logger.info(f"Starting embedding processing with model: {self.model_id}")
@@ -116,55 +115,75 @@ class ResumableEmbeddingProcessingUseCase:
         failed_count = 0
 
         try:
-            # Process tracks with progress bar
-            for i, stored_track in enumerate(tqdm(unprocessed_tracks, desc="Processing embeddings")):
+            # Process tracks in batches for better performance
+            # batch_size = 16  # Configurable batch size for memory management
+            
+            for i in range(0, len(unprocessed_tracks), batch_size):
                 if self._should_stop:
                     logger.info("Processing stopped by user request")
                     break
-
-                try:
-                    # Convert to domain model
-                    track = stored_track.to_track()
-
-                    # Generate embedding
-                    embedding = self.embedding_generator.generate_embedding(filepath=track.filepath)
-
-                    if embedding:
-                        # Create track embedding object with model info
-                        track_embedding = TrackEmbedding(
-                            track=track, 
-                            embedding=embedding, 
-                            model_id=self.model_id,
-                            processed_at=datetime.now(timezone.utc)
-                        )
-
-                        # Save to vector database
-                        self.embedding_repository.save_embeddings(embeddings=[track_embedding])
-
-                        # Mark as processed in metadata database
-                        self.track_database.mark_track_processed(
-                            media_server_rating_key=stored_track.media_server_rating_key,
-                            model_id=self.model_id
-                        )
-
-                        processed_count += 1
-
-                        if progress_callback:
-                            progress_callback({
-                                "stage": "processing",
-                                "current": processed_count + failed_count,
-                                "total": len(unprocessed_tracks),
-                                "processed": processed_count,
-                                "failed": failed_count,
-                                "current_track": track.display_name
-                            })
-                    else:
-                        logger.warning(f"Failed to generate embedding for: {track.display_name}")
+                
+                batch = unprocessed_tracks[i:i + batch_size]
+                tracks = []
+                filepaths = []
+                valid_stored_tracks = []
+                
+                # Prepare batch data
+                for stored_track in batch:
+                    try:
+                        track = stored_track.to_track()
+                        tracks.append(track)
+                        filepaths.append(track.filepath)
+                        valid_stored_tracks.append(stored_track)
+                    except Exception as e:
+                        logger.error(f"Error converting track {stored_track.media_server_rating_key}: {e}")
                         failed_count += 1
+                
+                if not filepaths:
+                    continue
+                
+                # Generate embeddings in batch
+                embeddings = self.embedding_generator.generate_embedding_batch(filepaths)
+                
+                # Process results
+                for track, stored_track, embedding in zip(tracks, valid_stored_tracks, embeddings):
+                    try:
+                        if embedding:
+                            # Create track embedding object with model info
+                            track_embedding = TrackEmbedding(
+                                track=track, 
+                                embedding=embedding, 
+                                model_id=self.model_id,
+                                processed_at=datetime.now(timezone.utc)
+                            )
 
-                except Exception as e:
-                    logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
-                    failed_count += 1
+                            # Save to vector database
+                            self.embedding_repository.save_embeddings(embeddings=[track_embedding])
+
+                            # Mark as processed in metadata database
+                            self.track_database.mark_track_processed(
+                                media_server_rating_key=stored_track.media_server_rating_key,
+                                model_id=self.model_id
+                            )
+
+                            processed_count += 1
+
+                            if progress_callback:
+                                progress_callback({
+                                    "stage": "processing",
+                                    "current": processed_count + failed_count,
+                                    "total": len(unprocessed_tracks),
+                                    "processed": processed_count,
+                                    "failed": failed_count,
+                                    "current_track": track.display_name
+                                })
+                        else:
+                            logger.warning(f"Failed to generate embedding for: {track.display_name}")
+                            failed_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
+                        failed_count += 1
 
                 # Update session progress periodically
                 if (processed_count + failed_count) % 10 == 0:

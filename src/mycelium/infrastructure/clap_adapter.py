@@ -118,59 +118,9 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         return prepared
 
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
-        try:
-            processor = self._get_processor()
-            model = self._get_model()
-
-            waveform, _ = librosa.load(
-                str(filepath),
-                sr=self.target_sr,
-                mono=True,
-                duration=180)
-            
-            # Calculate chunk size based on total duration divided by number of chunks
-            chunk_size = (self.chunk_duration_s * self.target_sr) // self.num_chunks
-            total_samples = len(waveform)
-            
-            # Need at least enough samples for all chunks
-            min_required_samples = self.num_chunks * chunk_size
-            if total_samples < min_required_samples:
-                self.logger.warning(f"File {filepath} is too short ({total_samples/self.target_sr:.1f}s) for random sampling. Need at least {min_required_samples/self.target_sr:.1f}s.")
-                return None
-            
-            chunks = []
-            
-            # Sample random non-overlapping chunks
-            for _ in range(self.num_chunks):
-                max_start = total_samples - chunk_size
-                start_idx = random.randint(0, max_start)
-                end_idx = start_idx + chunk_size
-                chunk = waveform[start_idx:end_idx]
-                chunks.append(chunk)
-
-            if not chunks:
-                self.logger.warning(f"No valid chunks generated for {filepath}.")
-                return None
-
-            inputs = processor(
-                audios=chunks,
-                sampling_rate=self.target_sr,
-                return_tensors="pt",
-                padding=True
-            )
-
-            inputs = self._prepare_inputs(inputs)
-
-            with torch.no_grad():
-                audio_features = model.get_audio_features(**inputs)
-                mean_embedding = torch.mean(audio_features, dim=0)
-                normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-
-            return normalized_embedding.cpu().numpy().tolist()
-
-        except Exception as e:
-            self.logger.error(f"Error generating audio embedding for {filepath}: {e}", exc_info=True)
-            return None
+        """Generate embedding for a single audio file by delegating to batch method."""
+        results = self.generate_embedding_batch([filepath])
+        return results[0] if results else None
 
     def generate_embedding_batch(self, filepaths: List[Path]) -> List[Optional[List[float]]]:
         """Generate embeddings for multiple audio files in a single GPU batch"""
@@ -292,31 +242,12 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             
         except Exception as e:
             self.logger.error(f"Error in batch audio embedding generation: {e}", exc_info=True)
-            # Fall back to individual processing
-            return [self.generate_embedding(fp) for fp in filepaths]
+            return [None] * len(filepaths)
 
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
-        try:
-            processor = self._get_processor()
-            model = self._get_model()
-
-            inputs = processor(
-                text=[text],
-                return_tensors="pt",
-                padding=True
-            )
-
-            inputs = self._prepare_inputs(inputs)
-
-            with torch.no_grad():
-                text_features = model.get_text_features(**inputs)
-                text_embedding = torch.nn.functional.normalize(text_features, p=2, dim=-1)
-
-            return text_embedding.cpu().numpy().tolist()[0]
-
-        except Exception as e:
-            self.logger.error(f"Error generating text embedding for '{text}': {e}", exc_info=True)
-            return None
+        """Generate embedding for a single text query by delegating to batch method."""
+        results = self.generate_text_embedding_batch([text])
+        return results[0] if results else None
 
     def generate_text_embedding_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
         """Generate embeddings for multiple text queries in a single GPU batch for better utilization."""
@@ -346,8 +277,7 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             
         except Exception as e:
             self.logger.error(f"Error in batch text embedding generation: {e}", exc_info=True)
-            # Fall back to individual processing
-            return [self.generate_text_embedding(text) for text in texts]
+            return [None] * len(texts)
 
     def unload_model(self) -> None:
         """Unload model to free GPU memory."""
