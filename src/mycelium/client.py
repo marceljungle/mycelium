@@ -434,6 +434,7 @@ class MyceliumClient:
         """Main worker loop."""
         logging.info("Starting Mycelium client worker loop...")
 
+        # TODO: refactor this, and think what to do with _check_config_reload()
         if not self.register_with_server():
             logging.error("Failed to register with server. Exiting.")
             return

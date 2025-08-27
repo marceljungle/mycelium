@@ -47,10 +47,12 @@ class MyceliumService:
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
             model_id=config.clap.model_id,
-            batch_size=config.chroma.batch_size
+            batch_size=config.chroma.batch_size,
+            media_server_type=config.media_server.type
         )
 
-        self.track_database = TrackDatabase(db_path=config.database.get_db_path())
+        self.track_database = TrackDatabase(db_path=config.database.get_db_path(),
+                                            media_server_type=config.media_server.type)
 
         self.music_search = MusicSearchUseCase(
             embedding_repository=self.embedding_repository,
@@ -149,7 +151,6 @@ class MyceliumService:
     ) -> List[SearchResult]:
         """Search for tracks similar to a given track ID."""
         return self.music_search.search_by_track_id(track_id=track_id,
-                                                    media_server_type=self._config.media_server.type,
                                                     n_results=n_results)
 
     def get_database_stats(self) -> dict:
@@ -165,8 +166,7 @@ class MyceliumService:
     def get_track_by_id(self, track_id: str) -> Optional[Track]:
         """Get track information by Plex rating key."""
         # Try database first (faster)
-        stored_track = self.track_database.get_track_by_id(media_server_rating_key=track_id,
-                                                           media_server_type=self._config.media_server.type.value)
+        stored_track = self.track_database.get_track_by_id(media_server_rating_key=track_id)
         if stored_track:
             return stored_track.to_track()
 
@@ -210,9 +210,11 @@ class MyceliumService:
         """Count tracks matching advanced search criteria in the database."""
         return self.track_database.count_search_tracks_advanced(artist=artist, album=album, title=title)
 
-    def has_embedding(self, track: Track) -> bool:
+    def has_embedding(self, track_id: str) -> bool:
         """Check if embedding exists for a track."""
-        return self.embedding_repository.has_embedding(track)
+        track_id = Track(media_server_type=self._config.media_server.type,
+              media_server_rating_key=track_id).unique_id
+        return self.embedding_repository.has_embedding(track_id)
 
     def save_embedding(self, track_id: str, embedding: List[float]) -> None:
         """Save an embedding for a track."""
@@ -227,7 +229,6 @@ class MyceliumService:
             self.embedding_repository.save_embedding(track_embedding)
             # Also mark as processed in track database
             self.track_database.mark_track_processed(media_server_rating_key=track_id,
-                                                     media_server_type=track.media_server_type.value,
                                                      model_id=self._config.clap.model_id)
 
     def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:

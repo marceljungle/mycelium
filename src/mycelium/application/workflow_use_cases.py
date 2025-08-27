@@ -38,7 +38,8 @@ class SeparatedLibraryScanUseCase:
 
             # Save tracks to database
             scan_timestamp = datetime.now(timezone.utc)
-            stats = self.track_database.save_tracks(tracks, scan_timestamp)
+            stats = self.track_database.save_tracks(tracks=tracks,
+                                                    scan_timestamp=scan_timestamp)
 
             # Complete scan session
             self.track_database.complete_scan_session(
@@ -93,7 +94,8 @@ class ResumableEmbeddingProcessingUseCase:
         logger.info(f"Starting embedding processing with model: {self.model_id}")
 
         # Get unprocessed tracks for this specific model
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(self.model_id, limit=max_tracks)
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(model_id=self.model_id,
+                                                                        limit=max_tracks)
 
         if not unprocessed_tracks:
             logger.info("No unprocessed tracks found")
@@ -107,7 +109,8 @@ class ResumableEmbeddingProcessingUseCase:
         logger.info(f"Found {len(unprocessed_tracks)} unprocessed tracks")
 
         # Start processing session
-        session_id = self.track_database.start_processing_session(len(unprocessed_tracks), self.model_id)
+        session_id = self.track_database.start_processing_session(total_tracks=len(unprocessed_tracks),
+                                                                  model_id=self.model_id)
 
         processed_count = 0
         failed_count = 0
@@ -124,7 +127,7 @@ class ResumableEmbeddingProcessingUseCase:
                     track = stored_track.to_track()
 
                     # Generate embedding
-                    embedding = self.embedding_generator.generate_embedding(track.filepath)
+                    embedding = self.embedding_generator.generate_embedding(filepath=track.filepath)
 
                     if embedding:
                         # Create track embedding object with model info
@@ -136,13 +139,12 @@ class ResumableEmbeddingProcessingUseCase:
                         )
 
                         # Save to vector database
-                        self.embedding_repository.save_embeddings([track_embedding])
+                        self.embedding_repository.save_embeddings(embeddings=[track_embedding])
 
                         # Mark as processed in metadata database
                         self.track_database.mark_track_processed(
-                            stored_track.media_server_rating_key,
-                            stored_track.media_server_type,
-                            self.model_id
+                            media_server_rating_key=stored_track.media_server_rating_key,
+                            model_id=self.model_id
                         )
 
                         processed_count += 1

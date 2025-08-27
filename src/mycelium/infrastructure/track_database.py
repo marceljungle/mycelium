@@ -48,8 +48,6 @@ class StoredTrack:
             added_at=added_at or now,
             last_scanned=now
         )
-    
-
 
 
 @dataclass
@@ -61,20 +59,24 @@ class TrackEmbeddingRecord:
     model_id: str
     processed_at: datetime
 
+logger = logging.getLogger(__name__)
 
 class TrackDatabase:
     """SQLite database for managing track metadata and processing state."""
     
-    def __init__(self, db_path: Optional[str]):
+    def __init__(self, db_path: Optional[str], media_server_type: MediaServerType) -> None:
         # Default to user data directory if path is not provided
         if not db_path:
             db_path = str(get_user_data_dir() / "mycelium_tracks.db")
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.media_server_type = media_server_type
+        logger.debug(f"Initializing TrackDatabase with path: {self.db_path}, media_server_type: {media_server_type}")
         self._init_database()
     
     def _init_database(self) -> None:
         """Initialize database tables."""
+        logger.debug(f"Initializing database tables at {self.db_path}")
         with sqlite3.connect(self.db_path) as conn:
             # Create tracks table
             conn.execute("""
@@ -136,20 +138,25 @@ class TrackDatabase:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_track_embeddings_lookup ON track_embeddings(media_server_rating_key, media_server_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_track_embeddings_model ON track_embeddings(model_id)")
             conn.commit()
+            logger.debug("Database tables and indexes created/verified successfully")
     
 
     
     def start_scan_session(self) -> int:
         """Start a new scan session and return session ID."""
+        logger.debug("Starting new scan session")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "INSERT INTO scan_sessions (started_at) VALUES (?)",
                 (datetime.now(timezone.utc),)
             )
-            return cursor.lastrowid
+            session_id = cursor.lastrowid
+            logger.debug(f"Started scan session with ID: {session_id}")
+            return session_id
     
     def complete_scan_session(self, session_id: int, tracks_found: int, tracks_new: int, tracks_updated: int) -> None:
         """Complete a scan session with statistics."""
+        logger.debug(f"Completing scan session {session_id}: found={tracks_found}, new={tracks_new}, updated={tracks_updated}")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 UPDATE scan_sessions 
@@ -157,16 +164,21 @@ class TrackDatabase:
                 WHERE id = ?
             """, (datetime.now(timezone.utc), tracks_found, tracks_new, tracks_updated, session_id))
             conn.commit()
+        logger.debug(f"Scan session {session_id} completed successfully")
     
     def save_tracks(self, tracks: List[Track], scan_timestamp: datetime = None) -> Dict[str, int]:
         """Save tracks to database, return statistics."""
         if scan_timestamp is None:
             scan_timestamp = datetime.now(timezone.utc)
         
+        logger.debug(f"Saving {len(tracks)} tracks to database with timestamp {scan_timestamp}")
         stats = {"new": 0, "updated": 0, "total": len(tracks)}
         
         with sqlite3.connect(self.db_path) as conn:
-            for track in tracks:
+            for i, track in enumerate(tracks):
+                if i % 100 == 0 and i > 0:
+                    logger.debug(f"Processing track {i}/{len(tracks)}")
+                
                 # Check if track exists
                 existing = conn.execute(
                     "SELECT media_server_rating_key, last_scanned FROM tracks WHERE media_server_rating_key = ? AND media_server_type = ?",
@@ -182,6 +194,7 @@ class TrackDatabase:
                     """, (track.artist, track.album, track.title, str(track.filepath), 
                          scan_timestamp, track.media_server_rating_key, track.media_server_type.value))
                     stats["updated"] += 1
+                    logger.debug(f"Updated track: {track.artist} - {track.title}")
                 else:
                     # Insert new track
                     conn.execute("""
@@ -191,13 +204,16 @@ class TrackDatabase:
                     """, (track.media_server_rating_key, track.media_server_type.value, track.artist, track.album, track.title,
                          str(track.filepath), scan_timestamp, scan_timestamp))
                     stats["new"] += 1
+                    logger.debug(f"Added new track: {track.artist} - {track.title}")
             
             conn.commit()
         
+        logger.debug(f"Track save operation completed: {stats}")
         return stats
     
     def get_unprocessed_tracks(self, model_id: str, limit: Optional[int] = None) -> List[StoredTrack]:
         """Get tracks that haven't been processed for embeddings with the specified model."""
+        logger.debug(f"Getting unprocessed tracks for model: {model_id}, limit: {limit}")
         query = """
             SELECT t.media_server_rating_key, t.media_server_type, t.artist, t.album, t.title, 
                    t.filepath, t.added_at, t.last_scanned
@@ -219,7 +235,7 @@ class TrackDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, params).fetchall()
             
-            return [
+            tracks = [
                 StoredTrack(
                     media_server_rating_key=row["media_server_rating_key"],
                     media_server_type=row["media_server_type"],
@@ -232,24 +248,30 @@ class TrackDatabase:
                 )
                 for row in rows
             ]
+            
+        logger.debug(f"Found {len(tracks)} unprocessed tracks for model {model_id}")
+        return tracks
     
-    def mark_track_processed(self, media_server_rating_key: str, media_server_type: str, model_id: str, processed_at: datetime = None) -> None:
+    def mark_track_processed(self, media_server_rating_key: str, model_id: str, processed_at: datetime = None) -> None:
         """Mark a track as processed for embeddings with a specific model."""
         if processed_at is None:
             processed_at = datetime.now(timezone.utc)
         
+        logger.debug(f"Marking track {media_server_rating_key} as processed for model {model_id}")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO track_embeddings 
                 (media_server_rating_key, media_server_type, model_id, processed_at)
                 VALUES (?, ?, ?, ?)
-            """, (media_server_rating_key, media_server_type, model_id, processed_at))
+            """, (media_server_rating_key, self.media_server_type.value, model_id, processed_at))
             conn.commit()
+        logger.debug(f"Track {media_server_rating_key} marked as processed for model {model_id}")
     
 
     
     def get_processing_stats(self, model_id: Optional[str] = None) -> Dict[str, int]:
         """Get processing statistics, optionally filtered by model."""
+        logger.debug(f"Getting processing stats for model: {model_id}")
         with sqlite3.connect(self.db_path) as conn:
             stats = {}
             
@@ -278,19 +300,24 @@ class TrackDatabase:
             
             stats["unprocessed_tracks"] = stats["total_tracks"] - stats["processed_tracks"]
             
+            logger.debug(f"Processing stats: {stats}")
             return stats
     
     def start_processing_session(self, total_tracks: int, model_id: str) -> int:
         """Start a new processing session and return session ID."""
+        logger.debug(f"Starting processing session for {total_tracks} tracks with model {model_id}")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
                 INSERT INTO processing_sessions (started_at, total_tracks, model_id)
                 VALUES (?, ?, ?)
             """, (datetime.now(timezone.utc), total_tracks, model_id))
-            return cursor.lastrowid
+            session_id = cursor.lastrowid
+            logger.debug(f"Started processing session with ID: {session_id}")
+            return session_id
     
     def update_processing_session(self, session_id: int, processed_count: int, failed_count: int = 0) -> None:
         """Update processing session progress."""
+        logger.debug(f"Updating processing session {session_id}: processed={processed_count}, failed={failed_count}")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 UPDATE processing_sessions 
@@ -301,6 +328,7 @@ class TrackDatabase:
     
     def complete_processing_session(self, session_id: int) -> None:
         """Complete a processing session."""
+        logger.debug(f"Completing processing session {session_id}")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
                 UPDATE processing_sessions 
@@ -308,6 +336,7 @@ class TrackDatabase:
                 WHERE id = ?
             """, (datetime.now(timezone.utc), session_id))
             conn.commit()
+        logger.debug(f"Processing session {session_id} completed successfully")
     
     def get_latest_processing_session(self) -> Optional[Dict[str, Any]]:
         """Get the latest processing session."""
@@ -324,18 +353,19 @@ class TrackDatabase:
             return None
 
 
-    def get_track_by_id(self, media_server_rating_key: str, media_server_type: str = "plex") -> Optional[StoredTrack]:
+    def get_track_by_id(self, media_server_rating_key: str) -> Optional[StoredTrack]:
         """Get a specific track by media server rating key."""
+        logger.debug(f"Getting track by ID: {media_server_rating_key}")
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute("""
                 SELECT media_server_rating_key, media_server_type, artist, album, title, filepath, added_at, last_scanned
                 FROM tracks 
                 WHERE media_server_rating_key = ? AND media_server_type = ?
-            """, (media_server_rating_key, media_server_type)).fetchone()
+            """, (media_server_rating_key, self.media_server_type.value)).fetchone()
             
             if row:
-                return StoredTrack(
+                track = StoredTrack(
                     media_server_rating_key=row["media_server_rating_key"],
                     media_server_type=row["media_server_type"],
                     artist=row["artist"],
@@ -345,6 +375,10 @@ class TrackDatabase:
                     added_at=datetime.fromisoformat(row["added_at"]),
                     last_scanned=datetime.fromisoformat(row["last_scanned"])
                 )
+                logger.debug(f"Found track: {track.artist} - {track.title}")
+                return track
+            
+            logger.debug(f"Track not found: {media_server_rating_key}")
             return None
     
 
@@ -380,6 +414,7 @@ class TrackDatabase:
     
     def search_tracks(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[StoredTrack]:
         """Search tracks by artist, album, or title."""
+        logger.debug(f"Searching tracks with query: '{search_query}', limit: {limit}, offset: {offset}")
         query = """
             SELECT media_server_rating_key, media_server_type, artist, album, title, filepath, added_at, last_scanned
             FROM tracks 
@@ -397,7 +432,7 @@ class TrackDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, params).fetchall()
             
-            return [
+            tracks = [
                 StoredTrack(
                     media_server_rating_key=row["media_server_rating_key"],
                     media_server_type=row["media_server_type"],
@@ -410,6 +445,9 @@ class TrackDatabase:
                 )
                 for row in rows
             ]
+            
+        logger.debug(f"Search found {len(tracks)} tracks matching '{search_query}'")
+        return tracks
     
     def count_search_tracks(self, search_query: str) -> int:
         """Count tracks matching search query."""
@@ -435,6 +473,7 @@ class TrackDatabase:
         offset: int = 0
     ) -> List[StoredTrack]:
         """Search tracks by specific artist, album, and/or title criteria using AND logic."""
+        logger.debug(f"Advanced search: artist='{artist}', album='{album}', title='{title}', limit={limit}, offset={offset}")
         conditions = []
         params = []
         
@@ -452,6 +491,7 @@ class TrackDatabase:
         
         if not conditions:
             # If no search criteria provided, return all tracks
+            logger.debug("No search criteria provided, returning all tracks")
             return self.get_all_tracks(limit=limit, offset=offset)
         
         query = f"""
@@ -468,7 +508,7 @@ class TrackDatabase:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, params).fetchall()
             
-            return [
+            tracks = [
                 StoredTrack(
                     media_server_rating_key=row["media_server_rating_key"],
                     media_server_type=row["media_server_type"],
@@ -481,6 +521,9 @@ class TrackDatabase:
                 )
                 for row in rows
             ]
+            
+        logger.debug(f"Advanced search found {len(tracks)} tracks")
+        return tracks
     
     def count_search_tracks_advanced(
         self,

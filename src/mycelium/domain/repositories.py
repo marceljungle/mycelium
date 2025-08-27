@@ -64,18 +64,8 @@ class EmbeddingRepository(ABC):
         pass
 
     @abstractmethod
-    def has_embedding(self, track: Track) -> bool:
+    def has_embedding(self, track_id: str) -> bool:
         """Check if an embedding exists for a specific track."""
-        pass
-    
-    @abstractmethod
-    def has_embedding_for_track(self, track: Track) -> bool:
-        """Check if an embedding exists for a specific track object."""
-        pass
-    
-    @abstractmethod
-    def get_embedding_for_track(self, track: Track) -> Optional[List[float]]:
-        """Get embedding for a specific track object."""
         pass
 
 
