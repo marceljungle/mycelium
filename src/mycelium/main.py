@@ -92,8 +92,7 @@ def run_client_api(client_config: MyceliumClientConfig) -> None:
 
 def run_client_mode(
         server_host: str = "localhost",
-        server_port: int = 8000,
-        model_id: str = "laion/larger_clap_music_and_speech"
+        server_port: int = 8000
 ) -> None:
     """Run client mode (GPU worker + Client API + Frontend)."""
     logger.info("Starting Mycelium Client...")
@@ -170,8 +169,7 @@ def client(
 
         run_client_mode(
             server_host=final_host,
-            server_port=final_port,
-            model_id=client_config.clap.model_id
+            server_port=final_port
         )
     except Exception as e:
         typer.echo(f"Client error: {e}", err=True)

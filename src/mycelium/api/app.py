@@ -268,7 +268,7 @@ async def search_by_text_get(
                 query=q
             )
 
-        logger.info(f"No active workers available for text search")
+        logger.info("No active workers available for text search")
         # No active workers - return confirmation required
         return SearchConfirmationRequiredResponse(
             status="confirmation_required",

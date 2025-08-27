@@ -120,22 +120,6 @@ class MyceliumClient:
         except Exception as e:
             logging.error(f"Error checking config reload: {e}")
 
-    # TODO: move this to clap adapter and also unload for the server side when app is closed
-    def _unload_model(self):
-        """Unload model to free GPU memory."""
-        if self.clap_embedding_generator.model is not None:
-            del self.clap_embedding_generator.model
-            del self.clap_embedding_generator.processor
-            self.clap_embedding_generator.model = None
-            self.clap_embedding_generator.processor = None
-
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
-            elif self.device == "mps":
-                torch.mps.empty_cache()
-
-            logging.info("Model unloaded")
-
     def reload_config(self):
         """Reload configuration and apply changes that can be hot-reloaded."""
         try:
@@ -160,7 +144,7 @@ class MyceliumClient:
 
             if clap_changed:
                 logging.info("CLAP configuration changed, recreating embedding generator...")
-                self._unload_model()
+                self.clap_embedding_generator.unload_model()
                 self.clap_embedding_generator = CLAPEmbeddingGenerator(
                     model_id=new_config.clap.model_id,
                     target_sr=new_config.clap.target_sr,
@@ -470,7 +454,7 @@ class MyceliumClient:
         finally:
             self._log_queue_status("shutdown")
             self._stop_workers()
-            self._unload_model()
+            self.clap_embedding_generator.unload_model()
             logging.info("Worker stopped")
 
 

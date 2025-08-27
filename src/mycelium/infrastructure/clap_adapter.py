@@ -171,3 +171,18 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
         except Exception as e:
             self.logger.error(f"Error generating text embedding for '{text}': {e}", exc_info=True)
             return None
+
+    def unload_model(self) -> None:
+        """Unload model to free GPU memory."""
+        if self.model is not None:
+            del self.model
+            del self.processor
+            self.model = None
+            self.processor = None
+
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            elif self.device == "mps":
+                torch.mps.empty_cache()
+
+            self.logger.info("Model unloaded")
