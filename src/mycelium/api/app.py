@@ -953,8 +953,7 @@ async def compute_on_server(request: ComputeOnServerRequest):
 
         logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
 
-        # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(os.fspath(track_info.filepath))
+        embedding = service.compute_single_embedding(os.fspath(track_info.filepath))
 
         if embedding is None or len(embedding) == 0:
             logger.error(f"Failed to compute embedding for track {request.track_id}")

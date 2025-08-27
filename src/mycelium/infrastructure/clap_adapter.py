@@ -156,7 +156,8 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
                     if num_possible_bins == 0:
                         self.logger.warning(
-                            f"File {filepath} is too short ({total_samples / self.target_sr:.1f}s) for even one chunk of {self.chunk_duration_s:.1f}s.")
+                            f"File {filepath} is too short ({total_samples / self.target_sr:.1f}s) "
+                            f"for even one chunk of {self.chunk_duration_s:.1f}s.")
                         file_chunk_counts.append(0)
                         continue
 

@@ -229,8 +229,8 @@ class MyceliumService:
             self.track_database.mark_track_processed(media_server_rating_key=track_id,
                                                      model_id=self._config.clap.model_id)
 
-    def compute_embedding_cpu(self, audio_filepath: str) -> List[float]:
-        """Compute embedding on CPU (fallback)."""
+    def compute_single_embedding(self, audio_filepath: str) -> List[float]:
+        """Compute embedding for a single audio file."""
         return self.embedding_generator.generate_embedding(Path(audio_filepath))
 
     def initialize_worker_processing(self, job_queue_service, api_host: str = "localhost", api_port: int = 8000):
