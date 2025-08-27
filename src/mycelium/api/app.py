@@ -939,7 +939,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
 
 @app.post("/compute/on_server")
-async def compute_on_server(request: ComputeOnServerRequest, background_tasks: BackgroundTasks):
+async def compute_on_server(request: ComputeOnServerRequest):
     """Compute embedding on server CPU after user confirmation."""
     try:
         logger.info(f"Starting server-side computation for track {request.track_id}")

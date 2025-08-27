@@ -97,7 +97,7 @@ class MyceliumService:
         try:
             # Reset stop flag for new session
             self.reset_processing_stop_flag()
-            result = self.resumable_processing.execute(progress_callback, max_tracks)
+            result = self.resumable_processing.process_embeddings(progress_callback, max_tracks)
             return result
         finally:
             self._processing_in_progress = False

@@ -373,52 +373,6 @@ class MyceliumClient:
             logging.error(f"Error submitting result for task {task_id}: {e}")
             return False
 
-    def process_job(self, downloaded_job: DownloadedJob) -> bool:
-        """Process a downloaded job."""
-        task_id = downloaded_job.task_id
-        track_id = downloaded_job.track_id
-        original_job = downloaded_job.original_job
-        task_type = original_job.get("task_type", "compute_audio_embedding")
-
-        logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
-        embedding = None
-        error_message = None
-
-        try:
-            if task_type == "compute_audio_embedding":
-                if downloaded_job.audio_file:
-                    embedding = self.clap_embedding_generator.generate_embedding(filepath=downloaded_job.audio_file)
-                    if not embedding:
-                        error_message = "Failed to compute audio embedding"
-                else:
-                    error_message = "Audio file not available for processing"
-
-            elif task_type == "compute_text_embedding":
-                text_query = original_job.get("text_query")
-                if text_query:
-                    embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
-                    if not embedding:
-                        error_message = "Failed to compute text embedding"
-                else:
-                    error_message = "Missing text query for text embedding task"
-            else:
-                error_message = f"Unknown task type: {task_type}"
-
-            success = self.submit_result(task_id, track_id, embedding, error_message)
-            if success:
-                logging.info(f"Successfully processed and submitted job {task_id}")
-            else:
-                logging.warning(f"Failed to submit result for job {task_id}")
-
-            return success
-
-        finally:
-            if downloaded_job.audio_file:
-                try:
-                    os.unlink(downloaded_job.audio_file)
-                except OSError as e:
-                    logging.error(f"Error deleting temp file {downloaded_job.audio_file}: {e}")
-
     def _process_batch(self, batch: List[DownloadedJob]) -> None:
         """Process a batch of jobs to improve GPU utilization."""
         if not batch:
@@ -481,9 +435,6 @@ class MyceliumClient:
                     
         except Exception as e:
             logging.error(f"Batch processing failed: {e}", exc_info=True)
-            # Fall back to individual processing
-            for job in job_metadata:
-                self.process_job(job)
         finally:
             # Clean up audio files
             for job in audio_jobs:
@@ -500,13 +451,8 @@ class MyceliumClient:
     
     def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
         """Process a batch of text embedding jobs."""
-        # Try to use batch processing if available, otherwise fall back to sequential
-        if hasattr(self.clap_embedding_generator, 'generate_text_embedding_batch'):
-            self._process_text_batch_gpu(text_jobs)
-        else:
-            # Fall back to sequential processing
-            for job in text_jobs:
-                self.process_job(job)
+        self._process_text_batch_gpu(text_jobs)
+
     
     def _process_text_batch_gpu(self, text_jobs: List[DownloadedJob]) -> None:
         """Process text jobs using GPU batch processing."""
@@ -541,9 +487,6 @@ class MyceliumClient:
                     
         except Exception as e:
             logging.error(f"Text batch processing failed: {e}", exc_info=True)
-            # Fall back to individual processing
-            for job in text_jobs:
-                self.process_job(job)
 
     def run(self):
         """Main worker loop with batch processing for better GPU utilization."""
