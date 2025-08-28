@@ -87,7 +87,7 @@ class ResumableEmbeddingProcessingUseCase:
             self,
             progress_callback: Optional[callable] = None,
             max_tracks: Optional[int] = None,
-            batch_size: int = 16
+            batch_size: int = 50
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
         logger.info(f"Starting embedding processing with model: {self.model_id}")
@@ -115,9 +115,6 @@ class ResumableEmbeddingProcessingUseCase:
         failed_count = 0
 
         try:
-            # Process tracks in batches for better performance
-            # batch_size = 16  # Configurable batch size for memory management
-            
             for i in range(0, len(unprocessed_tracks), batch_size):
                 if self._should_stop:
                     logger.info("Processing stopped by user request")
