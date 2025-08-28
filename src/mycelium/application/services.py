@@ -31,6 +31,7 @@ class MyceliumService:
             self,
             config: MyceliumConfig
     ):
+        self._config = config
         self.worker_processing = None
         self.logger = logging.getLogger(__name__)
 
@@ -41,7 +42,11 @@ class MyceliumService:
             music_library_name=config.plex.music_library_name
         )
 
-        self.embedding_generator = CLAPEmbeddingGenerator(model_id=config.clap.model_id)
+        self.embedding_generator = CLAPEmbeddingGenerator(model_id=config.clap.model_id,
+                                                          target_sr=config.clap.target_sr,
+                                                          chunk_duration_s=config.clap.chunk_duration_s,
+                                                          num_chunks=config.clap.num_chunks,
+                                                          max_load_duration_s=config.clap.max_load_duration_s)
 
         self.embedding_repository = ChromaEmbeddingRepository(
             db_path=config.chroma.get_db_path(),
@@ -75,7 +80,7 @@ class MyceliumService:
         # Processing state tracking
         self._processing_in_progress = False
 
-        self._config = config
+
 
     def scan_library_to_database(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Scan the Plex library and store metadata to database."""
@@ -98,7 +103,8 @@ class MyceliumService:
             # Reset stop flag for new session
             self.reset_processing_stop_flag()
             result = self.resumable_processing.process_embeddings(progress_callback=progress_callback,
-                                                                  max_tracks=max_tracks)
+                                                                  max_tracks=max_tracks,
+                                                                  batch_size=self._config.server.gpu_batch_size)
             return result
         finally:
             self._processing_in_progress = False

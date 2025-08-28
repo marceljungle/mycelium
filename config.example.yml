@@ -18,11 +18,17 @@ chroma:
   collection_name: my_music_library
   batch_size: 1000
 
+# Server configuration
+server:
+  gpu_batch_size: 16
+
 # CLAP model configuration
 clap:
   model_id: laion/larger_clap_music_and_speech
   target_sr: 48000
   chunk_duration_s: 10
+  num_chunks: 3
+  max_load_duration_s: 120
 
 # Client configuration for worker connections
 client:
@@ -31,6 +37,10 @@ client:
 
 # Database configuration (SQLite for track metadata)
 database: {}
+
+# Media server configuration
+media_server:
+  type: plex
 
 # Logging configuration
 logging:

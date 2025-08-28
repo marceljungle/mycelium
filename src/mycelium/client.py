@@ -65,7 +65,9 @@ class MyceliumClient:
 
         self.clap_embedding_generator = CLAPEmbeddingGenerator(model_id=self.config.clap.model_id,
                                                                target_sr=self.config.clap.target_sr,
-                                                               chunk_duration_s=self.config.clap.chunk_duration_s)
+                                                               chunk_duration_s=self.config.clap.chunk_duration_s,
+                                                               num_chunks=self.config.clap.num_chunks,
+                                                               max_load_duration_s=self.config.clap.max_load_duration_s)
 
         logging.info("Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
@@ -148,7 +150,9 @@ class MyceliumClient:
                 self.clap_embedding_generator = CLAPEmbeddingGenerator(
                     model_id=new_config.clap.model_id,
                     target_sr=new_config.clap.target_sr,
-                    chunk_duration_s=new_config.clap.chunk_duration_s
+                    chunk_duration_s=new_config.clap.chunk_duration_s,
+                    num_chunks=new_config.clap.num_chunks,
+                    max_load_duration_s=new_config.clap.max_load_duration_s
                 )
                 logging.info("CLAP embedding generator updated.")
 
@@ -173,8 +177,6 @@ class MyceliumClient:
             # GPU batch settings can be hot-reloaded
             if new_config.client.gpu_batch_size != self.config.client.gpu_batch_size:
                 logging.info(f"GPU batch size updated: {self.config.client.gpu_batch_size} -> {new_config.client.gpu_batch_size}")
-            if new_config.client.gpu_batch_timeout != self.config.client.gpu_batch_timeout:
-                logging.info(f"GPU batch timeout updated: {self.config.client.gpu_batch_timeout}s -> {new_config.client.gpu_batch_timeout}s")
 
             self.config = new_config
             logging.info("Client configuration reloaded successfully")
@@ -492,7 +494,6 @@ class MyceliumClient:
         """Main worker loop with batch processing for better GPU utilization."""
         logging.info("Starting Mycelium client worker loop...")
 
-        # TODO: refactor this, and think what to do with _check_config_reload()
         if not self.register_with_server():
             logging.error("Failed to register with server. Exiting.")
             return
@@ -503,16 +504,12 @@ class MyceliumClient:
         last_status_log = time.time()
         status_log_interval = 30
         batch_size = self.config.client.gpu_batch_size
-        batch_timeout = self.config.client.gpu_batch_timeout
 
         try:
             while True:
                 # Collect a batch of jobs for processing
                 batch = []
-                batch_start_time = time.time()
-                
-                # Try to collect up to batch_size jobs within batch_timeout seconds
-                while len(batch) < batch_size and (time.time() - batch_start_time) < batch_timeout:
+                while len(batch) < batch_size:
                     try:
                         downloaded_job = self.download_queue.get(timeout=0.5)
                         batch.append(downloaded_job)
