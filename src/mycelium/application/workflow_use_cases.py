@@ -1,9 +1,7 @@
 """New use cases for separated scanning and processing workflow."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-
-from tqdm import tqdm
 
 from .job_queue import JobQueueService
 from ..domain.models import TrackEmbedding
@@ -37,8 +35,9 @@ class SeparatedLibraryScanUseCase:
                 progress_callback({"stage": "scanning", "current": len(tracks), "total": len(tracks)})
 
             # Save tracks to database
-            scan_timestamp = datetime.utcnow()
-            stats = self.track_database.save_tracks(tracks, scan_timestamp)
+            scan_timestamp = datetime.now(timezone.utc)
+            stats = self.track_database.save_tracks(tracks=tracks,
+                                                    scan_timestamp=scan_timestamp)
 
             # Complete scan session
             self.track_database.complete_scan_session(
@@ -75,23 +74,27 @@ class ResumableEmbeddingProcessingUseCase:
             self,
             embedding_generator: EmbeddingGenerator,
             embedding_repository: EmbeddingRepository,
-            track_database: TrackDatabase
+            track_database: TrackDatabase,
+            model_id: str
     ):
         self.embedding_generator = embedding_generator
         self.embedding_repository = embedding_repository
         self.track_database = track_database
+        self.model_id = model_id
         self._should_stop = False
 
-    def execute(
+    def process_embeddings(
             self,
             progress_callback: Optional[callable] = None,
-            max_tracks: Optional[int] = None
+            max_tracks: Optional[int] = None,
+            batch_size: int = 16
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
-        logger.info("Starting embedding processing...")
+        logger.info(f"Starting embedding processing with model: {self.model_id}")
 
-        # Get unprocessed tracks
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
+        # Get unprocessed tracks for this specific model
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(model_id=self.model_id,
+                                                                        limit=max_tracks)
 
         if not unprocessed_tracks:
             logger.info("No unprocessed tracks found")
@@ -105,53 +108,82 @@ class ResumableEmbeddingProcessingUseCase:
         logger.info(f"Found {len(unprocessed_tracks)} unprocessed tracks")
 
         # Start processing session
-        session_id = self.track_database.start_processing_session(len(unprocessed_tracks))
+        session_id = self.track_database.start_processing_session(total_tracks=len(unprocessed_tracks),
+                                                                  model_id=self.model_id)
 
         processed_count = 0
         failed_count = 0
 
         try:
-            # Process tracks with progress bar
-            for i, stored_track in enumerate(tqdm(unprocessed_tracks, desc="Processing embeddings")):
+            # Process tracks in batches for better performance
+            # batch_size = 16  # Configurable batch size for memory management
+            
+            for i in range(0, len(unprocessed_tracks), batch_size):
                 if self._should_stop:
                     logger.info("Processing stopped by user request")
                     break
-
-                try:
-                    # Convert to domain model
-                    track = stored_track.to_track()
-
-                    # Generate embedding
-                    embedding = self.embedding_generator.generate_embedding(track.filepath)
-
-                    if embedding:
-                        # Create track embedding object
-                        track_embedding = TrackEmbedding(track=track, embedding=embedding)
-
-                        # Save to vector database
-                        self.embedding_repository.save_embeddings([track_embedding])
-
-                        # Mark as processed in metadata database
-                        self.track_database.mark_track_processed(stored_track.plex_rating_key)
-
-                        processed_count += 1
-
-                        if progress_callback:
-                            progress_callback({
-                                "stage": "processing",
-                                "current": processed_count + failed_count,
-                                "total": len(unprocessed_tracks),
-                                "processed": processed_count,
-                                "failed": failed_count,
-                                "current_track": track.display_name
-                            })
-                    else:
-                        logger.warning(f"Failed to generate embedding for: {track.display_name}")
+                
+                batch = unprocessed_tracks[i:i + batch_size]
+                tracks = []
+                filepaths = []
+                valid_stored_tracks = []
+                
+                # Prepare batch data
+                for stored_track in batch:
+                    try:
+                        track = stored_track.to_track()
+                        tracks.append(track)
+                        filepaths.append(track.filepath)
+                        valid_stored_tracks.append(stored_track)
+                    except Exception as e:
+                        logger.error(f"Error converting track {stored_track.media_server_rating_key}: {e}")
                         failed_count += 1
+                
+                if not filepaths:
+                    continue
+                
+                # Generate embeddings in batch
+                embeddings = self.embedding_generator.generate_embedding_batch(filepaths)
+                
+                # Process results
+                for track, stored_track, embedding in zip(tracks, valid_stored_tracks, embeddings):
+                    try:
+                        if embedding:
+                            # Create track embedding object with model info
+                            track_embedding = TrackEmbedding(
+                                track=track, 
+                                embedding=embedding, 
+                                model_id=self.model_id,
+                                processed_at=datetime.now(timezone.utc)
+                            )
 
-                except Exception as e:
-                    logger.error(f"Error processing track {stored_track.plex_rating_key}: {e}")
-                    failed_count += 1
+                            # Save to vector database
+                            self.embedding_repository.save_embeddings(embeddings=[track_embedding])
+
+                            # Mark as processed in metadata database
+                            self.track_database.mark_track_processed(
+                                media_server_rating_key=stored_track.media_server_rating_key,
+                                model_id=self.model_id
+                            )
+
+                            processed_count += 1
+
+                            if progress_callback:
+                                progress_callback({
+                                    "stage": "processing",
+                                    "current": processed_count + failed_count,
+                                    "total": len(unprocessed_tracks),
+                                    "processed": processed_count,
+                                    "failed": failed_count,
+                                    "current_track": track.display_name
+                                })
+                        else:
+                            logger.warning(f"Failed to generate embedding for: {track.display_name}")
+                            failed_count += 1
+
+                    except Exception as e:
+                        logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
+                        failed_count += 1
 
                 # Update session progress periodically
                 if (processed_count + failed_count) % 10 == 0:
@@ -200,9 +232,9 @@ class ProcessingProgressUseCase:
     def __init__(self, track_database: TrackDatabase):
         self.track_database = track_database
 
-    def get_current_stats(self) -> Dict[str, Any]:
-        """Get current processing statistics."""
-        stats = self.track_database.get_processing_stats()
+    def get_current_stats(self, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get current processing statistics, optionally filtered by model."""
+        stats = self.track_database.get_processing_stats(model_id)
         latest_session = self.track_database.get_latest_processing_session()
 
         return {
@@ -211,6 +243,7 @@ class ProcessingProgressUseCase:
             "unprocessed_tracks": stats["unprocessed_tracks"],
             "progress_percentage": (stats["processed_tracks"] / stats["total_tracks"] * 100) if stats[
                                                                                                     "total_tracks"] > 0 else 0,
+            "model_id": model_id,
             "latest_session": latest_session
         }
 
@@ -253,7 +286,7 @@ class WorkerBasedProcessingUseCase:
             "queue_stats": queue_stats
         }
 
-    def create_worker_tasks(self, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+    def create_worker_tasks(self, model_id: str, max_tracks: Optional[int] = None) -> Dict[str, Any]:
         """Create tasks for all unprocessed tracks to be handled by workers."""
         if not self.can_use_workers():
             return {
@@ -263,7 +296,7 @@ class WorkerBasedProcessingUseCase:
             }
 
         # Get unprocessed tracks
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks)
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks, model_id=model_id)
 
         if not unprocessed_tracks:
             return {
@@ -276,12 +309,12 @@ class WorkerBasedProcessingUseCase:
         tasks_created = 0
         for stored_track in unprocessed_tracks:
             try:
-                download_url = f"/download_track/{stored_track.plex_rating_key}"
-                self.job_queue.create_task(stored_track.plex_rating_key, download_url, prioritize=False,
+                download_url = f"/download_track/{stored_track.media_server_rating_key}"
+                self.job_queue.create_task(stored_track.media_server_rating_key, download_url, prioritize=False,
                                            context_type=ContextType.AUDIO_PROCESSING)
                 tasks_created += 1
             except Exception as e:
-                logger.error(f"Failed to create task for track {stored_track.plex_rating_key}: {e}")
+                logger.error(f"Failed to create task for track {stored_track.media_server_rating_key}: {e}")
                 continue
 
         return {

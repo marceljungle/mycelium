@@ -5,12 +5,13 @@ import { API_BASE_URL } from '../config/api';
 import PlaylistCreationModal from './PlaylistCreationModal';
 
 interface Track {
-  id: string;
   artist: string;
   album: string;
   title: string;
   filepath: string;
-  plex_rating_key: string;
+  media_server_rating_key: string;
+  media_server_type: string;
+  processed?: boolean;
 }
 
 interface TrackResponse {
@@ -18,7 +19,8 @@ interface TrackResponse {
   album: string;
   title: string;
   filepath: string;
-  plex_rating_key: string;
+  media_server_rating_key: string;
+  media_server_type: string;
 }
 
 interface LibrarySearchResult {
@@ -73,12 +75,12 @@ export default function LibraryPage() {
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        id: track.plex_rating_key,
         artist: track.artist,
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        plex_rating_key: track.plex_rating_key,
+        media_server_rating_key: track.media_server_rating_key,
+        media_server_type: track.media_server_type,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -121,12 +123,12 @@ export default function LibraryPage() {
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        id: track.plex_rating_key,
         artist: track.artist,
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        plex_rating_key: track.plex_rating_key,
+        media_server_rating_key: track.media_server_rating_key,
+        media_server_type: track.media_server_type,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -254,7 +256,7 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.plex_rating_key}?n_results=${numResults}`);
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.media_server_rating_key}?n_results=${numResults}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -276,7 +278,7 @@ export default function LibraryPage() {
               const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ track_id: track.plex_rating_key })
+                body: JSON.stringify({ track_id: track.media_server_rating_key })
               });
               
               if (processResponse.ok) {
@@ -300,7 +302,7 @@ export default function LibraryPage() {
             console.log('Starting worker processing with task_id:', data.task_id);
             // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
-            startTaskPolling(data.task_id, track.plex_rating_key, track);
+            startTaskPolling(data.task_id, track.media_server_rating_key, track);
           } else if (!data.task_id) {
             console.error('Worker processing response missing task_id:', data);
             setError('Worker processing started but missing task ID. Please try again.');
@@ -505,10 +507,10 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredTracks.map((track) => (
                 <button
-                  key={track.id}
+                  key={`${track.media_server_rating_key}`}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack?.id === track.id
+                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
@@ -637,9 +639,9 @@ export default function LibraryPage() {
             </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {recommendations.map((result, index) => (
+              {recommendations.map((result) => (
                 <div
-                  key={index}
+                  key={`${result.track.media_server_rating_key}`}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
                   <div className="flex justify-between items-start">
@@ -665,7 +667,7 @@ export default function LibraryPage() {
       <PlaylistCreationModal
         isOpen={isPlaylistModalOpen}
         onClose={() => setIsPlaylistModalOpen(false)}
-        trackIds={recommendations.map(result => result.track.plex_rating_key)}
+        trackIds={recommendations.map(result => result.track.media_server_rating_key)}
         onSuccess={handlePlaylistCreated}
       />
     </div>

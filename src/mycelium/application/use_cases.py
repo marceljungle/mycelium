@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import List
 
-from ..domain.models import SearchResult
+from ..domain.models import SearchResult, MediaServerType, Track
 from ..domain.repositories import EmbeddingRepository, EmbeddingGenerator
 
 class MusicSearchUseCase:
@@ -89,7 +89,7 @@ class MusicSearchUseCase:
         # Filter out the same track (it will be the first result with distance 0)
         results = [
             result for result in results 
-            if result.track.plex_rating_key != track_id
+            if result.track.media_server_rating_key != track_id
         ][:n_results]
         
         self.logger.info(f"Found {len(results)} similar tracks for track {track_id}")

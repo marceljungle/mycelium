@@ -9,7 +9,7 @@ from plexapi.audio import Artist
 from plexapi.server import PlexServer
 from tqdm import tqdm
 
-from ..domain.models import Track, Playlist
+from ..domain.models import Track, Playlist, MediaServerType
 from ..domain.repositories import PlexRepository
 
 
@@ -30,7 +30,7 @@ class PlexMusicRepository(PlexRepository):
     def get_all_tracks(self) -> List[Track]:
         """Get all tracks from the Plex music library."""
         try:
-            plex = PlexServer(self.plex_url, self.plex_token)
+            plex = PlexServer(self.plex_url, self.plex_token, timeout=3600)
             music_lib = plex.library.section(self.music_library_name)
             self.logger.info(f"Connected to Plex. Scanning library '{self.music_library_name}'...")
         except Exception as e:
@@ -53,7 +53,8 @@ class PlexMusicRepository(PlexRepository):
                                     album=album.title,
                                     title=track.title,
                                     filepath=filepath,
-                                    plex_rating_key=str(track.ratingKey)
+                                    media_server_rating_key=str(track.ratingKey),
+                                    media_server_type=MediaServerType.PLEX
                                 )
                                 all_tracks.append(track_obj)
                             else:
@@ -78,7 +79,8 @@ class PlexMusicRepository(PlexRepository):
                         album=track.parentTitle or "Unknown Album",
                         title=track.title,
                         filepath=filepath,
-                        plex_rating_key=str(track.ratingKey)
+                        media_server_rating_key=str(track.ratingKey),
+                        media_server_type=MediaServerType.PLEX
                     )
             
             return None
@@ -96,10 +98,10 @@ class PlexMusicRepository(PlexRepository):
             plex_tracks = []
             for track in playlist.tracks:
                 try:
-                    plex_track = plex.fetchItem(int(track.plex_rating_key))
+                    plex_track = plex.fetchItem(int(track.media_server_rating_key))
                     plex_tracks.append(plex_track)
                 except Exception as e:
-                    self.logger.warning(f"Could not fetch track {track.plex_rating_key}: {e}")
+                    self.logger.warning(f"Could not fetch track {track.media_server_rating_key}: {e}")
                     continue
             
             if not plex_tracks:

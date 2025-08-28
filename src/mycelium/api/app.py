@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from mycelium.domain import Track
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
@@ -25,7 +26,7 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig
+from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig, MediaServerConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -38,7 +39,20 @@ class TrackResponse(BaseModel):
     album: str
     title: str
     filepath: str
-    plex_rating_key: str
+    media_server_rating_key: str
+    media_server_type: str
+    
+    @classmethod
+    def from_domain(cls, track) -> "TrackResponse":
+        """Create from domain Track object."""
+        return cls(
+            artist=track.artist,
+            album=track.album,
+            title=track.title,
+            filepath=str(track.filepath),
+            media_server_rating_key=track.media_server_rating_key,
+            media_server_type=track.media_server_type.value
+        )
 
 
 class SearchResultResponse(BaseModel):
@@ -82,6 +96,7 @@ class SearchRequest(BaseModel):
 
 class ConfigRequest(BaseModel):
     """Request model for updating configuration."""
+    media_server: Dict[str, Any]
     plex: Dict[str, Any]
     api: Dict[str, Any]
     chroma: Dict[str, Any]
@@ -108,13 +123,7 @@ logger.info("Initializing Mycelium service...")
 
 # Initialize the main service
 service = MyceliumService(
-    plex_url=config.plex.url,
-    plex_token=config.plex.token,
-    music_library_name=config.plex.music_library_name,
-    db_path=config.chroma.get_db_path(),
-    collection_name=config.chroma.collection_name,
-    model_id=config.clap.model_id,
-    track_db_path=config.database.get_db_path()
+    config=config
 )
 
 # Initialize job queue service
@@ -152,13 +161,7 @@ def reload_config() -> None:
             
             # Reinitialize service with new configuration
             new_service = MyceliumService(
-                plex_url=new_config.plex.url,
-                plex_token=new_config.plex.token,
-                music_library_name=new_config.plex.music_library_name,
-                db_path=new_config.chroma.get_db_path(),
-                collection_name=new_config.chroma.collection_name,
-                model_id=new_config.clap.model_id,
-                track_db_path=new_config.database.get_db_path()
+                config=new_config
             )
             
             # Reinitialize job queue service
@@ -168,10 +171,6 @@ def reload_config() -> None:
             new_service.initialize_worker_processing(new_job_queue, new_config.api.host, new_config.api.port)
             
             # Update global references atomically
-            old_config = config
-            old_service = service
-            old_job_queue = job_queue
-            
             config = new_config
             service = new_service
             job_queue = new_job_queue
@@ -269,7 +268,7 @@ async def search_by_text_get(
                 query=q
             )
 
-        logger.info(f"No active workers available for text search")
+        logger.info("No active workers available for text search")
         # No active workers - return confirmation required
         return SearchConfirmationRequiredResponse(
             status="confirmation_required",
@@ -373,7 +372,7 @@ async def get_library_tracks(
             )
             total_count = service.count_tracks_advanced(artist=artist, album=album, title=title)
         elif search and search.strip():
-            # Use simple search with OR logic (backward compatibility)
+            # Simple search query
             logger.info(f"Performing simple library search for: '{search.strip()}'")
             tracks = service.search_tracks_in_database(search.strip(), limit=limit, offset=(page - 1) * limit)
             total_count = service.count_tracks_in_database(search.strip())
@@ -395,7 +394,8 @@ async def get_library_tracks(
                     album=track.album,
                     title=track.title,
                     filepath=str(track.filepath),
-                    plex_rating_key=track.plex_rating_key
+                    media_server_rating_key=track.media_server_rating_key,
+                    media_server_type=track.media_server_type.value
                 )
                 for track in tracks
             ],
@@ -417,6 +417,9 @@ async def get_config():
         with config_lock:
             # Return current configuration as dict
             config_dict = {
+                "media_server": {
+                    "type": config.media_server.type.value
+                },
                 "plex": {
                     "url": config.plex.url,
                     "token": config.plex.token,
@@ -453,6 +456,7 @@ async def save_config(config_request: ConfigRequest):
     try:
         logger.info("Configuration save request received")
 
+        media_server_config = MediaServerConfig(**config_request.media_server)
         plex_config = PlexConfig(**config_request.plex)
         clap_config = CLAPConfig(**config_request.clap)
         chroma_config = ChromaConfig(**config_request.chroma)
@@ -461,6 +465,7 @@ async def save_config(config_request: ConfigRequest):
         logging_config = LoggingConfig(**config_request.logging)
 
         yaml_config = MyceliumConfig(
+            media_server=media_server_config,
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
@@ -606,11 +611,11 @@ async def stop_processing():
 
 @app.get("/api/library/progress")
 @with_service_lock
-async def get_processing_progress():
+async def get_processing_progress(model_id: Optional[str] = Query(None, description="Model ID to get progress for")):
     """Get current processing progress and statistics."""
     logger.debug("Processing progress request received")
     try:
-        stats = service.get_processing_progress()
+        stats = service.get_processing_progress(model_id)
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -650,11 +655,12 @@ async def register_worker(request: WorkerRegistrationRequest):
 
 
 @app.get("/workers/get_job")
-async def get_job(worker_id: str = Query(..., description="Worker ID")):
+async def get_job(worker_id: str = Query(..., description="Worker ID"),
+                  ip_address: str = Query(..., description="Client IP address")):
     """Get the next job for a worker."""
     logger.debug(f"Worker job request received for worker ID {worker_id}")
     try:
-        task = job_queue.get_next_job(worker_id)
+        task = job_queue.get_next_job(worker_id=worker_id, ip_address=ip_address)
         if task is None:
             # No job available - return 204 No Content
             logger.debug(f"No job available for worker {worker_id}")
@@ -726,7 +732,8 @@ async def submit_result(request: TaskResultRequest):
                                     "album": result.track.album,
                                     "title": result.track.title,
                                     "filepath": str(result.track.filepath),
-                                    "plex_rating_key": result.track.plex_rating_key
+                                    "media_server_rating_key": result.track.media_server_rating_key,
+                                    "media_server_type": result.track.media_server_type.value
                                 },
                                 "similarity_score": result.similarity_score,
                                 "distance": result.distance
@@ -771,7 +778,8 @@ async def submit_result(request: TaskResultRequest):
                                 "album": result.track.album,
                                 "title": result.track.title,
                                 "filepath": str(result.track.filepath),
-                                "plex_rating_key": result.track.plex_rating_key
+                                "media_server_rating_key": result.track.media_server_rating_key,
+                                "media_server_type": result.track.media_server_type.value
                             },
                             "similarity_score": result.similarity_score,
                             "distance": result.distance
@@ -868,7 +876,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
     try:
         # Check if embedding already exists
-        has_emb = service.has_embedding(track_id)
+        has_emb = service.has_embedding(track_id=track_id)
         logger.info(f"Embedding check for track {track_id}: {has_emb}")
 
         if has_emb:
@@ -882,7 +890,8 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
                         album=result.track.album,
                         title=result.track.title,
                         filepath=str(result.track.filepath),
-                        plex_rating_key=result.track.plex_rating_key
+                        media_server_rating_key=result.track.media_server_rating_key,
+                        media_server_type=result.track.media_server_type.value
                     ),
                     similarity_score=result.similarity_score,
                     distance=result.distance
@@ -930,7 +939,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
 
 @app.post("/compute/on_server")
-async def compute_on_server(request: ComputeOnServerRequest, background_tasks: BackgroundTasks):
+async def compute_on_server(request: ComputeOnServerRequest):
     """Compute embedding on server CPU after user confirmation."""
     try:
         logger.info(f"Starting server-side computation for track {request.track_id}")
@@ -944,8 +953,7 @@ async def compute_on_server(request: ComputeOnServerRequest, background_tasks: B
 
         logger.info(f"Computing embedding for track {request.track_id}: {track_info.artist} - {track_info.title}")
 
-        # Compute embedding on CPU
-        embedding = service.compute_embedding_cpu(os.fspath(track_info.filepath))
+        embedding = service.compute_single_embedding(os.fspath(track_info.filepath))
 
         if embedding is None or len(embedding) == 0:
             logger.error(f"Failed to compute embedding for track {request.track_id}")
@@ -986,7 +994,8 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
                     album=result.track.album,
                     title=result.track.title,
                     filepath=str(result.track.filepath),
-                    plex_rating_key=result.track.plex_rating_key
+                    media_server_rating_key=result.track.media_server_rating_key,
+                    media_server_type=result.track.media_server_type.value
                 ),
                 similarity_score=result.similarity_score,
                 distance=result.distance
@@ -1042,7 +1051,8 @@ async def compute_audio_search_on_server(
                         album=result.track.album,
                         title=result.track.title,
                         filepath=str(result.track.filepath),
-                        plex_rating_key=result.track.plex_rating_key
+                        media_server_rating_key=result.track.media_server_rating_key,
+                        media_server_type=result.track.media_server_type.value
                     ),
                     similarity_score=result.similarity_score,
                     distance=result.distance

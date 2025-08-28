@@ -104,7 +104,11 @@ async def get_config():
         config_dict = {
             "client": {
                 "server_host": config.client.server_host,
-                "server_port": config.client.server_port
+                "server_port": config.client.server_port,
+                "download_queue_size": config.client.download_queue_size,
+                "job_queue_size": config.client.job_queue_size,
+                "poll_interval": config.client.poll_interval,
+                "download_workers": config.client.download_workers
             },
             "client_api": {
                 "host": config.client_api.host,

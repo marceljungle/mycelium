@@ -8,6 +8,8 @@ from typing import Optional
 
 import yaml
 
+from mycelium.domain.models import MediaServerType
+
 
 def get_user_data_dir() -> Path:
     """Get the user data directory for Mycelium (platform-specific)."""
@@ -69,6 +71,15 @@ class CLAPConfig:
     target_sr: int = 48000
     chunk_duration_s: int = 10
 
+@dataclass
+class MediaServerConfig:
+    """Configuration for media server."""
+    type: MediaServerType
+    
+    def __post_init__(self):
+        """Convert string type to MediaServerType enum if needed."""
+        if isinstance(self.type, str):
+            self.type = MediaServerType(self.type.lower())
 
 @dataclass
 class ChromaConfig:
@@ -111,6 +122,7 @@ class LoggingConfig:
 @dataclass
 class MyceliumConfig:
     """Main configuration class."""
+    media_server: MediaServerConfig
     plex: PlexConfig
     clap: CLAPConfig
     chroma: ChromaConfig
@@ -148,6 +160,10 @@ class MyceliumConfig:
             batch_size=config_data.get("chroma", {}).get("batch_size", 1000)
         )
 
+        media_server = MediaServerConfig(
+            type=MediaServerType[config_data.get("media_server", {}).get("type", "plex").upper()]
+        )
+
         database_config = DatabaseConfig()
 
         api_config = APIConfig(
@@ -169,6 +185,7 @@ class MyceliumConfig:
         )
 
         cfg = cls(
+            media_server=media_server,
             plex=plex_config,
             clap=clap_config,
             chroma=chroma_config,
@@ -194,7 +211,17 @@ class MyceliumConfig:
         if config_path is None:
             config_path = get_config_file_path()
 
+        def custom_dict_factory(data):
+            result = []
+            for k, v in data:
+                if isinstance(v, MediaServerType):
+                    result.append((k, v.value))
+                else:
+                    result.append((k, v))
+            return dict(result)
+
         config_dict = {
+            "media_server": asdict(self.media_server, dict_factory=custom_dict_factory),
             "plex": asdict(self.plex),
             "clap": asdict(self.clap),
             "chroma": asdict(self.chroma),
@@ -246,10 +273,14 @@ class MyceliumConfig:
         # Configure Uvicorn loggers to prevent unwanted access logs
         logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
         logging.getLogger('uvicorn').setLevel(logging.WARNING)
+        
+        # Disable verbose numba logging
+        logging.getLogger('numba.core.byteflow').setLevel(logging.WARNING)
 
 
 # Export all necessary components
 __all__ = [
+    "MediaServerConfig",
     "MyceliumConfig",
     "PlexConfig",
     "CLAPConfig",

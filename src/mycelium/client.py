@@ -1,4 +1,5 @@
 """Mycelium client for processing audio embeddings on GPU workers."""
+import gc
 import logging
 import os
 import socket
@@ -9,10 +10,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue, Empty
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 import requests
-import torch
 
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
@@ -33,23 +33,18 @@ class DownloadedJob:
 class MyceliumClient:
     """Client for processing CLAP embeddings on GPU hardware."""
 
-    def __init__(
-            self,
-            server_host: str = "localhost",
-            server_port: int = 8000,
-            model_id: str = "laion/larger_clap_music_and_speech",
-            poll_interval: int = 5,
-            download_queue_size: int = 15,
-            download_workers: int = 10
-    ):
-        self.server_host = server_host
-        self.server_port = server_port
-        self.server_url = f"http://{server_host}:{server_port}"
-        self.model_id = model_id
-        self.poll_interval = poll_interval
-        self.download_queue_size = download_queue_size
-        self.download_workers = download_workers
+    def __init__(self):
+        # Load configuration
         self.config = MyceliumClientConfig.load_from_yaml()
+        
+        # Use config values for all settings
+        self.server_host = self.config.client.server_host
+        self.server_port = self.config.client.server_port
+        self.server_url = f"http://{self.server_host}:{self.server_port}"
+        self.model_id = self.config.clap.model_id
+        self.poll_interval = self.config.client.poll_interval
+        self.download_queue_size = self.config.client.download_queue_size
+        self.download_workers = self.config.client.download_workers
 
         self.config_file_path = get_client_config_file_path()
         self.last_config_mtime = self._get_config_mtime()
@@ -61,8 +56,8 @@ class MyceliumClient:
 
         self.device = CLAPEmbeddingGenerator.get_best_device()
 
-        self.job_queue: Queue[dict] = Queue(maxsize=download_queue_size * 2)
-        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=download_queue_size)
+        self.job_queue: Queue[dict] = Queue(maxsize=self.config.client.job_queue_size)
+        self.download_queue: Queue[DownloadedJob] = Queue(maxsize=self.download_queue_size)
 
         self.job_fetcher_thread: Optional[threading.Thread] = None
         self.download_threads: List[threading.Thread] = []
@@ -76,8 +71,10 @@ class MyceliumClient:
         logging.info(f"Worker ID: {self.worker_id}")
         logging.info(f"Server: {self.server_url}")
         logging.info(f"Device: {self.device}")
-        logging.info(f"Download queue size: {download_queue_size}")
-        logging.info(f"Parallel download workers: {download_workers}")
+        logging.info(f"Download queue size: {self.download_queue_size}")
+        logging.info(f"Job queue size: {self.config.client.job_queue_size}")
+        logging.info(f"Poll interval: {self.poll_interval}s")
+        logging.info(f"Parallel download workers: {self.download_workers}")
 
     def _log_queue_status(self, context: str = ""):
         """Log current queue status with context."""
@@ -123,43 +120,61 @@ class MyceliumClient:
         except Exception as e:
             logging.error(f"Error checking config reload: {e}")
 
-    # TODO: move this to clap adapter and also unload for the server side when app is closed
-    def _unload_model(self):
-        """Unload model to free GPU memory."""
-        if self.clap_embedding_generator.model is not None:
-            del self.clap_embedding_generator.model
-            del self.clap_embedding_generator.processor
-            self.clap_embedding_generator.model = None
-            self.clap_embedding_generator.processor = None
-
-            if self.device == "cuda":
-                torch.cuda.empty_cache()
-            elif self.device == "mps":
-                torch.mps.empty_cache()
-
-            logging.info("Model unloaded")
-
     def reload_config(self):
-        """Reload configuration and recreate CLAPEmbeddingGenerator."""
+        """Reload configuration and apply changes that can be hot-reloaded."""
         try:
             logging.info("Reloading client configuration...")
             new_config = MyceliumClientConfig.load_from_yaml()
 
+            # Check for CLAP model changes
             clap_changed = (
                 new_config.clap.model_id != self.config.clap.model_id or
                 new_config.clap.target_sr != self.config.clap.target_sr or
                 new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
             )
 
+            # Check for client configuration changes that require worker restart
+            client_changed = (
+                new_config.client.server_host != self.config.client.server_host or
+                new_config.client.server_port != self.config.client.server_port or
+                new_config.client.download_workers != self.config.client.download_workers or
+                new_config.client.download_queue_size != self.config.client.download_queue_size or
+                new_config.client.job_queue_size != self.config.client.job_queue_size
+            )
+
             if clap_changed:
                 logging.info("CLAP configuration changed, recreating embedding generator...")
-                self._unload_model()
+                self.clap_embedding_generator.unload_model()
                 self.clap_embedding_generator = CLAPEmbeddingGenerator(
                     model_id=new_config.clap.model_id,
                     target_sr=new_config.clap.target_sr,
                     chunk_duration_s=new_config.clap.chunk_duration_s
                 )
                 logging.info("CLAP embedding generator updated.")
+
+            if client_changed:
+                logging.warning("Client configuration changed. Some changes require restart:")
+                if new_config.client.server_host != self.config.client.server_host:
+                    logging.warning(f"  - Server host: {self.config.client.server_host} -> {new_config.client.server_host} (requires restart)")
+                if new_config.client.server_port != self.config.client.server_port:
+                    logging.warning(f"  - Server port: {self.config.client.server_port} -> {new_config.client.server_port} (requires restart)")
+                if new_config.client.download_workers != self.config.client.download_workers:
+                    logging.warning(f"  - Download workers: {self.config.client.download_workers} -> {new_config.client.download_workers} (requires restart)")
+                if new_config.client.download_queue_size != self.config.client.download_queue_size:
+                    logging.warning(f"  - Download queue size: {self.config.client.download_queue_size} -> {new_config.client.download_queue_size} (requires restart)")
+                if new_config.client.job_queue_size != self.config.client.job_queue_size:
+                    logging.warning(f"  - Job queue size: {self.config.client.job_queue_size} -> {new_config.client.job_queue_size} (requires restart)")
+
+            # Apply hot-reloadable changes
+            self.poll_interval = new_config.client.poll_interval
+            if new_config.client.poll_interval != self.config.client.poll_interval:
+                logging.info(f"Poll interval updated: {self.config.client.poll_interval}s -> {new_config.client.poll_interval}s")
+            
+            # GPU batch settings can be hot-reloaded
+            if new_config.client.gpu_batch_size != self.config.client.gpu_batch_size:
+                logging.info(f"GPU batch size updated: {self.config.client.gpu_batch_size} -> {new_config.client.gpu_batch_size}")
+            if new_config.client.gpu_batch_timeout != self.config.client.gpu_batch_timeout:
+                logging.info(f"GPU batch timeout updated: {self.config.client.gpu_batch_timeout}s -> {new_config.client.gpu_batch_timeout}s")
 
             self.config = new_config
             logging.info("Client configuration reloaded successfully")
@@ -194,7 +209,7 @@ class MyceliumClient:
         try:
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
-                params={"worker_id": self.worker_id},
+                params={"worker_id": self.worker_id, "ip_address": self.ip_address},
                 timeout=30
             )
             response.raise_for_status()
@@ -236,7 +251,7 @@ class MyceliumClient:
                         time.sleep(self.poll_interval)
                 else:
                     logging.info("Job fetcher: Job queue is full, pausing.")
-                    time.sleep(1)
+                    time.sleep(5)
             except Exception as e:
                 logging.error(f"Job fetcher error: {e}")
                 time.sleep(self.poll_interval)
@@ -252,9 +267,8 @@ class MyceliumClient:
                 job = self.job_queue.get(timeout=1)
 
                 if self.download_queue.full():
-                    logging.warning("Download queue is full. Waiting...")
                     self.job_queue.put(job)
-                    time.sleep(1)
+                    time.sleep(5)
                     continue
 
                 task_id = job["task_id"]
@@ -310,7 +324,7 @@ class MyceliumClient:
         self.job_fetcher_thread = threading.Thread(target=self._job_fetcher, daemon=True)
         self.job_fetcher_thread.start()
 
-        for i in range(self.download_workers):
+        for _ in range(self.download_workers):
             thread = threading.Thread(target=self._download_worker, daemon=True)
             thread.start()
             self.download_threads.append(thread)
@@ -359,56 +373,126 @@ class MyceliumClient:
             logging.error(f"Error submitting result for task {task_id}: {e}")
             return False
 
-    def process_job(self, downloaded_job: DownloadedJob) -> bool:
-        """Process a downloaded job."""
-        task_id = downloaded_job.task_id
-        track_id = downloaded_job.track_id
-        original_job = downloaded_job.original_job
-        task_type = original_job.get("task_type", "compute_audio_embedding")
-
-        logging.info(f"Processing job {task_id} for track {track_id}, task_type: {task_type}")
-        embedding = None
-        error_message = None
-
-        try:
+    def _process_batch(self, batch: List[DownloadedJob]) -> None:
+        """Process a batch of jobs to improve GPU utilization."""
+        if not batch:
+            return
+            
+        logging.info(f"Processing batch of {len(batch)} jobs")
+        
+        # Separate jobs by type for more efficient batching
+        audio_jobs = []
+        text_jobs = []
+        
+        for job in batch:
+            task_type = job.original_job.get("task_type", "compute_audio_embedding")
             if task_type == "compute_audio_embedding":
-                if downloaded_job.audio_file:
-                    embedding = self.clap_embedding_generator.generate_embedding(filepath=downloaded_job.audio_file)
-                    if not embedding:
-                        error_message = "Failed to compute audio embedding"
-                else:
-                    error_message = "Audio file not available for processing"
-
+                audio_jobs.append(job)
             elif task_type == "compute_text_embedding":
-                text_query = original_job.get("text_query")
-                if text_query:
-                    embedding = self.clap_embedding_generator.generate_text_embedding(text_query)
-                    if not embedding:
-                        error_message = "Failed to compute text embedding"
+                text_jobs.append(job)
+        
+        # Process audio jobs in batch
+        if audio_jobs:
+            self._process_audio_batch(audio_jobs)
+        
+        # Process text jobs in batch  
+        if text_jobs:
+            self._process_text_batch(text_jobs)
+    
+    def _process_audio_batch(self, audio_jobs: List[DownloadedJob]) -> None:
+        """Process a batch of audio embedding jobs."""
+        self._process_audio_batch_gpu(audio_jobs)
+    
+    def _process_audio_batch_gpu(self, audio_jobs: List[DownloadedJob]) -> None:
+        """Process audio jobs using GPU batch processing."""
+        # Prepare batch data
+        audio_files = []
+        job_metadata = []
+        
+        for job in audio_jobs:
+            if job.audio_file and job.audio_file.exists():
+                audio_files.append(job.audio_file)
+                job_metadata.append(job)
+            else:
+                # Handle jobs with missing files individually
+                self.submit_result(job.task_id, job.track_id, None, "Audio file not available")
+        
+        if not audio_files:
+            return
+        
+        try:
+            # Generate embeddings in batch
+            embeddings = self.clap_embedding_generator.generate_embedding_batch(audio_files)
+            
+            # Submit results
+            for job, embedding in zip(job_metadata, embeddings):
+                success = self.submit_result(job.task_id, job.track_id, embedding, 
+                                           None if embedding else "Failed to compute audio embedding")
+                if success:
+                    logging.debug(f"Successfully submitted batch job {job.task_id}")
                 else:
-                    error_message = "Missing text query for text embedding task"
-            else:
-                error_message = f"Unknown task type: {task_type}"
-
-            success = self.submit_result(task_id, track_id, embedding, error_message)
-            if success:
-                logging.info(f"Successfully processed and submitted job {task_id}")
-            else:
-                logging.warning(f"Failed to submit result for job {task_id}")
-
-            return success
-
+                    logging.warning(f"Failed to submit batch job {job.task_id}")
+                    
+        except Exception as e:
+            logging.error(f"Batch processing failed: {e}", exc_info=True)
         finally:
-            if downloaded_job.audio_file:
-                try:
-                    os.unlink(downloaded_job.audio_file)
-                except OSError as e:
-                    logging.error(f"Error deleting temp file {downloaded_job.audio_file}: {e}")
+            # Clean up audio files
+            for job in audio_jobs:
+                if job.audio_file:
+                    try:
+                        os.unlink(job.audio_file)
+                    except OSError as e:
+                        logging.error(f"Error deleting temp file {job.audio_file}: {e}")
+            
+            # Force garbage collection after batch processing
+            collected = gc.collect()
+            if collected > 0:
+                logging.debug(f"Post-batch cleanup: collected {collected} objects")
+    
+    def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
+        """Process a batch of text embedding jobs."""
+        self._process_text_batch_gpu(text_jobs)
+
+    
+    def _process_text_batch_gpu(self, text_jobs: List[DownloadedJob]) -> None:
+        """Process text jobs using GPU batch processing."""
+        # Prepare batch data
+        text_queries = []
+        job_metadata = []
+        
+        for job in text_jobs:
+            text_query = job.original_job.get("text_query")
+            if text_query:
+                text_queries.append(text_query)
+                job_metadata.append(job)
+            else:
+                # Handle jobs with missing text individually
+                self.submit_result(job.task_id, job.track_id, None, "Missing text query")
+        
+        if not text_queries:
+            return
+        
+        try:
+            # Generate embeddings in batch
+            embeddings = self.clap_embedding_generator.generate_text_embedding_batch(text_queries)
+            
+            # Submit results
+            for job, embedding in zip(job_metadata, embeddings):
+                success = self.submit_result(job.task_id, job.track_id, embedding,
+                                           None if embedding else "Failed to compute text embedding")
+                if success:
+                    logging.debug(f"Successfully submitted batch text job {job.task_id}")
+                else:
+                    logging.warning(f"Failed to submit batch text job {job.task_id}")
+                    
+        except Exception as e:
+            logging.error(f"Text batch processing failed: {e}", exc_info=True)
 
     def run(self):
-        """Main worker loop."""
+        """Main worker loop with batch processing for better GPU utilization."""
         logging.info("Starting Mycelium client worker loop...")
 
+        # TODO: refactor this, and think what to do with _check_config_reload()
         if not self.register_with_server():
             logging.error("Failed to register with server. Exiting.")
             return
@@ -418,49 +502,56 @@ class MyceliumClient:
 
         last_status_log = time.time()
         status_log_interval = 30
+        batch_size = self.config.client.gpu_batch_size
+        batch_timeout = self.config.client.gpu_batch_timeout
 
         try:
             while True:
-                try:
-                    downloaded_job = self.download_queue.get(timeout=1)
-                    self.process_job(downloaded_job)
-                    self.download_queue.task_done()
-
+                # Collect a batch of jobs for processing
+                batch = []
+                batch_start_time = time.time()
+                
+                # Try to collect up to batch_size jobs within batch_timeout seconds
+                while len(batch) < batch_size and (time.time() - batch_start_time) < batch_timeout:
+                    try:
+                        downloaded_job = self.download_queue.get(timeout=0.5)
+                        batch.append(downloaded_job)
+                    except Empty:
+                        if self.stop_event.is_set():
+                            break
+                        continue
+                
+                # Process the batch if we have any jobs
+                if batch:
+                    self._process_batch(batch)
+                    
+                    # Mark all jobs as done
+                    for _ in batch:
+                        self.download_queue.task_done()
+                    
                     if time.time() - last_status_log > status_log_interval:
                         self._log_queue_status("processing")
                         last_status_log = time.time()
-
-                except Empty:
+                        logging.info(f"Processed batch of {len(batch)} jobs")
+                else:
+                    # No jobs available
                     if self.stop_event.is_set():
                         break
                     if time.time() - last_status_log > status_log_interval:
                         self._log_queue_status("idle")
                         last_status_log = time.time()
                     self._check_config_reload()
-                    continue
 
         except KeyboardInterrupt:
             logging.info("\nShutting down worker...")
         finally:
             self._log_queue_status("shutdown")
             self._stop_workers()
-            self._unload_model()
+            self.clap_embedding_generator.unload_model()
             logging.info("Worker stopped")
 
 
-def run_client(
-        server_host: str = "localhost",
-        server_port: int = 8000,
-        model_id: str = "laion/larger_clap_music_and_speech",
-        download_queue_size: int = 15,
-        download_workers: int = 10
-):
+def run_client():
     """Run the Mycelium client."""
-    client = MyceliumClient(
-        server_host=server_host,
-        server_port=server_port,
-        model_id=model_id,
-        download_queue_size=download_queue_size,
-        download_workers=download_workers
-    )
+    client = MyceliumClient()
     client.run()

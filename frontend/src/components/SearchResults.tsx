@@ -9,7 +9,8 @@ interface SearchResult {
     album: string;
     title: string;
     filepath: string;
-    plex_rating_key: string;
+    media_server_rating_key: string;
+    media_server_type: string;
   };
   similarity_score: number;
   distance: number;
@@ -55,7 +56,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const trackIds = results.map(result => result.track.plex_rating_key);
+  const trackIds = results.map(result => `${result.track.media_server_rating_key}`);
 
   return (
     <div className="space-y-4">
@@ -90,7 +91,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
       
       {results.map((result, index) => (
         <div 
-          key={result.track.plex_rating_key}
+          key={`${result.track.media_server_rating_key}`}
           className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
         >
           <div className="flex items-center justify-between">
