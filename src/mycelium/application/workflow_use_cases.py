@@ -87,7 +87,7 @@ class ResumableEmbeddingProcessingUseCase:
             self,
             progress_callback: Optional[callable] = None,
             max_tracks: Optional[int] = None,
-            batch_size: int = 50
+            batch_size: int = 16
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
         logger.info(f"Starting embedding processing with model: {self.model_id}")
