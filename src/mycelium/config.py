@@ -67,7 +67,6 @@ class PlexConfig:
 class ServerConfig:
     """Configuration for server settings."""
     gpu_batch_size: int = 16
-    batch_size: int = 16
 
 @dataclass
 class CLAPConfig:
@@ -158,8 +157,7 @@ class MyceliumConfig:
         )
 
         server_config = ServerConfig(
-            gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16),
-            batch_size=config_data.get("server", {}).get("batch_size", 16)
+            gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16)
         )
 
         clap_config = CLAPConfig(

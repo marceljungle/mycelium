@@ -503,13 +503,13 @@ class MyceliumClient:
 
         last_status_log = time.time()
         status_log_interval = 30
-        batch_size = self.config.client.gpu_batch_size
+        gpu_batch_size = self.config.client.gpu_batch_size
 
         try:
             while True:
                 # Collect a batch of jobs for processing
                 batch = []
-                while len(batch) < batch_size:
+                while len(batch) < gpu_batch_size:
                     try:
                         downloaded_job = self.download_queue.get(timeout=0.5)
                         batch.append(downloaded_job)

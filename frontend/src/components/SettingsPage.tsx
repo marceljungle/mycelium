@@ -14,7 +14,6 @@ interface ConfigData {
   };
   server: {
     gpu_batch_size: number;
-    batch_size: number;
   };
   api: {
     host: string;
@@ -308,22 +307,6 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Batch size for distributed GPU workers
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Processing Batch Size
-                  </label>
-                  <input
-                    type="number"
-                    value={config.server.batch_size}
-                    onChange={(e) => updateConfig('server', 'batch_size', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="64"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Batch size for server-side embedding processing
                   </p>
                 </div>
               </div>
