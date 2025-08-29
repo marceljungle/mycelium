@@ -115,9 +115,6 @@ class ResumableEmbeddingProcessingUseCase:
         failed_count = 0
 
         try:
-            # Process tracks in batches for better performance
-            # batch_size = 16  # Configurable batch size for memory management
-            
             for i in range(0, len(unprocessed_tracks), batch_size):
                 if self._should_stop:
                     logger.info("Processing stopped by user request")

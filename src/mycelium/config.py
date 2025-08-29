@@ -63,6 +63,10 @@ class PlexConfig:
     token: Optional[str] = None
     music_library_name: str = "Music"
 
+@dataclass
+class ServerConfig:
+    """Configuration for server settings."""
+    gpu_batch_size: int = 16
 
 @dataclass
 class CLAPConfig:
@@ -70,6 +74,8 @@ class CLAPConfig:
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
     chunk_duration_s: int = 10
+    num_chunks: int = 3
+    max_load_duration_s: Optional[int] = 120
 
 @dataclass
 class MediaServerConfig:
@@ -122,6 +128,7 @@ class LoggingConfig:
 @dataclass
 class MyceliumConfig:
     """Main configuration class."""
+    server: ServerConfig
     media_server: MediaServerConfig
     plex: PlexConfig
     clap: CLAPConfig
@@ -149,10 +156,14 @@ class MyceliumConfig:
             music_library_name=config_data.get("plex", {}).get("music_library_name", "Music")
         )
 
+        server_config = ServerConfig(gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16))
+
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10)
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
+            num_chunks=config_data.get("clap", {}).get("num_chunks", 3),
+            max_load_duration_s=config_data.get("clap", {}).get("max_load_duration_s", 120)
         )
 
         chroma_config = ChromaConfig(
@@ -191,7 +202,8 @@ class MyceliumConfig:
             chroma=chroma_config,
             database=database_config,
             api=api_config,
-            logging=logging_config
+            logging=logging_config,
+            server=server_config
         )
 
         # If no config file existed, create one with current values for convenience
@@ -227,7 +239,8 @@ class MyceliumConfig:
             "chroma": asdict(self.chroma),
             "database": asdict(self.database),
             "api": asdict(self.api),
-            "logging": asdict(self.logging)
+            "logging": asdict(self.logging),
+            "server": asdict(self.server)
         }
 
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -288,6 +301,7 @@ __all__ = [
     "DatabaseConfig",
     "APIConfig",
     "LoggingConfig",
+    "ServerConfig",
     "get_config_file_path",
     "get_user_data_dir",
     "get_user_log_dir",

@@ -60,6 +60,8 @@ class CLAPConfig:
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
     chunk_duration_s: int = 10
+    num_chunks: int = 3
+    max_load_duration_s: Optional[int] = 120
 
 
 @dataclass
@@ -72,7 +74,6 @@ class ClientConfig:
     poll_interval: int = 5
     download_workers: int = 10
     gpu_batch_size: int = 4
-    gpu_batch_timeout: float = 2.0
 
 
 @dataclass
@@ -115,7 +116,9 @@ class MyceliumClientConfig:
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10)
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
+            num_chunks=config_data.get("clap", {}).get("num_chunks", 3),
+            max_load_duration_s=config_data.get("clap", {}).get("max_load_duration_s", 120)
         )
         
         client_config = ClientConfig(
@@ -126,7 +129,6 @@ class MyceliumClientConfig:
             poll_interval=config_data.get("client", {}).get("poll_interval", 5),
             download_workers=config_data.get("client", {}).get("download_workers", 10),
             gpu_batch_size=config_data.get("client", {}).get("gpu_batch_size", 4),
-            gpu_batch_timeout=config_data.get("client", {}).get("gpu_batch_timeout", 2.0)
         )
         
         client_api_config = ClientAPIConfig(
