@@ -12,6 +12,10 @@ interface ConfigData {
     token: string;
     music_library_name: string;
   };
+  server: {
+    gpu_batch_size: number;
+    batch_size: number;
+  };
   api: {
     host: string;
     port: number;
@@ -25,7 +29,8 @@ interface ConfigData {
     model_id: string;
     target_sr: number;
     chunk_duration_s: number;
-    batch_size: number;
+    num_chunks: number;
+    max_load_duration_s: number;
   };
   logging: {
     level: string;
@@ -283,6 +288,47 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Server Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🖥️ Server
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    GPU Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.server.gpu_batch_size}
+                    onChange={(e) => updateConfig('server', 'gpu_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="64"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Batch size for distributed GPU workers
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Processing Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.server.batch_size}
+                    onChange={(e) => updateConfig('server', 'batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="64"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Batch size for server-side embedding processing
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* CLAP Configuration */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -313,6 +359,53 @@ export default function SettingsPage() {
                     onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Chunk Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap.chunk_duration_s}
+                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="30"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Number of Chunks
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap.num_chunks}
+                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Number of audio chunks to extract per track
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Max Load Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap.max_load_duration_s}
+                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="10"
+                    max="600"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Maximum seconds of audio to load per track
+                  </p>
                 </div>
               </div>
             </div>

@@ -20,7 +20,8 @@ chroma:
 
 # Server configuration
 server:
-  gpu_batch_size: 16
+  gpu_batch_size: 16    # For distributed GPU workers
+  batch_size: 16        # For server-side embedding processing
 
 # CLAP model configuration
 clap:

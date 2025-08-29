@@ -74,6 +74,7 @@ class MyceliumService:
             embedding_repository=self.embedding_repository,
             track_database=self.track_database,
             model_id=config.clap.model_id,
+            batch_size=config.server.batch_size
         )
         self.progress_tracker = ProcessingProgressUseCase(track_database=self.track_database)
 

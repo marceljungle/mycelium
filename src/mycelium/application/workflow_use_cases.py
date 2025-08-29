@@ -75,22 +75,27 @@ class ResumableEmbeddingProcessingUseCase:
             embedding_generator: EmbeddingGenerator,
             embedding_repository: EmbeddingRepository,
             track_database: TrackDatabase,
-            model_id: str
+            model_id: str,
+            batch_size: int = 16
     ):
         self.embedding_generator = embedding_generator
         self.embedding_repository = embedding_repository
         self.track_database = track_database
         self.model_id = model_id
+        self.batch_size = batch_size
         self._should_stop = False
 
     def process_embeddings(
             self,
             progress_callback: Optional[callable] = None,
             max_tracks: Optional[int] = None,
-            batch_size: int = 16
+            batch_size: Optional[int] = None
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
         logger.info(f"Starting embedding processing with model: {self.model_id}")
+
+        # Use provided batch_size or fall back to instance default
+        effective_batch_size = batch_size if batch_size is not None else self.batch_size
 
         # Get unprocessed tracks for this specific model
         unprocessed_tracks = self.track_database.get_unprocessed_tracks(model_id=self.model_id,
@@ -115,12 +120,12 @@ class ResumableEmbeddingProcessingUseCase:
         failed_count = 0
 
         try:
-            for i in range(0, len(unprocessed_tracks), batch_size):
+            for i in range(0, len(unprocessed_tracks), effective_batch_size):
                 if self._should_stop:
                     logger.info("Processing stopped by user request")
                     break
                 
-                batch = unprocessed_tracks[i:i + batch_size]
+                batch = unprocessed_tracks[i:i + effective_batch_size]
                 tracks = []
                 filepaths = []
                 valid_stored_tracks = []
