@@ -26,7 +26,8 @@ from .worker_models import (
 )
 from ..application.job_queue import JobQueueService
 from ..application.services import MyceliumService
-from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig, MediaServerConfig
+from ..config import MyceliumConfig, PlexConfig, CLAPConfig, ChromaConfig, DatabaseConfig, APIConfig, LoggingConfig, \
+    MediaServerConfig, ServerConfig
 from ..domain.worker import TaskResult, TaskType, TaskStatus, ContextType
 
 # Setup logger for this module
@@ -101,6 +102,7 @@ class ConfigRequest(BaseModel):
     api: Dict[str, Any]
     chroma: Dict[str, Any]
     clap: Dict[str, Any]
+    server: Dict[str, Any]
     logging: Dict[str, Any]
     database: Optional[Dict[str, Any]] = None
 
@@ -425,6 +427,9 @@ async def get_config():
                     "token": config.plex.token,
                     "music_library_name": config.plex.music_library_name
                 },
+                "server": {
+                    "gpu_batch_size": config.server.gpu_batch_size
+                },
                 "api": {
                     "host": config.api.host,
                     "port": config.api.port,
@@ -463,6 +468,7 @@ async def save_config(config_request: ConfigRequest):
         database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
         logging_config = LoggingConfig(**config_request.logging)
+        server = ServerConfig(**config_request.server)
 
         yaml_config = MyceliumConfig(
             media_server=media_server_config,
@@ -471,7 +477,8 @@ async def save_config(config_request: ConfigRequest):
             chroma=chroma_config,
             database=database_config,
             api=api_config,
-            logging=logging_config
+            logging=logging_config,
+            server=server
         )
 
         # Save to default YAML location

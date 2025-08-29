@@ -108,7 +108,8 @@ async def get_config():
                 "download_queue_size": config.client.download_queue_size,
                 "job_queue_size": config.client.job_queue_size,
                 "poll_interval": config.client.poll_interval,
-                "download_workers": config.client.download_workers
+                "download_workers": config.client.download_workers,
+                "gpu_batch_size": config.client.gpu_batch_size
             },
             "client_api": {
                 "host": config.client_api.host,
