@@ -442,7 +442,9 @@ async def get_config():
                 "clap": {
                     "model_id": config.clap.model_id,
                     "target_sr": config.clap.target_sr,
-                    "chunk_duration_s": config.clap.chunk_duration_s
+                    "chunk_duration_s": config.clap.chunk_duration_s,
+                    "num_chunks": config.clap.num_chunks,
+                    "max_load_duration_s": config.clap.max_load_duration_s
                 },
                 "logging": {
                     "level": config.logging.level
