@@ -13,6 +13,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mycelium.domain import Track
@@ -198,6 +199,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve static frontend files
+frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
+if frontend_dist_path.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_dist_path)), name="static")
 
 
 @app.get("/")
@@ -1113,6 +1119,23 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
+
+# Catch-all route for frontend client-side routing (must be last)
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """Serve the frontend index.html for client-side routing."""
+    frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
+    index_file = frontend_dist_path / "index.html"
+    
+    # Only serve index.html for non-API routes
+    if full_path.startswith("api/") or full_path.startswith("workers/") or full_path.startswith("compute/") or full_path.startswith("similar/") or full_path.startswith("download"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+    
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    else:
+        raise HTTPException(status_code=404, detail="Frontend not found")
 
 
 if __name__ == "__main__":
