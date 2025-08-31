@@ -156,7 +156,9 @@ class MyceliumConfig:
             music_library_name=config_data.get("plex", {}).get("music_library_name", "Music")
         )
 
-        server_config = ServerConfig(gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16))
+        server_config = ServerConfig(
+            gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16)
+        )
 
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),

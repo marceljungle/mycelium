@@ -108,7 +108,8 @@ async def get_config():
                 "download_queue_size": config.client.download_queue_size,
                 "job_queue_size": config.client.job_queue_size,
                 "poll_interval": config.client.poll_interval,
-                "download_workers": config.client.download_workers
+                "download_workers": config.client.download_workers,
+                "gpu_batch_size": config.client.gpu_batch_size
             },
             "client_api": {
                 "host": config.client_api.host,
@@ -117,7 +118,9 @@ async def get_config():
             "clap": {
                 "model_id": config.clap.model_id,
                 "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s
+                "chunk_duration_s": config.clap.chunk_duration_s,
+                "num_chunks": config.clap.num_chunks,
+                "max_load_duration_s": config.clap.max_load_duration_s
             },
             "logging": {
                 "level": config.logging.level

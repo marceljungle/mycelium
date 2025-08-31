@@ -10,6 +10,7 @@ interface ClientConfigData {
     job_queue_size: number;
     poll_interval: number;
     download_workers: number;
+    gpu_batch_size: number;
   };
   client_api: {
     host: string;
@@ -19,6 +20,8 @@ interface ClientConfigData {
     model_id: string;
     target_sr: number;
     chunk_duration_s: number;
+    num_chunks: number;
+    max_load_duration_s: number;
   };
   logging: {
     level: string;
@@ -176,7 +179,7 @@ export default function ClientSettingsPage() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 🖥️ Client Worker
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Server Host
@@ -269,6 +272,23 @@ export default function ClientSettingsPage() {
                     Parallel download threads
                   </p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    GPU Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.gpu_batch_size}
+                    onChange={(e) => updateConfig('client', 'gpu_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="4"
+                    min="1"
+                    max="32"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    GPU processing batch size
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -349,6 +369,40 @@ export default function ClientSettingsPage() {
                     onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Number of Chunks
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap.num_chunks}
+                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Number of audio chunks to extract per track
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Max Load Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap.max_load_duration_s}
+                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="10"
+                    max="600"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Maximum seconds of audio to load per track
+                  </p>
                 </div>
               </div>
             </div>

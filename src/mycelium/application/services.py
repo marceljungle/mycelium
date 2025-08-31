@@ -74,6 +74,7 @@ class MyceliumService:
             embedding_repository=self.embedding_repository,
             track_database=self.track_database,
             model_id=config.clap.model_id,
+            gpu_batch_size=config.server.gpu_batch_size
         )
         self.progress_tracker = ProcessingProgressUseCase(track_database=self.track_database)
 
@@ -103,8 +104,7 @@ class MyceliumService:
             # Reset stop flag for new session
             self.reset_processing_stop_flag()
             result = self.resumable_processing.process_embeddings(progress_callback=progress_callback,
-                                                                  max_tracks=max_tracks,
-                                                                  batch_size=self._config.server.gpu_batch_size)
+                                                                  max_tracks=max_tracks)
             return result
         finally:
             self._processing_in_progress = False
