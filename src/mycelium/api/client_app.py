@@ -85,6 +85,12 @@ app.add_middleware(
 # Serve static frontend files
 frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
 if frontend_dist_path.exists():
+    # Mount Next.js static assets at their expected path
+    next_static_path = frontend_dist_path / "_next"
+    if next_static_path.exists():
+        app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
+    
+    # Mount other static assets (favicon, etc.) at root level
     app.mount("/static", StaticFiles(directory=str(frontend_dist_path)), name="static")
 
 
@@ -193,12 +199,18 @@ async def save_config(config_request: ConfigRequest):
 async def serve_frontend(full_path: str):
     """Serve the frontend index.html for client-side routing."""
     frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
-    index_file = frontend_dist_path / "index.html"
     
     # Only serve index.html for non-API routes
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
+    # Try to serve the requested file directly from frontend_dist
+    requested_file = frontend_dist_path / full_path
+    if requested_file.exists() and requested_file.is_file():
+        return FileResponse(str(requested_file))
+    
+    # Fall back to index.html for client-side routing
+    index_file = frontend_dist_path / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))
     else:
