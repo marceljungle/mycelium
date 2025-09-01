@@ -59,7 +59,7 @@ where = ["src"]
 include = ["mycelium*"]
 
 [tool.setuptools.package-data]
-mycelium = ["frontend_dist/**"]
+mycelium = ["frontend_dist/**", "client_frontend_dist/**"]
 
 [tool.setuptools.package-dir]
 "" = "src"

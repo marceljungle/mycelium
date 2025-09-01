@@ -2,7 +2,7 @@
 
 echo "Building Next.js frontend..."
 
-# Run the Next.js build command
+# Build main server frontend (without client mode)
 if ! npm run build --prefix frontend; then
     echo "Error: Frontend build failed"
     exit 1
@@ -24,3 +24,8 @@ cp -r frontend/out/* src/mycelium/frontend_dist/
 
 echo "Frontend build completed successfully!"
 echo "Static files are now available in src/mycelium/frontend_dist/"
+
+# Also build client frontend
+echo ""
+echo "Building client frontend..."
+./build_client_frontend.sh

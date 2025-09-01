@@ -82,16 +82,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static frontend files
-frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
-if frontend_dist_path.exists():
+# Serve static client frontend files
+client_frontend_dist_path = Path(__file__).parent.parent / "client_frontend_dist"
+if client_frontend_dist_path.exists():
     # Mount Next.js static assets at their expected path
-    next_static_path = frontend_dist_path / "_next"
+    next_static_path = client_frontend_dist_path / "_next"
     if next_static_path.exists():
         app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
     
     # Mount other static assets (favicon, etc.) at root level
-    app.mount("/static", StaticFiles(directory=str(frontend_dist_path)), name="static")
+    app.mount("/static", StaticFiles(directory=str(client_frontend_dist_path)), name="static")
 
 
 @app.get("/")
@@ -197,21 +197,21 @@ async def save_config(config_request: ConfigRequest):
 # Catch-all route for frontend client-side routing (must be last)
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
-    """Serve the frontend index.html for client-side routing."""
-    frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
+    """Serve the client frontend index.html for client-side routing."""
+    client_frontend_dist_path = Path(__file__).parent.parent / "client_frontend_dist"
     
     # Only serve index.html for non-API routes
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found")
     
-    # Try to serve the requested file directly from frontend_dist
-    requested_file = frontend_dist_path / full_path
+    # Try to serve the requested file directly from client_frontend_dist
+    requested_file = client_frontend_dist_path / full_path
     if requested_file.exists() and requested_file.is_file():
         return FileResponse(str(requested_file))
     
     # Fall back to index.html for client-side routing
-    index_file = frontend_dist_path / "index.html"
+    index_file = client_frontend_dist_path / "index.html"
     if index_file.exists():
         return FileResponse(str(index_file))
     else:
-        raise HTTPException(status_code=404, detail="Frontend not found")
+        raise HTTPException(status_code=404, detail="Client frontend not found")
