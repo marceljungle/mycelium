@@ -94,9 +94,9 @@ if client_frontend_dist_path.exists():
     app.mount("/static", StaticFiles(directory=str(client_frontend_dist_path)), name="static")
 
 
-@app.get("/")
-async def root():
-    """Root endpoint with basic information."""
+@app.get("/api")
+async def api_info():
+    """API information endpoint (moved from root to /api)."""
     return {
         "message": "Mycelium Client Configuration API",
         "version": "0.1.0",
