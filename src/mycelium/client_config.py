@@ -220,4 +220,4 @@ class MyceliumClientConfig:
         logging.getLogger('requests').setLevel(logging.WARNING)
         
         # Disable verbose numba logging
-        logging.getLogger('numba.core.byteflow').setLevel(logging.WARNING)
+        logging.getLogger('numba.core').setLevel(logging.WARNING)
