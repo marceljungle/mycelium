@@ -12,7 +12,7 @@ from typing import List, Optional, Dict, Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -208,8 +208,14 @@ if frontend_dist_path.exists():
     if next_static_path.exists():
         app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
     
-    # Mount other static assets (favicon, etc.) at root level
-    app.mount("/static", StaticFiles(directory=str(frontend_dist_path)), name="static")
+    # Mount frontend application under /app with SPA routing support
+    app.mount("/app", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
+
+
+@app.get("/")
+async def root():
+    """Redirect root to frontend application."""
+    return RedirectResponse("/app")
 
 
 @app.get("/api")
@@ -1125,29 +1131,6 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
-
-
-# Catch-all route for frontend client-side routing (must be last)
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str):
-    """Serve the frontend index.html for client-side routing."""
-    frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
-    
-    # Only serve index.html for non-API routes
-    if full_path.startswith("api/") or full_path.startswith("workers/") or full_path.startswith("compute/") or full_path.startswith("similar/") or full_path.startswith("download"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
-    # Try to serve the requested file directly from frontend_dist
-    requested_file = frontend_dist_path / full_path
-    if requested_file.exists() and requested_file.is_file():
-        return FileResponse(str(requested_file))
-    
-    # Fall back to index.html for client-side routing
-    index_file = frontend_dist_path / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file))
-    else:
-        raise HTTPException(status_code=404, detail="Frontend not found")
 
 
 if __name__ == "__main__":

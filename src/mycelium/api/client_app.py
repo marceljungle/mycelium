@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -90,8 +90,14 @@ if client_frontend_dist_path.exists():
     if next_static_path.exists():
         app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
     
-    # Mount other static assets (favicon, etc.) at root level
-    app.mount("/static", StaticFiles(directory=str(client_frontend_dist_path)), name="static")
+    # Mount client frontend application under /app with SPA routing support
+    app.mount("/app", StaticFiles(directory=str(client_frontend_dist_path), html=True), name="client_frontend")
+
+
+@app.get("/")
+async def root():
+    """Redirect root to client frontend application."""
+    return RedirectResponse("/app")
 
 
 @app.get("/api")
@@ -192,26 +198,3 @@ async def save_config(config_request: ConfigRequest):
     except Exception as e:
         logger.error(f"Failed to save client configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
-
-
-# Catch-all route for frontend client-side routing (must be last)
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str):
-    """Serve the client frontend index.html for client-side routing."""
-    client_frontend_dist_path = Path(__file__).parent.parent / "client_frontend_dist"
-    
-    # Only serve index.html for non-API routes
-    if full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    
-    # Try to serve the requested file directly from client_frontend_dist
-    requested_file = client_frontend_dist_path / full_path
-    if requested_file.exists() and requested_file.is_file():
-        return FileResponse(str(requested_file))
-    
-    # Fall back to index.html for client-side routing
-    index_file = client_frontend_dist_path / "index.html"
-    if index_file.exists():
-        return FileResponse(str(index_file))
-    else:
-        raise HTTPException(status_code=404, detail="Client frontend not found")
