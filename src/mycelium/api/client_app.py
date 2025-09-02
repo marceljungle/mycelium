@@ -3,10 +3,13 @@
 import functools
 import logging
 import threading
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..client_config import MyceliumClientConfig
@@ -79,10 +82,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve static client frontend files
+client_frontend_dist_path = Path(__file__).parent.parent / "client_frontend_dist"
+if client_frontend_dist_path.exists():
+    # Mount Next.js static assets at their expected path
+    next_static_path = client_frontend_dist_path / "_next"
+    if next_static_path.exists():
+        app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
+    
+    # Mount client frontend application under /app with SPA routing support
+    app.mount("/app", StaticFiles(directory=str(client_frontend_dist_path), html=True), name="client_frontend")
+
 
 @app.get("/")
 async def root():
-    """Root endpoint with basic information."""
+    """Redirect root to client frontend application."""
+    return RedirectResponse("/app")
+
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint (moved from root to /api)."""
     return {
         "message": "Mycelium Client Configuration API",
         "version": "0.1.0",

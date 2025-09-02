@@ -2,11 +2,7 @@
 
 import atexit
 import logging
-import os
-import subprocess
 import threading
-import time
-from pathlib import Path
 from typing import Optional
 
 import typer
@@ -73,104 +69,60 @@ def run_server_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_frontend(server_config: MyceliumConfig = None,
-                 client_config: MyceliumClientConfig = None):
-    """Run the frontend server."""
-    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
-    if not frontend_dir.exists():
-        logger.warning("Frontend directory not found. Skipping frontend server.")
-        return
-
-    # Set environment variable for client mode
-    env = dict(os.environ)
-    if client_config:
-        env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'client'
-        env['NEXT_PUBLIC_API_PORT'] = str(client_config.client_api.port)
-    else:
-        env['NEXT_PUBLIC_MYCELIUM_MODE'] = 'server'
-        env['NEXT_PUBLIC_API_PORT'] = str(server_config.api.port)
-
-    logger.info("Starting frontend development server...")
-    try:
-        # TODO: Before release, this should be run with build and start
-        subprocess.run(["npm", "run", "dev"], cwd=frontend_dir, check=True, env=env)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Frontend dev server failed with exit code {e.returncode}")
-        return
-
-
 def run_server_mode(config: MyceliumConfig) -> None:
-    """Run server mode (API + Frontend)."""
+    """Run server mode (API + Frontend served by FastAPI)."""
     logger.info("Starting Mycelium Server...")
-
-    # Start API server in a separate thread
-    api_thread = threading.Thread(target=run_server_api, args=(config,))
-    api_thread.daemon = True
-    api_thread.start()
-
-    # Give the API server time to start and initialize
-    time.sleep(2)
     
     # Get service reference for cleanup
     get_server_service()
 
-    # Start frontend (this will run in the main thread)
     try:
-        run_frontend(server_config=config)
+        logger.info(f"Starting server on {config.api.host}:{config.api.port}")
+        logger.info("Frontend will be served at the same address")
+        uvicorn.run(
+            "mycelium.api.app:app",
+            host=config.api.host,
+            port=config.api.port,
+            reload=config.api.reload
+        )
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
         cleanup_server_resources()
     except Exception as e:
-        logger.error(f"Frontend error: {e}")
+        logger.error(f"Server error: {e}")
         cleanup_server_resources()
         raise
 
 
-def run_client_api(client_config: MyceliumClientConfig) -> None:
-    """Run the minimal client API server for configuration."""
-    host = client_config.client_api.host
-    port = client_config.client_api.port
-    logger.info(f"Starting client API server on {host}:{port}")
-    uvicorn.run(
-        "mycelium.api.client_app:app",
-        host=host,
-        port=port,
-        reload=False
-    )
-
-
 def run_client_mode(
+        client_config: MyceliumClientConfig,
         server_host: str = "localhost",
         server_port: int = 8000
 ) -> None:
-    """Run client mode (GPU worker + Client API + Frontend)."""
+    """Run client mode (GPU worker + Client API with Frontend)."""
     logger.info("Starting Mycelium Client...")
 
-    # Load client-specific config
-    client_config = MyceliumClientConfig.load_from_yaml()
-
-    # Override client config with provided values
     client_config.client.server_host = server_host
     client_config.client.server_port = server_port
 
-    # Start client API server in a separate thread
-    client_api_thread = threading.Thread(
-        target=run_client_api,
-        args=(client_config,)
-    )
-    client_api_thread.daemon = True
-    client_api_thread.start()
-
-    # Start client worker in a separate thread
     client_thread = threading.Thread(
         target=run_client
     )
     client_thread.daemon = True
     client_thread.start()
 
-    # Start frontend in client mode (this will run in the main thread)
+    # Start the client API server in main thread
     try:
-        run_frontend(client_config=client_config)
+        host = client_config.client_api.host
+        port = client_config.client_api.port
+        logger.info(f"Starting client API server on {host}:{port}")
+        logger.info("Frontend will be served at the same address")
+        uvicorn.run(
+            "mycelium.api.client_app:app",
+            host=host,
+            port=port,
+            reload=False
+        )
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 
@@ -223,6 +175,7 @@ def client(
         final_port = server_port if server_port is not None else client_config.client.server_port
 
         run_client_mode(
+            client_config=client_config,
             server_host=final_host,
             server_port=final_port
         )

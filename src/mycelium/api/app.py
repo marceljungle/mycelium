@@ -12,7 +12,8 @@ from typing import List, Optional, Dict, Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from mycelium.domain import Track
@@ -199,10 +200,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve static frontend files
+frontend_dist_path = Path(__file__).parent.parent / "frontend_dist"
+if frontend_dist_path.exists():
+    # Mount Next.js static assets at their expected path
+    next_static_path = frontend_dist_path / "_next"
+    if next_static_path.exists():
+        app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
+    
+    # Mount frontend application under /app with SPA routing support
+    app.mount("/app", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
+
 
 @app.get("/")
 async def root():
-    """Root endpoint with basic information."""
+    """Redirect root to frontend application."""
+    return RedirectResponse("/app")
+
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint (moved from root to /api)."""
     return {
         "message": "Mycelium Music Recommendation API",
         "version": "0.1.0",

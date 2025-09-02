@@ -235,3 +235,7 @@ frontend/.env.development.local
 frontend/.env.test.local
 frontend/.env.production.local
 frontend/.vercel
+
+src/mycelium/frontend_dist/
+src/mycelium/client_frontend_dist/
+*.whl
