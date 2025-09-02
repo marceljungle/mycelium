@@ -76,7 +76,6 @@ def run_server_mode(config: MyceliumConfig) -> None:
     # Get service reference for cleanup
     get_server_service()
 
-    # Start the FastAPI server (serves both API and frontend)
     try:
         logger.info(f"Starting server on {config.api.host}:{config.api.port}")
         logger.info("Frontend will be served at the same address")
@@ -96,27 +95,23 @@ def run_server_mode(config: MyceliumConfig) -> None:
 
 
 def run_client_mode(
+        client_config: MyceliumClientConfig,
         server_host: str = "localhost",
         server_port: int = 8000
 ) -> None:
     """Run client mode (GPU worker + Client API with Frontend)."""
     logger.info("Starting Mycelium Client...")
 
-    # Load client-specific config
-    client_config = MyceliumClientConfig.load_from_yaml()
-
-    # Override client config with provided values
     client_config.client.server_host = server_host
     client_config.client.server_port = server_port
 
-    # Start client worker in a separate thread
     client_thread = threading.Thread(
         target=run_client
     )
     client_thread.daemon = True
     client_thread.start()
 
-    # Start the client API server (serves both API and frontend) in main thread
+    # Start the client API server in main thread
     try:
         host = client_config.client_api.host
         port = client_config.client_api.port
@@ -180,6 +175,7 @@ def client(
         final_port = server_port if server_port is not None else client_config.client.server_port
 
         run_client_mode(
+            client_config=client_config,
             server_host=final_host,
             server_port=final_port
         )
