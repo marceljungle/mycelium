@@ -369,9 +369,8 @@ export default function SearchInterface() {
               id="num-results"
               type="number"
               min="1"
-              max="50"
               value={numResults}
-              onChange={(e) => setNumResults(Math.max(1, Math.min(50, parseInt(e.target.value) || 10)))}
+              onChange={(e) => setNumResults(parseInt(e.target.value) || 10)}
               className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
           </div>

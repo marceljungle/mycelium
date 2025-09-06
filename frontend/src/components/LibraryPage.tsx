@@ -556,10 +556,9 @@ export default function LibraryPage() {
                     id="rec-num-results"
                     type="number"
                     min="1"
-                    max="50"
                     value={numResults}
                     onChange={(e) => {
-                      const newValue = Math.max(1, Math.min(50, parseInt(e.target.value) || 10));
+                      const newValue = parseInt(e.target.value) || 10;
                       setNumResults(newValue);
                       // Re-fetch recommendations with new count if we have a selected track and no processing is happening
                       if (selectedTrack && processingState === 'none' && !recommendationsLoading) {
