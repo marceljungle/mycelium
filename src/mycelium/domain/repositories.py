@@ -21,8 +21,13 @@ class MediaServerRepository(ABC):
         pass
     
     @abstractmethod
-    def create_playlist(self, playlist: Playlist) -> Playlist:
-        """Create a playlist on the media server."""
+    def create_playlist(self, playlist: Playlist, batch_size: int = 100) -> Playlist:
+        """Create a playlist on the media server.
+        
+        Args:
+            playlist: The playlist to create
+            batch_size: Number of tracks to add per batch for large playlists (default: 100)
+        """
         pass
 
 

@@ -296,8 +296,14 @@ class MyceliumService:
             return 0
         return self.worker_processing.job_queue.cleanup_stale_tasks()
 
-    def create_playlist(self, name: str, track_ids: List[str]) -> "Playlist":
-        """Create a playlist from a list of track IDs."""
+    def create_playlist(self, name: str, track_ids: List[str], batch_size: int = 100) -> "Playlist":
+        """Create a playlist from a list of track IDs.
+        
+        Args:
+            name: Name of the playlist
+            track_ids: List of track IDs to include in the playlist
+            batch_size: Number of tracks to add per batch for large playlists (default: 100)
+        """
         try:
             # Get tracks by their IDs
             tracks = []
@@ -314,8 +320,8 @@ class MyceliumService:
             # Create playlist object
             playlist = Playlist(name=name, tracks=tracks)
 
-            # Create playlist on the media server (Plex)
-            created_playlist = self.plex_repository.create_playlist(playlist)
+            # Create playlist on the media server (Plex) with batching
+            created_playlist = self.plex_repository.create_playlist(playlist, batch_size=batch_size)
 
             self.logger.info(f"Successfully created playlist '{name}' with {len(tracks)} tracks")
             return created_playlist
