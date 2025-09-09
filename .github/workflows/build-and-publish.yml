@@ -28,6 +28,9 @@ name: Build and Publish to PyPI
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required for creating releases and pushing tags
+      id-token: write  # Required for trusted publishing to PyPI
 
     steps:
       - name: Checkout code
@@ -145,6 +148,98 @@ jobs:
           git push origin $NEW_TAG
           git push origin main
           echo "Created and pushed tag: $NEW_TAG"
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          VERSION_TYPE="${{ steps.version_type.outputs.type }}"
+          
+          # Start building release notes
+          RELEASE_NOTES="## What's Changed in v$NEW_VERSION"$'\n\n'
+          
+          # Get PR number and details if this is a merge commit
+          MERGE_COMMIT="${{ github.sha }}"
+          PR_NUMBER=$(git log --format=%B -n 1 $MERGE_COMMIT | grep -o 'Merge pull request #[0-9]*' | grep -o '[0-9]*' || echo "")
+          
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found PR number: $PR_NUMBER"
+            
+            # Get PR details using GitHub API
+            PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+            
+            PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // "N/A"')
+            PR_BODY=$(echo "$PR_DATA" | jq -r '.body // ""')
+            PR_LABELS=$(echo "$PR_DATA" | jq -r '.labels[].name' | tr '\n' ' ')
+            PR_USER=$(echo "$PR_DATA" | jq -r '.user.login // "unknown"')
+            
+            echo "PR Title: $PR_TITLE"
+            echo "PR Labels: $PR_LABELS"
+            
+            # Categorize based on labels
+            if echo "$PR_LABELS" | grep -q "feature"; then
+              CATEGORY="### 🚀 New Features"
+            elif echo "$PR_LABELS" | grep -q "hotfix"; then
+              CATEGORY="### 🐛 Bug Fixes"
+            elif echo "$PR_LABELS" | grep -q "chore"; then
+              CATEGORY="### 🔧 Maintenance & Chores"
+            elif echo "$PR_LABELS" | grep -q "major"; then
+              CATEGORY="### 💥 Breaking Changes"
+            elif echo "$PR_LABELS" | grep -q "minor"; then
+              CATEGORY="### ✨ Enhancements"
+            else
+              CATEGORY="### 📝 Changes"
+            fi
+            
+            RELEASE_NOTES+="$CATEGORY"$'\n'
+            RELEASE_NOTES+="- $PR_TITLE by @$PR_USER in #$PR_NUMBER"$'\n\n'
+            
+            # Add PR body if it contains useful information
+            if [ -n "$PR_BODY" ] && [ "$PR_BODY" != "null" ] && [ ${#PR_BODY} -gt 10 ]; then
+              RELEASE_NOTES+="### 📋 Details"$'\n'
+              RELEASE_NOTES+="$PR_BODY"$'\n\n'
+            fi
+          else
+            # Fallback for manual releases or direct commits
+            case $VERSION_TYPE in
+              major)
+                RELEASE_NOTES+="### 💥 Breaking Changes"$'\n'
+                RELEASE_NOTES+="- Major version release with breaking changes"$'\n\n'
+                ;;
+              minor)
+                RELEASE_NOTES+="### ✨ Enhancements"$'\n'
+                RELEASE_NOTES+="- Minor version release with new features"$'\n\n'
+                ;;
+              patch)
+                RELEASE_NOTES+="### 🐛 Bug Fixes"$'\n'
+                RELEASE_NOTES+="- Patch version release with bug fixes"$'\n\n'
+                ;;
+            esac
+          fi
+          
+          # Add version information
+          RELEASE_NOTES+="### 📦 Installation"$'\n'
+          RELEASE_NOTES+='```bash'$'\n'
+          RELEASE_NOTES+="pip install mycelium==$NEW_VERSION"$'\n'
+          RELEASE_NOTES+='```'$'\n\n'
+          
+          RELEASE_NOTES+="**Full Changelog**: https://github.com/${{ github.repository }}/commits/v$NEW_VERSION"
+          
+          # Save release notes to output (handle multiline properly)
+          {
+            echo 'notes<<EOF'
+            echo "$RELEASE_NOTES"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "${{ steps.new_version.outputs.tag }}" \
+            --title "Release ${{ steps.new_version.outputs.tag }}" \
+            --notes "${{ steps.release_notes.outputs.notes }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
