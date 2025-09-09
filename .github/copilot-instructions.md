@@ -507,7 +507,7 @@ mycelium server &          # Start server for testing
 curl http://localhost:8000/api/library/stats  # Test API
 
 # End-to-end testing
-# 1. Open http://localhost:3000
+# 1. Open http://localhost:8000
 # 2. Verify UI loads correctly
 # 3. Test search functionality  
 # 4. Test library operations
