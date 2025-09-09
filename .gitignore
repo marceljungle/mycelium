@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.whl
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -207,3 +208,34 @@ marimo/_lsp/
 __marimo__/
 
 .idea/
+
+# Mycelium specific
+music_vector_db/
+plex_music_library.json
+music_embeddings.json
+*.wav
+*.mp3
+*.flac
+
+# New database files
+mycelium_tracks.db
+*.sqlite
+*.sqlite3
+
+# Test files
+test_*.py
+test_*.db
+test_*.yml
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/.vercel
+
+src/mycelium/frontend_dist/
+src/mycelium/client_frontend_dist/

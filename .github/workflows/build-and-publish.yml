@@ -1,0 +1,233 @@
+---
+name: Build and Publish to PyPI
+
+'on':
+  # Manual trigger with options for testing
+  workflow_dispatch:
+    inputs:
+      test_upload:
+        description: 'Upload to Test PyPI instead of PyPI'
+        required: false
+        default: false
+        type: boolean
+      version_type:
+        description: 'Version bump type (for manual testing)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+  # Automatic trigger on pushes to main branch (merges)
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for version calculation
+
+      - name: Determine version bump type
+        id: version_type
+        run: |
+          # For manual dispatch, use the input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=${{ github.event.inputs.version_type || 'patch' }}" >> $GITHUB_OUTPUT
+            echo "Using manual version type: ${{ github.event.inputs.version_type || 'patch' }}"
+            exit 0
+          fi
+          
+          # For pushes to main, determine from merge commit or PR labels
+          MERGE_COMMIT="${{ github.sha }}"
+          echo "Analyzing merge commit: $MERGE_COMMIT"
+          
+          # Check if this is a merge commit
+          PARENTS=$(git rev-list --parents -n 1 $MERGE_COMMIT | wc -w)
+          if [ $PARENTS -le 2 ]; then
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "Not a merge commit, defaulting to patch"
+            exit 0
+          fi
+          
+          # Get PR number from merge commit message
+          PR_NUMBER=$(git log --format=%B -n 1 $MERGE_COMMIT | grep -o 'Merge pull request #[0-9]*' | grep -o '[0-9]*' || echo "")
+          
+          if [ -z "$PR_NUMBER" ]; then
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "Could not find PR number, defaulting to patch"
+            exit 0
+          fi
+          
+          echo "Found PR number: $PR_NUMBER"
+          
+          # Get PR labels using GitHub API
+          LABELS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | \
+            jq -r '.labels[].name' | tr '\n' ' ')
+          echo "PR labels: $LABELS"
+          
+          # Determine version type based on labels
+          if echo "$LABELS" | grep -q "major"; then
+            echo "type=major" >> $GITHUB_OUTPUT
+            echo "Found 'major' label"
+          elif echo "$LABELS" | grep -q "minor"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+            echo "Found 'minor' label"
+          elif echo "$LABELS" | grep -q "hotfix"; then
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "Found 'hotfix' label"
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "No version label found, defaulting to patch"
+          fi
+
+      - name: Calculate new version
+        id: new_version
+        run: |
+          # Get current version from pyproject.toml
+          CURRENT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Parse version components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          # Calculate new version based on type
+          VERSION_TYPE="${{ steps.version_type.outputs.type }}"
+          case $VERSION_TYPE in
+            major)
+              NEW_MAJOR=$((MAJOR + 1))
+              NEW_MINOR=0
+              NEW_PATCH=0
+              ;;
+            minor)
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$((MINOR + 1))
+              NEW_PATCH=0
+              ;;
+            patch)
+              NEW_MAJOR=$MAJOR
+              NEW_MINOR=$MINOR
+              NEW_PATCH=$((PATCH + 1))
+              ;;
+            *)
+              echo "Unknown version type: $VERSION_TYPE"
+              exit 1
+              ;;
+          esac
+          
+          NEW_VERSION="$NEW_MAJOR.$NEW_MINOR.$NEW_PATCH"
+          echo "New version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in pyproject.toml
+        run: |
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          sed -i "s/^version = .*/version = \"$NEW_VERSION\"/" pyproject.toml
+          echo "Updated pyproject.toml with version $NEW_VERSION"
+          
+      - name: Create and push version tag
+        run: |
+          NEW_TAG="${{ steps.new_version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "Bump version to ${{ steps.new_version.outputs.version }}"
+          git tag $NEW_TAG
+          git push origin $NEW_TAG
+          git push origin main
+          echo "Created and pushed tag: $NEW_TAG"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Node.js dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          chmod +x ./build_frontend.sh
+          ./build_frontend.sh
+
+      - name: Verify frontend build
+        run: |
+          echo "Checking frontend build output..."
+          ls -la src/mycelium/frontend_dist/
+          ls -la src/mycelium/client_frontend_dist/
+          echo "Frontend files built successfully"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel setuptools
+
+      - name: Build Python package
+        run: |
+          python -m build
+
+      - name: Verify package contents
+        run: |
+          echo "Built packages:"
+          ls -la dist/
+          
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          echo "Package contents check for version $NEW_VERSION:"
+          python -c "
+          import tarfile
+          import os
+          import glob
+          
+          # Find the source distribution file
+          tar_files = glob.glob('dist/mycelium-*.tar.gz')
+          if not tar_files:
+              print('✗ No source distribution found!')
+              exit(1)
+          
+          tar_file = tar_files[0]
+          print(f'Checking {tar_file}')
+          
+          # Check if frontend files are included in the source distribution
+          with tarfile.open(tar_file, 'r:gz') as tar:
+              files = tar.getnames()
+              frontend_files = [f for f in files if 'frontend_dist' in f]
+              print(f'Frontend files in package: {len(frontend_files)}')
+              if len(frontend_files) > 0:
+                  print('✓ Frontend files are included in the package')
+              else:
+                  print('✗ Frontend files are missing!')
+                  exit(1)
+          "
+
+      - name: Upload to Test PyPI
+        if: ${{ github.event.inputs.test_upload == 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          verbose: true
+
+      - name: Upload to PyPI
+        if: ${{ github.event.inputs.test_upload != 'true' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
