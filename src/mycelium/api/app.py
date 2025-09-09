@@ -66,6 +66,7 @@ class SearchResultResponse(BaseModel):
 class CreatePlaylistRequest(BaseModel):
     name: str
     track_ids: List[str]
+    batch_size: int = 100  # Optional batch size for large playlists
 
 
 class PlaylistResponse(BaseModel):
@@ -653,7 +654,7 @@ async def get_processing_progress(model_id: Optional[str] = Query(None, descript
 async def create_playlist(request: CreatePlaylistRequest):
     """Create a playlist from a list of track IDs."""
     try:
-        playlist = service.create_playlist(request.name, request.track_ids)
+        playlist = service.create_playlist(request.name, request.track_ids, request.batch_size)
         return PlaylistResponse(
             name=playlist.name,
             track_count=playlist.track_count,

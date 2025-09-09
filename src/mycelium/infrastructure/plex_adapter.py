@@ -89,8 +89,13 @@ class PlexMusicRepository(PlexRepository):
             self.logger.error(f"Error getting track {track_id}: {e}", exc_info=True)
             return None
 
-    def create_playlist(self, playlist: Playlist) -> Playlist:
-        """Create a playlist on the Plex server."""
+    def create_playlist(self, playlist: Playlist, batch_size: int = 100) -> Playlist:
+        """Create a playlist on the Plex server using batch processing for large playlists.
+        
+        Args:
+            playlist: The playlist to create
+            batch_size: Number of tracks to add per batch (default: 100)
+        """
         try:
             plex = PlexServer(self.plex_url, self.plex_token)
             
@@ -107,8 +112,25 @@ class PlexMusicRepository(PlexRepository):
             if not plex_tracks:
                 raise ValueError("No valid tracks found for playlist creation")
             
-            # Create the playlist on Plex
-            created_playlist = plex.createPlaylist(title=playlist.name, items=plex_tracks)
+            total_tracks = len(plex_tracks)
+            self.logger.info(f"Creating playlist '{playlist.name}' with {total_tracks} tracks")
+            
+            # Create the playlist with the first batch
+            first_batch = plex_tracks[:batch_size]
+            created_playlist = plex.createPlaylist(title=playlist.name, items=first_batch)
+            self.logger.info(f"Created playlist '{playlist.name}' with initial batch of {len(first_batch)} tracks")
+            
+            # Add remaining tracks in batches
+            remaining_tracks = plex_tracks[batch_size:]
+            if remaining_tracks:
+                self.logger.info(f"Adding {len(remaining_tracks)} remaining tracks in batches of {batch_size}")
+                
+                for i in range(0, len(remaining_tracks), batch_size):
+                    batch = remaining_tracks[i:i + batch_size]
+                    created_playlist.addItems(batch)
+                    self.logger.debug(f"Added batch {i//batch_size + 1}: {len(batch)} tracks")
+                
+                self.logger.info(f"Successfully completed playlist creation with all {total_tracks} tracks")
             
             # Return the playlist with server ID and creation time
             return Playlist(
