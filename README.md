@@ -177,6 +177,84 @@ mycelium/
 - **Resume processing**: Embedding generation can be stopped and resumed anytime
 - **Performance**: Batch processing adapts to available memory automatically
 
+## Packaging and Distribution
+
+Mycelium includes automated CI/CD workflows for building and publishing to PyPI.
+
+### Build Process
+
+The package build follows a two-stage process:
+
+1. **Frontend Compilation**: Next.js frontend is built into static files
+2. **Python Package Build**: Frontend assets are included in the Python wheel
+
+To build locally:
+
+```bash
+# Build frontend and create distribution directories
+./build_frontend.sh
+
+# Build Python wheel (after frontend build)
+python -m build
+```
+
+### GitHub Actions Workflow
+
+The repository includes a GitHub Action (`.github/workflows/build-and-publish.yml`) that:
+
+- **Automatic Triggers**: Runs when merging PRs to the `main` branch
+- **Smart Versioning**: Automatically determines version bump based on PR labels
+- **Manual Triggers**: Can be triggered manually via GitHub Actions UI for testing
+- **Test PyPI Support**: Option to upload to Test PyPI for validation
+- **Build Verification**: Validates that frontend assets are included in the package
+
+#### Automatic Release Strategy
+
+The workflow automatically creates releases when merging to `main` based on PR labels:
+
+**Version Bump Types**:
+- `major` label: Creates `x+1.0.0` version (breaking changes)
+- `minor` label: Creates `x.y+1.0` version (new features)
+- `hotfix` label: Creates `x.y.z+1` version (bug fixes)
+- No label: Defaults to patch version (`x.y.z+1`)
+
+**Workflow Examples**:
+
+1. **Feature Release** (develop → main):
+   ```bash
+   # Create PR from develop to main with "minor" label
+   # When merged: 1.0.0 → 1.1.0
+   ```
+
+2. **Major Release** (develop → main):
+   ```bash
+   # Create PR from develop to main with "major" label  
+   # When merged: 1.1.0 → 2.0.0
+   ```
+
+3. **Hotfix** (hotfix/issue-123 → main):
+   ```bash
+   # Create PR from hotfix branch to main with "hotfix" label
+   # When merged: 1.1.0 → 1.1.1
+   ```
+
+#### Manual Testing
+
+**Manual Trigger for Testing**:
+1. Go to GitHub Actions tab in the repository
+2. Select "Build and Publish to PyPI" workflow
+3. Click "Run workflow"
+4. Choose version type and whether to upload to Test PyPI
+
+#### Required Secrets
+
+Configure these secrets in your GitHub repository settings:
+
+- `PYPI_API_TOKEN`: API token for PyPI uploads
+- `TEST_PYPI_API_TOKEN`: API token for Test PyPI uploads (optional, for testing)
+
+The workflow uses PyPI's trusted publishing when possible, or falls back to API tokens.
+
 ## Contributing
 
 Contributions welcome! Ensure changes follow existing patterns, include TypeScript types, and use the logging system.
