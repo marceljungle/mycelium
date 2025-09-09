@@ -436,25 +436,49 @@ python -m build
 
 The repository includes a GitHub Action (`.github/workflows/build-and-publish.yml`) that:
 
-- **Automatic Triggers**: Runs on version tags (e.g., `v1.0.0`)
-- **Manual Triggers**: Can be triggered manually via GitHub Actions UI
-- **Test PyPI Support**: Option to upload to Test PyPI for testing
+- **Automatic Triggers**: Runs when merging PRs to the `main` branch
+- **Smart Versioning**: Automatically determines version bump based on PR labels
+- **Manual Triggers**: Can be triggered manually via GitHub Actions UI for testing
+- **Test PyPI Support**: Option to upload to Test PyPI for validation
 - **Build Verification**: Validates that frontend assets are included in the package
 
-#### Usage
+#### Automatic Release Strategy
 
-**Automatic Release (Recommended)**:
-```bash
-# Create and push a version tag
-git tag v1.0.0
-git push origin v1.0.0
-```
+The workflow automatically creates releases when merging to `main` based on PR labels:
 
-**Manual Trigger**:
+**Version Bump Types**:
+- `major` label: Creates `x+1.0.0` version (breaking changes)
+- `minor` label: Creates `x.y+1.0` version (new features)
+- `hotfix` label: Creates `x.y.z+1` version (bug fixes)
+- No label: Defaults to patch version (`x.y.z+1`)
+
+**Workflow Examples**:
+
+1. **Feature Release** (develop → main):
+   ```bash
+   # Create PR from develop to main with "minor" label
+   # When merged: 1.0.0 → 1.1.0
+   ```
+
+2. **Major Release** (develop → main):
+   ```bash
+   # Create PR from develop to main with "major" label  
+   # When merged: 1.1.0 → 2.0.0
+   ```
+
+3. **Hotfix** (hotfix/issue-123 → main):
+   ```bash
+   # Create PR from hotfix branch to main with "hotfix" label
+   # When merged: 1.1.0 → 1.1.1
+   ```
+
+#### Manual Testing
+
+**Manual Trigger for Testing**:
 1. Go to GitHub Actions tab in the repository
 2. Select "Build and Publish to PyPI" workflow
 3. Click "Run workflow"
-4. Choose whether to upload to Test PyPI (for testing) or PyPI (for release)
+4. Choose version type and whether to upload to Test PyPI
 
 #### Required Secrets
 
