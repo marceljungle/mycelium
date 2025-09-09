@@ -46,8 +46,7 @@ export default function Home() {
                 🍄 Mycelium
               </h1>
               <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-                Discover your music collection like never before. Using AI-powered embeddings 
-                to find perfect matches based on sound, mood, and style.
+                AI-powered music search using embeddings to find perfect matches based on sound, mood, and style.
               </p>
             </div>
           )}
