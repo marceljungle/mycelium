@@ -6,12 +6,7 @@ import threading
 from typing import Optional
 
 import typer
-import uvicorn
 from typing_extensions import Annotated
-
-from mycelium.client import run_client
-from mycelium.client_config import MyceliumClientConfig
-from mycelium.config import MyceliumConfig
 
 app = typer.Typer(
     name="mycelium",
@@ -58,8 +53,11 @@ def get_server_service():
     return _server_service
 
 
-def run_server_api(config: MyceliumConfig) -> None:
+def run_server_api(config) -> None:
     """Run the FastAPI server."""
+    # Lazy import uvicorn only when needed
+    import uvicorn
+    
     logger.info(f"Starting API server on {config.api.host}:{config.api.port}")
     uvicorn.run(
         "mycelium.api.app:app",
@@ -69,8 +67,11 @@ def run_server_api(config: MyceliumConfig) -> None:
     )
 
 
-def run_server_mode(config: MyceliumConfig) -> None:
+def run_server_mode(config) -> None:
     """Run server mode (API + Frontend served by FastAPI)."""
+    # Lazy import uvicorn only when needed
+    import uvicorn
+    
     logger.info("Starting Mycelium Server...")
     
     # Get service reference for cleanup
@@ -95,11 +96,15 @@ def run_server_mode(config: MyceliumConfig) -> None:
 
 
 def run_client_mode(
-        client_config: MyceliumClientConfig,
+        client_config,
         server_host: str = "localhost",
         server_port: int = 8000
 ) -> None:
     """Run client mode (GPU worker + Client API with Frontend)."""
+    # Lazy import client dependencies only when needed
+    import uvicorn
+    from mycelium.client import run_client
+    
     logger.info("Starting Mycelium Client...")
 
     client_config.client.server_host = server_host
@@ -135,6 +140,9 @@ def server(
 ) -> None:
     """Start server mode (API + Frontend)."""
     try:
+        # Lazy import config only when needed
+        from mycelium.config import MyceliumConfig
+        
         config = MyceliumConfig.load_from_yaml()
         config.setup_logging()
 
@@ -167,6 +175,9 @@ def client(
 ) -> None:
     """Start client mode (GPU worker)."""
     try:
+        # Lazy import client config only when needed
+        from mycelium.client_config import MyceliumClientConfig
+        
         client_config = MyceliumClientConfig.load_from_yaml()
         client_config.setup_logging()
 

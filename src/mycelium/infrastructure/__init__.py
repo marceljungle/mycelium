@@ -5,25 +5,13 @@ from .track_database import TrackDatabase, StoredTrack, TrackEmbeddingRecord
 
 __all__ = [
     "TrackDatabase",
-    "StoredTrack",
+    "StoredTrack", 
     "TrackEmbeddingRecord"
 ]
 
-# Try to import other components that have external dependencies
-try:
-    from .plex_adapter import PlexMusicRepository
-    __all__.append("PlexMusicRepository")
-except ImportError:
-    pass
-
-try:
-    from .clap_adapter import CLAPEmbeddingGenerator
-    __all__.append("CLAPEmbeddingGenerator")
-except ImportError:
-    pass
-
-try:
-    from .chroma_adapter import ChromaEmbeddingRepository
-    __all__.append("ChromaEmbeddingRepository")
-except ImportError:
-    pass
+# Note: Other components (PlexMusicRepository, CLAPEmbeddingGenerator, ChromaEmbeddingRepository)
+# are imported lazily when needed to avoid loading heavy ML dependencies during CLI startup.
+# They can be imported directly from their modules when required:
+# - from mycelium.infrastructure.plex_adapter import PlexMusicRepository  
+# - from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
+# - from mycelium.infrastructure.chroma_adapter import ChromaEmbeddingRepository
