@@ -16,7 +16,6 @@ import requests
 
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
-from mycelium.infrastructure import CLAPEmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +53,9 @@ class MyceliumClient:
 
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        self.device = CLAPEmbeddingGenerator.get_best_device()
+        # Initialize device and CLAP generator lazily to avoid loading ML dependencies during CLI startup
+        self.device = None
+        self.clap_embedding_generator = None
 
         self.job_queue: Queue[dict] = Queue(maxsize=self.config.client.job_queue_size)
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=self.download_queue_size)
@@ -63,20 +64,31 @@ class MyceliumClient:
         self.download_threads: List[threading.Thread] = []
         self.stop_event = threading.Event()
 
-        self.clap_embedding_generator = CLAPEmbeddingGenerator(model_id=self.config.clap.model_id,
-                                                               target_sr=self.config.clap.target_sr,
-                                                               chunk_duration_s=self.config.clap.chunk_duration_s,
-                                                               num_chunks=self.config.clap.num_chunks,
-                                                               max_load_duration_s=self.config.clap.max_load_duration_s)
-
         logging.info("Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
         logging.info(f"Server: {self.server_url}")
-        logging.info(f"Device: {self.device}")
         logging.info(f"Download queue size: {self.download_queue_size}")
         logging.info(f"Job queue size: {self.config.client.job_queue_size}")
         logging.info(f"Poll interval: {self.poll_interval}s")
         logging.info(f"Parallel download workers: {self.download_workers}")
+
+    def _init_clap_generator(self):
+        """Initialize CLAP embedding generator lazily when first needed."""
+        if self.clap_embedding_generator is None:
+            # Import CLAPEmbeddingGenerator only when needed
+            from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
+            
+            self.device = CLAPEmbeddingGenerator.get_best_device()
+            logging.info(f"Initializing CLAP embedding generator on device: {self.device}")
+            
+            self.clap_embedding_generator = CLAPEmbeddingGenerator(
+                model_id=self.config.clap.model_id,
+                target_sr=self.config.clap.target_sr,
+                chunk_duration_s=self.config.clap.chunk_duration_s,
+                num_chunks=self.config.clap.num_chunks,
+                max_load_duration_s=self.config.clap.max_load_duration_s
+            )
+            logging.info("CLAP embedding generator initialized successfully")
 
     def _log_queue_status(self, context: str = ""):
         """Log current queue status with context."""
@@ -146,15 +158,10 @@ class MyceliumClient:
 
             if clap_changed:
                 logging.info("CLAP configuration changed, recreating embedding generator...")
-                self.clap_embedding_generator.unload_model()
-                self.clap_embedding_generator = CLAPEmbeddingGenerator(
-                    model_id=new_config.clap.model_id,
-                    target_sr=new_config.clap.target_sr,
-                    chunk_duration_s=new_config.clap.chunk_duration_s,
-                    num_chunks=new_config.clap.num_chunks,
-                    max_load_duration_s=new_config.clap.max_load_duration_s
-                )
-                logging.info("CLAP embedding generator updated.")
+                if self.clap_embedding_generator is not None:
+                    self.clap_embedding_generator.unload_model()
+                    self.clap_embedding_generator = None  # Reset to lazy init
+                logging.info("CLAP embedding generator will be reinitialized on next use.")
 
             if client_changed:
                 logging.warning("Client configuration changed. Some changes require restart:")
@@ -423,6 +430,9 @@ class MyceliumClient:
             return
         
         try:
+            # Initialize CLAP generator if needed
+            self._init_clap_generator()
+            
             # Generate embeddings in batch
             embeddings = self.clap_embedding_generator.generate_embedding_batch(audio_files)
             
@@ -475,6 +485,9 @@ class MyceliumClient:
             return
         
         try:
+            # Initialize CLAP generator if needed
+            self._init_clap_generator()
+            
             # Generate embeddings in batch
             embeddings = self.clap_embedding_generator.generate_text_embedding_batch(text_queries)
             
@@ -544,7 +557,8 @@ class MyceliumClient:
         finally:
             self._log_queue_status("shutdown")
             self._stop_workers()
-            self.clap_embedding_generator.unload_model()
+            if self.clap_embedding_generator is not None:
+                self.clap_embedding_generator.unload_model()
             logging.info("Worker stopped")
 
 
