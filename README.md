@@ -411,6 +411,60 @@ mycelium/
 - Use the separated workflow to pause/resume processing as needed
 - Monitor processing progress through the web interface or API endpoints
 
+## Packaging and Distribution
+
+Mycelium includes automated CI/CD workflows for building and publishing to PyPI.
+
+### Build Process
+
+The package build follows a two-stage process:
+
+1. **Frontend Compilation**: Next.js frontend is built into static files
+2. **Python Package Build**: Frontend assets are included in the Python wheel
+
+To build locally:
+
+```bash
+# Build frontend and create distribution directories
+./build_frontend.sh
+
+# Build Python wheel (after frontend build)
+python -m build
+```
+
+### GitHub Actions Workflow
+
+The repository includes a GitHub Action (`.github/workflows/build-and-publish.yml`) that:
+
+- **Automatic Triggers**: Runs on version tags (e.g., `v1.0.0`)
+- **Manual Triggers**: Can be triggered manually via GitHub Actions UI
+- **Test PyPI Support**: Option to upload to Test PyPI for testing
+- **Build Verification**: Validates that frontend assets are included in the package
+
+#### Usage
+
+**Automatic Release (Recommended)**:
+```bash
+# Create and push a version tag
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**Manual Trigger**:
+1. Go to GitHub Actions tab in the repository
+2. Select "Build and Publish to PyPI" workflow
+3. Click "Run workflow"
+4. Choose whether to upload to Test PyPI (for testing) or PyPI (for release)
+
+#### Required Secrets
+
+Configure these secrets in your GitHub repository settings:
+
+- `PYPI_API_TOKEN`: API token for PyPI uploads
+- `TEST_PYPI_API_TOKEN`: API token for Test PyPI uploads (optional, for testing)
+
+The workflow uses PyPI's trusted publishing when possible, or falls back to API tokens.
+
 ## Contributing
 
 Contributions are welcome! Please ensure your changes:
