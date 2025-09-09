@@ -387,7 +387,7 @@ export default function SearchInterface() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Describe the music you're looking for... (e.g., 'upbeat 80s synthpop', 'melancholic acoustic')"
+                placeholder="Describe the music you're looking for... (e.g., 'upbeat 80s synthpop', 'slow piano ballad', 'fast drumbeat with distorted guitar')"
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
               />
             </div>

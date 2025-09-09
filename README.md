@@ -6,29 +6,29 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red)](https://pytorch.org/)
 
-AI-powered music recommendation system for Plex using semantic search with CLAP embeddings.
+AI-powered music recommendation system for Plex using semantic search with CLAP embeddings that understands both natural language and sonic characteristics.
 
 ![Mycelium Frontend](https://github.com/user-attachments/assets/1a838b24-6f74-43ea-bf85-31f66efaffdb)
 
 ## What is this?
 
-Mycelium connects to your Plex media server and uses AI to understand your music collection. Search for songs using natural language ("melancholic indie rock") or upload audio files to find similar tracks. Uses CLAP (Contrastive Language-Audio Pre-training) for semantic music understanding.
+Mycelium connects to your Plex media server and uses AI to understand your music collection at both semantic and sonic levels. Search for songs using natural language descriptions ("melancholic indie rock", "fast drumbeat with distorted guitar") or upload audio files to find tracks with similar rhythm, timbre, and sonic characteristics. Uses CLAP (Contrastive Language-Audio Pre-training) to analyze both text descriptions and actual audio features like tempo, instrumentation, and production qualities.
 
 ## How it works
 
 1. **Scan** - Connects to Plex and extracts music track metadata
-2. **Process** - Generates AI embeddings using CLAP model for semantic understanding  
+2. **Process** - Generates AI embeddings using CLAP model for comprehensive music understanding (both semantic and acoustic features)  
 3. **Search** - Find music using natural language or audio file similarity
-4. **Recommend** - Get AI-powered recommendations based on sound, mood, and style
+4. **Recommend** - Get AI-powered recommendations based on sonic qualities, rhythm patterns, mood, and style
 
 **Architecture**: Python backend (FastAPI) + Next.js frontend + ChromaDB vector database
 
 ## Features
 
 **🔍 Smart Search**
-- Text search: "upbeat 80s synthpop", "melancholic indie rock"
-- Audio search: Upload files to find similar tracks
-- Browse library with AI recommendations
+- Text search: "upbeat 80s synthpop", "melancholic indie rock", "fast drumbeat with heavy bass", "acoustic guitar with reverb"
+- Audio search: Upload files to find similar tracks by rhythm, tempo, and sonic characteristics
+- Browse library with AI recommendations based on musical patterns
 
 **🚀 Performance** 
 - Distributed GPU processing for large libraries
@@ -100,7 +100,7 @@ mycelium client --server-host HOST         # Start GPU worker client
 
 ### Web Interface
 
-**Search**: Natural language search ("upbeat indie rock") or upload audio files  
+**Search**: Natural language search ("upbeat indie rock", "slow tempo with piano") or upload audio files to find sonically similar tracks  
 **Library**: Browse tracks, scan Plex library, and process embeddings  
 **Settings**: Configure Plex connection and processing options
 
