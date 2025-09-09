@@ -70,46 +70,41 @@ cd frontend && npm install
 # Start server (API + Frontend)
 mycelium server
 
-# Or run separately
-mycelium api &              # Backend only
-cd frontend && npm run dev  # Frontend only
-
 # For distributed processing (optional)
 mycelium client --server-host 192.168.1.100  # On GPU machine
 ```
 
-Visit `http://localhost:3000` for the web interface.
+Visit `http://localhost:8000` for the web interface.
 
 ## Usage
 
 ### Basic Workflow
 
 ```bash
-# 1. Scan your Plex library
-mycelium scan
-
-# 2. Generate AI embeddings (can take time for large libraries)
-mycelium process
-
-# 3. Start the web interface
+# 1. Start the web interface
 mycelium server
+
+# 2. Open http://localhost:8000 in your browser
+# 3. Use the web interface to:
+#    - Scan your Plex library
+#    - Generate AI embeddings
+#    - Search and explore your music
 ```
 
-### Command Line
+### Available Commands
 
 ```bash
-mycelium scan                              # Scan Plex library
-mycelium process                           # Generate embeddings (resumable)
-mycelium search-text "melancholic rock"   # Text search
-mycelium search-audio song.mp3            # Audio file search
-mycelium stats                             # Show statistics
+mycelium server                            # Start server (API + Frontend)
+mycelium client --server-host HOST         # Start GPU worker client
 ```
 
 ### Web Interface
 
 **Search**: Natural language search ("upbeat indie rock") or upload audio files  
-**Library**: Browse tracks and get AI recommendations  
+**Library**: Browse tracks, scan Plex library, and process embeddings  
 **Settings**: Configure Plex connection and processing options
+
+Access the web interface at `http://localhost:8000` after starting the server.
 
 ### Distributed Processing
 
