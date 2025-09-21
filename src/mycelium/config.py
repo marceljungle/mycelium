@@ -248,6 +248,41 @@ class MyceliumConfig:
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, indent=2)
 
+    def to_dict(self) -> dict:
+        """Convert configuration to dictionary format"""
+        return {
+            "media_server": {
+                "type": self.media_server.type.value
+            },
+            "plex": {
+                "url": self.plex.url,
+                "token": self.plex.token,
+                "music_library_name": self.plex.music_library_name
+            },
+            "server": {
+                "gpu_batch_size": self.server.gpu_batch_size
+            },
+            "api": {
+                "host": self.api.host,
+                "port": self.api.port,
+                "reload": self.api.reload
+            },
+            "chroma": {
+                "collection_name": self.chroma.collection_name,
+                "batch_size": self.chroma.batch_size
+            },
+            "clap": {
+                "model_id": self.clap.model_id,
+                "target_sr": self.clap.target_sr,
+                "chunk_duration_s": self.clap.chunk_duration_s,
+                "num_chunks": self.clap.num_chunks,
+                "max_load_duration_s": self.clap.max_load_duration_s
+            },
+            "logging": {
+                "level": self.logging.level
+            }
+        }
+
     def setup_logging(self) -> None:
         """Setup logging configuration."""
         # Configure the root logger

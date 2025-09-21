@@ -12,7 +12,7 @@ from ..infrastructure.track_database import TrackDatabase
 logger = logging.getLogger(__name__)
 
 
-class SeparatedLibraryScanUseCase:
+class LibraryScanUseCase:
     """Use case for scanning and storing track metadata."""
 
     def __init__(self, plex_repository: PlexRepository, track_database: TrackDatabase):
@@ -67,7 +67,7 @@ class SeparatedLibraryScanUseCase:
             raise
 
 
-class ResumableEmbeddingProcessingUseCase:
+class EmbeddingProcessingUseCase:
     """Use case for resumable embedding processing from stored tracks."""
 
     def __init__(

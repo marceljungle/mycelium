@@ -8,8 +8,8 @@ from mycelium.application.use_cases import (
     MusicSearchUseCase
 )
 from mycelium.application.workflow_use_cases import (
-    SeparatedLibraryScanUseCase,
-    ResumableEmbeddingProcessingUseCase,
+    LibraryScanUseCase,
+    EmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
     WorkerBasedProcessingUseCase
 )
@@ -64,12 +64,11 @@ class MyceliumService:
             embedding_generator=self.embedding_generator
         )
 
-        # Initialize new use cases
-        self.separated_scan = SeparatedLibraryScanUseCase(
+        self.separated_scan = LibraryScanUseCase(
             plex_repository=self.plex_repository,
             track_database=self.track_database
         )
-        self.resumable_processing = ResumableEmbeddingProcessingUseCase(
+        self.resumable_processing = EmbeddingProcessingUseCase(
             embedding_generator=self.embedding_generator,
             embedding_repository=self.embedding_repository,
             track_database=self.track_database,
