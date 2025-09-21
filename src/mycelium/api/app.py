@@ -7,7 +7,7 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union, Literal
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
@@ -19,9 +19,7 @@ from pydantic import BaseModel
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
-    ConfirmationRequiredResponse, ComputeOnServerRequest,
-    WorkerProcessingResponse, NoWorkersResponse,
-    SearchProcessingResponse, SearchConfirmationRequiredResponse,
+    ComputeOnServerRequest,
     ComputeSearchOnServerRequest
 )
 from ..application.job_queue import JobQueueService
@@ -116,7 +114,6 @@ class TracksListResponse(BaseModel):
     limit: int
 
 
-# New unified/typed API response models (replacing plain dict responses)
 class ApiInfoResponse(BaseModel):
     """Basic API info and advertised endpoints."""
     message: str
@@ -205,6 +202,41 @@ class TaskStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
     search_results: Optional[List[SearchResultResponse]] = None
+
+
+class ProcessingResponse(BaseModel):
+    """Processing/confirmation response.
+
+    Status values:
+      - "processing": a background task has been created (has `task_id`)
+      - "confirmation_required": client should confirm to proceed on server
+      - "already_running": a processing job is currently active
+      - "worker_processing_started": batch worker processing kicked off
+      - "worker_error": workers responded with an error
+      - "no_workers": no workers available; show confirmation UI
+      - "server_started": server-side processing started
+
+    Optional context fields carry extra information depending on the flow
+    (e.g., `task_id`, `track_id`, `query`, `filename`, counters, etc.).
+    """
+
+    status: Literal[
+        "processing",
+        "confirmation_required",
+        "already_running",
+        "worker_processing_started",
+        "worker_error",
+        "no_workers",
+        "server_started",
+    ]
+    message: Optional[str] = None
+    task_id: Optional[str] = None
+    track_id: Optional[str] = None
+    query: Optional[str] = None
+    filename: Optional[str] = None
+    active_workers: Optional[int] = None
+    tasks_created: Optional[int] = None
+    confirmation_required: Optional[bool] = None
 
 
 # Initialize configuration and service
@@ -359,7 +391,7 @@ async def get_library_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/search/text")
+@app.get("/api/search/text", response_model=ProcessingResponse)
 async def search_by_text_get(
         q: str = Query(..., description="Search query"),
         n_results: int = Query(10, description="Number of results to return")
@@ -377,7 +409,7 @@ async def search_by_text_get(
 
             logger.info(f"Created text search task {task.task_id} for query '{q}'")
             # Return processing response
-            return SearchProcessingResponse(
+            return ProcessingResponse(
                 status="processing",
                 message="Text embedding computation has been sent to a worker. Please try again in a few moments.",
                 task_id=task.task_id,
@@ -386,7 +418,7 @@ async def search_by_text_get(
 
         logger.info("No active workers available for text search")
         # No active workers - return confirmation required
-        return SearchConfirmationRequiredResponse(
+        return ProcessingResponse(
             status="confirmation_required",
             query=q
         )
@@ -399,7 +431,7 @@ async def search_by_text_get(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/search/audio")
+@app.post("/api/search/audio", response_model=ProcessingResponse)
 async def search_by_audio(
         audio: UploadFile = File(..., description="Audio file to search with"),
         n_results: int = Form(10, description="Number of results to return")
@@ -435,7 +467,7 @@ async def search_by_audio(
 
             logger.info(f"Created audio search task {task.task_id} for file '{audio.filename}'")
             # Return processing response
-            return SearchProcessingResponse(
+            return ProcessingResponse(
                 status="processing",
                 message="Audio embedding computation has been sent to a worker. Please try again in a few moments.",
                 task_id=task.task_id,
@@ -444,7 +476,7 @@ async def search_by_audio(
 
         logger.info("No active workers available for audio search")
         # No active workers - return confirmation required
-        return SearchConfirmationRequiredResponse(
+        return ProcessingResponse(
             status="confirmation_required",
             filename=audio.filename
         )
@@ -610,14 +642,14 @@ async def scan_library():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/library/process")
+@app.post("/api/library/process", response_model=ProcessingResponse)
 @with_service_lock
 async def process_library():
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
         # Check if processing is already running
         if service.is_processing_active():
-            return WorkerProcessingResponse(
+            return ProcessingResponse(
                 status="already_running",
                 message="Processing is already in progress"
             )
@@ -628,14 +660,14 @@ async def process_library():
             result = service.create_worker_tasks()
 
             if result["success"]:
-                return WorkerProcessingResponse(
+                return ProcessingResponse(
                     status="worker_processing_started",
                     message=f"Created {result['tasks_created']} tasks for worker processing",
                     tasks_created=result["tasks_created"],
                     active_workers=result["worker_info"]["active_workers"]
                 )
             else:
-                return NoWorkersResponse(
+                return ProcessingResponse(
                     status="worker_error",
                     message=result["message"],
                     active_workers=0,
@@ -643,7 +675,7 @@ async def process_library():
                 )
         else:
             # No workers available - require confirmation for server processing
-            return NoWorkersResponse(
+            return ProcessingResponse(
                 status="no_workers",
                 message="No client workers are available. The server hardware may not have sufficient resources for CLAP model processing. Do you want to proceed with server processing anyway?",
                 active_workers=0,
@@ -654,14 +686,14 @@ async def process_library():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/library/process/server")
+@app.post("/api/library/process/server", response_model=ProcessingResponse)
 @with_service_lock
 async def process_library_on_server(background_tasks: BackgroundTasks):
     """Process embeddings on server after user confirmation."""
     try:
         # Check if processing is already running
         if service.is_processing_active():
-            return WorkerProcessingResponse(
+            return ProcessingResponse(
                 message="Processing is already in progress",
                 status="already_running"
             )
@@ -669,7 +701,7 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
         # Start processing in background on server
         background_tasks.add_task(service.process_embeddings_from_database)
 
-        return WorkerProcessingResponse(
+        return ProcessingResponse(
             message="Server-side embedding processing started in background",
             status="server_started"
         )
@@ -961,7 +993,10 @@ async def download_audio(task_id: str):
 
 
 # Main API for Similar Tracks
-@app.get("/similar/by_track/{track_id}")
+@app.get(
+    "/similar/by_track/{track_id}",
+    response_model=Union[List[SearchResultResponse], ProcessingResponse]
+)
 async def get_similar_tracks(track_id: str, n_results: int = Query(10, description="Number of results")):
     """Find tracks similar to a given track."""
     logger.info(f"Similar tracks request for track_id: {track_id}")
@@ -1004,7 +1039,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking
-            response = WorkerProcessingResponse(
+            response = ProcessingResponse(
                 status="processing",
                 message="Processing has been sent to a worker. Please try again in a few moments.",
                 track_id=track_id,
@@ -1015,7 +1050,7 @@ async def get_similar_tracks(track_id: str, n_results: int = Query(10, descripti
 
         logger.info(f"No active workers available for track {track_id}")
         # No active workers - return confirmation required
-        return ConfirmationRequiredResponse(
+        return ProcessingResponse(
             status="confirmation_required",
             message="The sonic signature for this song needs to be calculated, and no workers are active. Do you wish to continue on the server hardware?",
             track_id=track_id
