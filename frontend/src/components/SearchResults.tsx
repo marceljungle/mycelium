@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import PlaylistCreationModal from './PlaylistCreationModal';
-import type { SearchResultResponse } from '../types/api';
+import type { SearchResultResponse } from '@/server_api/generated/models';
 
 interface SearchResultsProps {
   results: SearchResultResponse[];

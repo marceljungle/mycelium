@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/api/client';
-import type { TrackResponse, SearchResultResponse } from '../types/api';
+import { api } from '@/server_api/client';
+import type { TrackResponse, SearchResultResponse } from '@/server_api/generated/models';
 import PlaylistCreationModal from './PlaylistCreationModal';
 
 type Track = TrackResponse & { processed?: boolean };

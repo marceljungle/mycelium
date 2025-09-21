@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/api/client';
-import type { ConfigResponse } from '../types/api';
+import { api } from '@/server_api/client';
+import type { ConfigResponse } from '@/server_api/generated/models';
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);

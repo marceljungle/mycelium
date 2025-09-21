@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
-import { api } from '@/api/client';
-import type { SearchResultResponse } from '../types/api';
+import { api } from '@/server_api/client';
+import type { SearchResultResponse } from '@/server_api/generated/models';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');

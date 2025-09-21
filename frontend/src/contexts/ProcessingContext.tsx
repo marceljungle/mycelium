@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
-import type { ProcessingResponse } from '../types/api';
+import type { ProcessingResponse } from '@/server_api/generated/models';
 
 interface LibraryStats {
   total_embeddings: number;

@@ -18,7 +18,7 @@ fi
 # Generate TypeScript Fetch client using openapi-generator
 if command -v npx >/dev/null 2>&1; then
   echo "Generating TypeScript Fetch client (server) from $SERVER_SPEC ..."
-  SERVER_OUT_DIR="$ROOT_DIR/frontend/src/api/generated"
+  SERVER_OUT_DIR="$ROOT_DIR/frontend/src/server_api/generated"
   rm -rf "$SERVER_OUT_DIR"
   npx @openapitools/openapi-generator-cli generate \
     -i "$SERVER_SPEC" \
