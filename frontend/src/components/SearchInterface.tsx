@@ -3,24 +3,11 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { API_BASE_URL } from '../config/api';
-import type { ProcessingResponse } from '../types/api';
-
-interface SearchResult {
-  track: {
-    artist: string;
-    album: string;
-    title: string;
-    filepath: string;
-    media_server_rating_key: string;
-    media_server_type: string;
-  };
-  similarity_score: number;
-  distance: number;
-}
+import type { ProcessingResponse, SearchResultResponse, TaskStatusResponse } from '../types/api';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<SearchResultResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,20 +34,20 @@ export default function SearchInterface() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
       if (response.ok) {
-        const taskData = await response.json();
-        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.search_results}`);
-        
-        if (taskData.status === 'success' && taskData.search_results) {
+        const taskData: TaskStatusResponse = await response.json();
+        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.searchResults}`);
+
+        if (taskData.status === 'success' && taskData.searchResults) {
           // Task completed successfully with search results
-          console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
-          setResults(taskData.search_results);
+          console.log(`Task ${taskId} completed successfully with ${taskData.searchResults.length} results`);
+          setResults(taskData.searchResults);
           return true;
         } else if (taskData.status === 'failed') {
           // Task failed
-          console.error(`Task ${taskId} failed:`, taskData.error_message);
-          setError(taskData.error_message || 'Search task failed on worker');
+          console.error(`Task ${taskId} failed:`, taskData.errorMessage);
+          setError(taskData.errorMessage || 'Search task failed on worker');
           return true;
-        } else if (taskData.status === 'success' && !taskData.search_results) {
+        } else if (taskData.status === 'success' && !taskData.searchResults) {
           // Task marked as success but no results yet - this might be a race condition
           console.warn(`Task ${taskId} marked as success but no search results yet, continuing polling...`);
           return false;
@@ -123,7 +110,7 @@ export default function SearchInterface() {
         throw new Error('Search failed. Make sure the Mycelium API is running.');
       }
 
-  const data: SearchResult[] | ProcessingResponse = await response.json();
+  const data: SearchResultResponse[] | ProcessingResponse = await response.json();
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -134,11 +121,11 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        if (data.task_id) {
-          console.log('Text search sent to worker, starting polling for task:', data.task_id);
-          startTaskPolling(data.task_id);
+        if (data.taskId) {
+          console.log('Text search sent to worker, starting polling for task:', data.taskId);
+          startTaskPolling(data.taskId);
         } else {
-          console.error('Processing response missing task_id for text search');
+          console.error('Processing response missing taskId for text search');
           setError('Worker processing started but no task ID was returned.');
           setLoading(false);
         }
@@ -212,7 +199,7 @@ export default function SearchInterface() {
         throw new Error(errorData.detail || 'Audio search failed. Please check the server logs for details.');
       }
 
-  const data: SearchResult[] | ProcessingResponse = await response.json();
+  const data: SearchResultResponse[] | ProcessingResponse = await response.json();
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -223,11 +210,11 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        if (data.task_id) {
-          console.log('Audio search sent to worker, starting polling for task:', data.task_id);
-          startTaskPolling(data.task_id);
+        if (data.taskId) {
+          console.log('Audio search sent to worker, starting polling for task:', data.taskId);
+          startTaskPolling(data.taskId);
         } else {
-          console.error('Processing response missing task_id for audio search');
+          console.error('Processing response missing taskId for audio search');
           setError('Worker processing started but no task ID was returned.');
           setAudioLoading(false);
         }

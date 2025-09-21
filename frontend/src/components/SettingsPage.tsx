@@ -2,43 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
-
-interface ConfigData {
-  media_server: {
-    type: string;
-  };
-  plex: {
-    url: string;
-    token: string;
-    music_library_name: string;
-  };
-  server: {
-    gpu_batch_size: number;
-  };
-  api: {
-    host: string;
-    port: number;
-    reload: boolean;
-  };
-  chroma: {
-    collection_name: string;
-    batch_size: number;
-  };
-  clap: {
-    model_id: string;
-    target_sr: number;
-    chunk_duration_s: number;
-    num_chunks: number;
-    max_load_duration_s: number;
-  };
-  logging: {
-    level: string;
-  };
-}
+import type { ConfigResponse, SaveConfigResponse } from '../types/api';
 
 export default function SettingsPage() {
-  const [config, setConfig] = useState<ConfigData | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<ConfigData | null>(null);
+  const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [originalConfig, setOriginalConfig] = useState<ConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +24,7 @@ export default function SettingsPage() {
       if (!response.ok) {
         throw new Error('Failed to fetch configuration');
       }
-      const configData = await response.json();
+  const configData: ConfigResponse = await response.json();
       setConfig(configData);
       setOriginalConfig(JSON.parse(JSON.stringify(configData)));
     } catch {
@@ -84,7 +52,7 @@ export default function SettingsPage() {
         throw new Error('Failed to save configuration');
       }
 
-      const result = await response.json();
+  const result: SaveConfigResponse = await response.json();
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
       
       // Handle different response types based on reload success
@@ -114,16 +82,24 @@ export default function SettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
-  const updateConfig = (section: keyof ConfigData, key: string, value: string | number | boolean) => {
+  const updateConfig = <K extends keyof ConfigResponse, P extends keyof ConfigResponse[K]>(
+    section: K,
+    key: P,
+    value: ConfigResponse[K][P]
+  ) => {
     if (!config) return;
 
-    setConfig(prev => ({
-      ...prev!,
-      [section]: {
-        ...prev![section],
-        [key]: value
-      }
-    }));
+    setConfig((prev) =>
+      prev
+        ? ({
+            ...prev,
+            [section]: {
+              ...(prev[section] as ConfigResponse[K]),
+              [key]: value,
+            },
+          } as ConfigResponse)
+        : prev
+    );
   };
 
   if (loading) {
@@ -178,8 +154,8 @@ export default function SettingsPage() {
                     Media Server Type
                   </label>
                   <select
-                    value={config.media_server.type}
-                    onChange={(e) => updateConfig('media_server', 'type', e.target.value)}
+                    value={config.mediaServer.type}
+                    onChange={(e) => updateConfig('mediaServer', 'type', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="plex">Plex Media Server</option>
@@ -216,8 +192,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.plex.music_library_name}
-                    onChange={(e) => updateConfig('plex', 'music_library_name', e.target.value)}
+                    value={config.plex.musicLibraryName}
+                    onChange={(e) => updateConfig('plex', 'musicLibraryName', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Music"
                   />
@@ -228,7 +204,7 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="password"
-                    value={config.plex.token}
+                    value={config.plex.token ?? ''}
                     onChange={(e) => updateConfig('plex', 'token', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Your Plex authentication token"
@@ -299,8 +275,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.server.gpu_batch_size}
-                    onChange={(e) => updateConfig('server', 'gpu_batch_size', parseInt(e.target.value))}
+                    value={config.server.gpuBatchSize}
+                    onChange={(e) => updateConfig('server', 'gpuBatchSize', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
                     max="64"
@@ -323,8 +299,8 @@ export default function SettingsPage() {
                     Model ID
                   </label>
                   <select
-                    value={config.clap.model_id}
-                    onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
+                    value={config.clap.modelId}
+                    onChange={(e) => updateConfig('clap', 'modelId', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
@@ -338,8 +314,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.target_sr}
-                    onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
+                    value={config.clap.targetSr}
+                    onChange={(e) => updateConfig('clap', 'targetSr', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -349,8 +325,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.chunk_duration_s}
-                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
+                    value={config.clap.chunkDurationS}
+                    onChange={(e) => updateConfig('clap', 'chunkDurationS', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
                     max="30"
@@ -364,8 +340,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.num_chunks}
-                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
+                    value={config.clap.numChunks}
+                    onChange={(e) => updateConfig('clap', 'numChunks', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
                     max="10"
@@ -380,8 +356,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.max_load_duration_s}
-                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
+                    value={config.clap.maxLoadDurationS ?? 0}
+                    onChange={(e) => updateConfig('clap', 'maxLoadDurationS', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="10"
                     max="600"
@@ -405,8 +381,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.chroma.collection_name}
-                    onChange={(e) => updateConfig('chroma', 'collection_name', e.target.value)}
+                    value={config.chroma.collectionName}
+                    onChange={(e) => updateConfig('chroma', 'collectionName', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -416,8 +392,8 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.chroma.batch_size}
-                    onChange={(e) => updateConfig('chroma', 'batch_size', parseInt(e.target.value))}
+                    value={config.chroma.batchSize}
+                    onChange={(e) => updateConfig('chroma', 'batchSize', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>

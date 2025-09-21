@@ -18,19 +18,20 @@ else
   exit 1
 fi
 
-# Generate TS types (requires npx openapi-typescript installed or available)
+# Generate TypeScript Fetch client using openapi-generator
 if command -v npx >/dev/null 2>&1; then
-  echo "Generating TypeScript types from $INPUT_SPEC ..."
-  npx openapi-typescript "$INPUT_SPEC" -o "$ROOT_DIR/frontend/src/types/openapi.d.ts"
+  echo "Generating TypeScript Fetch client from $INPUT_SPEC ..."
+  OUT_DIR="$ROOT_DIR/frontend/src/api/generated"
+  # Clean previous generated client to avoid stale files
+  rm -rf "$OUT_DIR"
+  npx @openapitools/openapi-generator-cli generate \
+    -i "$INPUT_SPEC" \
+    -g typescript-fetch \
+    -o "$OUT_DIR" \
+    --additional-properties=supportsES6=true,typescriptThreePlus=true
 else
-  echo "npx not found. Please install Node.js and ensure npx is available to generate TS types."
+  echo "npx not found. Please install Node.js and ensure npx is available to generate TS client."
 fi
-
-# Optional: generate TS client using openapi-generator (uncomment to use)
-# npx @openapitools/openapi-generator-cli generate \
-#   -i "$INPUT_SPEC" \
-#   -g typescript-fetch \
-#   -o "$ROOT_DIR/openapi/frontend-types"
 
 # Optional: generate Python client (uncomment to use)
 # npx @openapitools/openapi-generator-cli generate \
@@ -38,4 +39,4 @@ fi
 #   -g python \
 #   -o "$ROOT_DIR/openapi/python-client"
 
-echo "OpenAPI generation complete. Types written to frontend/src/types/openapi.d.ts"
+echo "OpenAPI generation complete. Client written to frontend/src/api/generated"

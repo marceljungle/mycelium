@@ -2,22 +2,10 @@
 
 import { useState } from 'react';
 import PlaylistCreationModal from './PlaylistCreationModal';
-
-interface SearchResult {
-  track: {
-    artist: string;
-    album: string;
-    title: string;
-    filepath: string;
-    media_server_rating_key: string;
-    media_server_type: string;
-  };
-  similarity_score: number;
-  distance: number;
-}
+import type { SearchResultResponse } from '../types/api';
 
 interface SearchResultsProps {
-  results: SearchResult[];
+  results: SearchResultResponse[];
   loading: boolean;
 }
 
@@ -56,7 +44,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const trackIds = results.map(result => `${result.track.media_server_rating_key}`);
+  const trackIds = results.map(result => `${result.track.mediaServerRatingKey}`);
 
   return (
     <div className="space-y-4">
@@ -91,7 +79,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
       
       {results.map((result, index) => (
         <div 
-          key={`${result.track.media_server_rating_key}`}
+          key={`${result.track.mediaServerRatingKey}`}
           className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
         >
           <div className="flex items-center justify-between">
@@ -113,7 +101,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
             
             <div className="text-right">
               <div className="text-sm font-medium text-gray-900 dark:text-white">
-                {Math.round(result.similarity_score * 100)}% match
+                {Math.round(result.similarityScore * 100)}% match
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 Distance: {result.distance.toFixed(3)}
@@ -126,7 +114,7 @@ export default function SearchResults({ results, loading }: SearchResultsProps) 
             <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
               <div 
                 className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${Math.round(result.similarity_score * 100)}%` }}
+                style={{ width: `${Math.round(result.similarityScore * 100)}%` }}
               ></div>
             </div>
           </div>

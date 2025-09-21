@@ -2,33 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
-import type { ProcessingResponse } from '../types/api';
+import type { ProcessingResponse, TrackResponse, TracksListResponse, SearchResultResponse, TaskStatusResponse } from '../types/api';
 import PlaylistCreationModal from './PlaylistCreationModal';
 
-interface Track {
-  artist: string;
-  album: string;
-  title: string;
-  filepath: string;
-  media_server_rating_key: string;
-  media_server_type: string;
-  processed?: boolean;
-}
-
-interface TrackResponse {
-  artist: string;
-  album: string;
-  title: string;
-  filepath: string;
-  media_server_rating_key: string;
-  media_server_type: string;
-}
-
-interface LibrarySearchResult {
-  track: Track;
-  similarity_score: number;
-  distance: number;
-}
+type Track = TrackResponse & { processed?: boolean };
+type LibrarySearchResult = SearchResultResponse;
 
 interface ProcessingTask {
   taskId: string;
@@ -72,7 +50,7 @@ export default function LibraryPage() {
       if (!response.ok) {
         throw new Error('Failed to fetch tracks');
       }
-      const data = await response.json();
+  const data: TracksListResponse = await response.json();
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
@@ -80,8 +58,8 @@ export default function LibraryPage() {
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
+        mediaServerRatingKey: track.mediaServerRatingKey,
+        mediaServerType: track.mediaServerType,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -120,7 +98,7 @@ export default function LibraryPage() {
       if (!response.ok) {
         throw new Error('Failed to fetch tracks');
       }
-      const data = await response.json();
+  const data: TracksListResponse = await response.json();
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
@@ -128,8 +106,8 @@ export default function LibraryPage() {
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
+        mediaServerRatingKey: track.mediaServerRatingKey,
+        mediaServerType: track.mediaServerType,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -171,15 +149,15 @@ export default function LibraryPage() {
       console.log(`Polling task status for task_id: ${taskId}`);
       const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
       if (response.ok) {
-        const taskStatus = await response.json();
+        const taskStatus: TaskStatusResponse = await response.json();
         console.log(`Task status response:`, taskStatus);
         
         if (taskStatus.status === 'success') {
           console.log(`Task ${taskId} completed successfully`);
           return true; // Task completed successfully
         } else if (taskStatus.status === 'failed') {
-          console.error(`Task ${taskId} failed:`, taskStatus.error_message);
-          setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
+          console.error(`Task ${taskId} failed:`, taskStatus.errorMessage);
+          setError(`Processing failed: ${taskStatus.errorMessage || 'Unknown error'}`);
           return false;
         }
         console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
@@ -257,7 +235,7 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.media_server_rating_key}?n_results=${numResults}`);
+      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.mediaServerRatingKey}?n_results=${numResults}`);
       
       if (response.ok) {
         const data: LibrarySearchResult[] | ProcessingResponse = await response.json();
@@ -279,7 +257,7 @@ export default function LibraryPage() {
               const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ track_id: track.media_server_rating_key })
+                body: JSON.stringify({ track_id: track.mediaServerRatingKey })
               });
               
               if (processResponse.ok) {
@@ -299,13 +277,13 @@ export default function LibraryPage() {
           }
         } else if (data.status === 'processing') {
           // Handle worker processing case - start polling immediately
-          if (!isRetry && data.task_id) {
-            console.log('Starting worker processing with task_id:', data.task_id);
+          if (!isRetry && data.taskId) {
+            console.log('Starting worker processing with task_id:', data.taskId);
             // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
-            startTaskPolling(data.task_id, track.media_server_rating_key, track);
-          } else if (!data.task_id) {
-            console.error('Worker processing response missing task_id:', data);
+            startTaskPolling(data.taskId, track.mediaServerRatingKey, track);
+          } else if (!data.taskId) {
+            console.error('Worker processing response missing taskId:', data);
             setError('Worker processing started but missing task ID. Please try again.');
             setRecommendationsLoading(false);
           }
@@ -508,10 +486,10 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredTracks.map((track) => (
                 <button
-                  key={`${track.media_server_rating_key}`}
+                  key={`${track.mediaServerRatingKey}`}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
+                    selectedTrack && `${selectedTrack.mediaServerRatingKey}` === `${track.mediaServerRatingKey}`
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
@@ -641,7 +619,7 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {recommendations.map((result) => (
                 <div
-                  key={`${result.track.media_server_rating_key}`}
+                  key={`${result.track.mediaServerRatingKey}`}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
                   <div className="flex justify-between items-start">
@@ -654,7 +632,7 @@ export default function LibraryPage() {
                       </div>
                     </div>
                     <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
-                      {(result.similarity_score * 100).toFixed(1)}%
+                      {(result.similarityScore * 100).toFixed(1)}%
                     </div>
                   </div>
                 </div>
@@ -667,7 +645,7 @@ export default function LibraryPage() {
       <PlaylistCreationModal
         isOpen={isPlaylistModalOpen}
         onClose={() => setIsPlaylistModalOpen(false)}
-        trackIds={recommendations.map(result => result.track.media_server_rating_key)}
+        trackIds={recommendations.map(result => result.track.mediaServerRatingKey)}
         onSuccess={handlePlaylistCreated}
       />
     </div>

@@ -182,12 +182,12 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       }
 
       if (data.status === 'worker_processing_started') {
-        setOperationMessage(`🚀 Worker processing started! Created ${data.tasks_created} tasks for ${data.active_workers} workers. Progress will be updated automatically.`);
+        setOperationMessage(`🚀 Worker processing started! Created ${data.tasksCreated} tasks for ${data.activeWorkers} workers. Progress will be updated automatically.`);
         // Don't set processLoading to false - let the progress monitoring handle it
         return;
       }
 
-      if (data.status === 'no_workers' && data.confirmation_required) {
+      if (data.status === 'no_workers' && data.confirmationRequired) {
         setOperationMessage('⚠️ No client workers detected. Server processing will use local hardware.');
         setShowConfirmation(true);
         setProcessLoading(false);

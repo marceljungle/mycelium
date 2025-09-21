@@ -8,7 +8,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "openapi:types": "bash ../openapi/generate.sh",
     "openapi:generate": "bash ../openapi/generate.sh"
   },
   "dependencies": {
