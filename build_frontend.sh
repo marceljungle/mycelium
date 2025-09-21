@@ -2,6 +2,13 @@
 
 echo "Building Next.js frontend..."
 
+# Generate OpenAPI clients (server and worker) before building
+echo "Generating OpenAPI clients (server and worker)..."
+if ! npm run openapi:generate --prefix frontend; then
+    echo "Error: OpenAPI client generation failed"
+    exit 1
+fi
+
 # Build main server frontend (without client mode)
 if ! npm run build --prefix frontend; then
     echo "Error: Frontend build failed"
