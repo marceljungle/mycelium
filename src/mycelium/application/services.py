@@ -14,12 +14,12 @@ from mycelium.application.workflow_use_cases import (
     WorkerBasedProcessingUseCase
 )
 from mycelium.config import MyceliumConfig
-from mycelium.domain.models import Playlist, MediaServerType
+from mycelium.domain.models import Playlist
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
+from mycelium.infrastructure.plex_adapter import PlexMusicRepository
+from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
+from mycelium.infrastructure.chroma_adapter import ChromaEmbeddingRepository
 from mycelium.infrastructure import (
-    PlexMusicRepository,
-    CLAPEmbeddingGenerator,
-    ChromaEmbeddingRepository,
     TrackDatabase
 )
 
