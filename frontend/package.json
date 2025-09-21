@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "openapi:types": "bash ../openapi/generate.sh",
+    "openapi:generate": "bash ../openapi/generate.sh"
   },
   "dependencies": {
     "react": "19.1.0",

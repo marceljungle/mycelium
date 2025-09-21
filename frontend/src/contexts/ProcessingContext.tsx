@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
+import type { ProcessingResponse } from '../types/api';
 
 interface LibraryStats {
   total_embeddings: number;
@@ -87,7 +88,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       if (!response.ok) {
         throw new Error('Failed to fetch library stats');
       }
-      const data = await response.json();
+  const data = await response.json();
       setStats(data);
       setStatsError(null);
     } catch {
@@ -144,7 +145,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       if (!response.ok) {
         throw new Error('Failed to scan library');
       }
-      const data = await response.json();
+  const data = await response.json();
       setOperationMessage(
         `✅ Scan completed! Found ${data.total_tracks} total tracks ` +
         `(${data.new_tracks} new, ${data.updated_tracks} updated)`
@@ -171,7 +172,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       if (!response.ok) {
         throw new Error('Failed to start processing');
       }
-      const data = await response.json();
+  const data: ProcessingResponse = await response.json();
 
       if (data.status === 'already_running') {
         setOperationMessage('⚠️ Processing is already in progress');
@@ -223,7 +224,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       if (!response.ok) {
         throw new Error('Failed to start server processing');
       }
-      const data = await response.json();
+  const data: ProcessingResponse = await response.json();
 
       if (data.status === 'already_running') {
         setOperationMessage('⚠️ Processing is already in progress');

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { API_BASE_URL } from '../config/api';
+import type { ProcessingResponse } from '../types/api';
 
 interface SearchResult {
   track: {
@@ -122,7 +123,7 @@ export default function SearchInterface() {
         throw new Error('Search failed. Make sure the Mycelium API is running.');
       }
 
-      const data = await response.json();
+  const data: SearchResult[] | ProcessingResponse = await response.json();
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -133,8 +134,14 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        console.log('Text search sent to worker, starting polling for task:', data.task_id);
-        startTaskPolling(data.task_id);
+        if (data.task_id) {
+          console.log('Text search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
+        } else {
+          console.error('Processing response missing task_id for text search');
+          setError('Worker processing started but no task ID was returned.');
+          setLoading(false);
+        }
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(
@@ -205,7 +212,7 @@ export default function SearchInterface() {
         throw new Error(errorData.detail || 'Audio search failed. Please check the server logs for details.');
       }
 
-      const data = await response.json();
+  const data: SearchResult[] | ProcessingResponse = await response.json();
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -216,8 +223,14 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        console.log('Audio search sent to worker, starting polling for task:', data.task_id);
-        startTaskPolling(data.task_id);
+        if (data.task_id) {
+          console.log('Audio search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
+        } else {
+          console.error('Processing response missing task_id for audio search');
+          setError('Worker processing started but no task ID was returned.');
+          setAudioLoading(false);
+        }
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(

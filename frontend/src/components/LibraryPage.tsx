@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config/api';
+import type { ProcessingResponse } from '../types/api';
 import PlaylistCreationModal from './PlaylistCreationModal';
 
 interface Track {
@@ -259,7 +260,7 @@ export default function LibraryPage() {
       const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.media_server_rating_key}?n_results=${numResults}`);
       
       if (response.ok) {
-        const data = await response.json();
+        const data: LibrarySearchResult[] | ProcessingResponse = await response.json();
         
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
