@@ -16,7 +16,6 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from mycelium.domain import Track
 from .worker_models import (
     WorkerRegistrationRequest, WorkerRegistrationResponse,
     JobRequest, TaskResultRequest, TaskResultResponse,
@@ -43,7 +42,7 @@ class TrackResponse(BaseModel):
     filepath: str
     media_server_rating_key: str
     media_server_type: str
-    
+
     @classmethod
     def from_domain(cls, track) -> "TrackResponse":
         """Create from domain Track object."""
@@ -117,6 +116,97 @@ class TracksListResponse(BaseModel):
     limit: int
 
 
+# New unified/typed API response models (replacing plain dict responses)
+class ApiInfoResponse(BaseModel):
+    """Basic API info and advertised endpoints."""
+    message: str
+    version: str
+    endpoints: Dict[str, str]
+
+
+class MediaServerSection(BaseModel):
+    type: str
+
+
+class PlexSection(BaseModel):
+    url: str
+    token: Optional[str]
+    music_library_name: str
+
+
+class ServerSection(BaseModel):
+    gpu_batch_size: int
+
+
+class APISection(BaseModel):
+    host: str
+    port: int
+    reload: bool
+
+
+class ChromaSection(BaseModel):
+    collection_name: str
+    batch_size: int
+
+
+class ClapSection(BaseModel):
+    model_id: str
+    target_sr: int
+    chunk_duration_s: int
+    num_chunks: int
+    max_load_duration_s: Optional[int] = None
+
+
+class LoggingSection(BaseModel):
+    level: str
+
+
+class ConfigResponse(BaseModel):
+    """Typed configuration response mirroring `MyceliumConfig.to_dict()`."""
+    media_server: MediaServerSection
+    plex: PlexSection
+    server: ServerSection
+    api: APISection
+    chroma: ChromaSection
+    clap: ClapSection
+    logging: LoggingSection
+
+
+class SaveConfigResponse(BaseModel):
+    """Response after attempting to save (and reload) configuration."""
+    message: str
+    status: str
+    reloaded: bool
+    reload_error: Optional[str] = None
+
+
+class ScanLibraryResponse(BaseModel):
+    """Result of library scan operation."""
+    message: str
+    total_tracks: int
+    new_tracks: int
+    updated_tracks: int
+    scan_timestamp: str
+
+
+class StopProcessingResponse(BaseModel):
+    """Response for stop-processing operation."""
+    message: str
+    type: Optional[str] = None
+    cleared_tasks: Optional[int] = None
+
+
+class TaskStatusResponse(BaseModel):
+    """Response model for queue task status."""
+    task_id: str
+    status: str
+    track_id: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+    search_results: Optional[List[SearchResultResponse]] = None
+
+
 # Initialize configuration and service
 config = MyceliumConfig.load_from_yaml()
 
@@ -137,53 +227,58 @@ job_queue = JobQueueService()
 service.initialize_worker_processing(job_queue, config.api.host, config.api.port)
 
 # Global lock for thread-safe config reloading
-config_lock = threading.RLock()
+shared_resources_lock = threading.RLock()
+
 
 def with_service_lock(func):
     """Decorator to ensure thread-safe access to service and config."""
+
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
-        with config_lock:
+        with shared_resources_lock:
             return await func(*args, **kwargs)
+
     return wrapper
+
 
 def reload_config() -> None:
     """Reload configuration and reinitialize services."""
     global config, service, job_queue
-    
-    with config_lock:
+
+    with shared_resources_lock:
         try:
             logger.info("Reloading configuration...")
-            
+
             # Load new configuration
             new_config = MyceliumConfig.load_from_yaml()
-            
+
             # Update logging if level changed
             if new_config.logging.level != config.logging.level:
                 new_config.setup_logging()
                 logger.info(f"Updated logging level to {new_config.logging.level}")
-            
+
             # Reinitialize service with new configuration
             new_service = MyceliumService(
                 config=new_config
             )
-            
+
             # Reinitialize job queue service
             new_job_queue = JobQueueService()
-            
+
             # Initialize worker processing in the new service
             new_service.initialize_worker_processing(new_job_queue, new_config.api.host, new_config.api.port)
-            
+
             # Update global references atomically
             config = new_config
             service = new_service
             job_queue = new_job_queue
-            
+
             logger.info("Configuration reloaded successfully")
-            
+
         except Exception as e:
             logger.error(f"Failed to reload configuration: {e}", exc_info=True)
             raise
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -195,8 +290,8 @@ app = FastAPI(
 # Add CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
-    allow_credentials=False,  # Must be False when using allow_origins=["*"]
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -208,7 +303,7 @@ if frontend_dist_path.exists():
     next_static_path = frontend_dist_path / "_next"
     if next_static_path.exists():
         app.mount("/_next", StaticFiles(directory=str(next_static_path)), name="next_static")
-    
+
     # Mount frontend application under /app with SPA routing support
     app.mount("/app", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
 
@@ -219,13 +314,13 @@ async def root():
     return RedirectResponse("/app")
 
 
-@app.get("/api")
+@app.get("/api", response_model=ApiInfoResponse)
 async def api_info():
-    """API information endpoint (moved from root to /api)."""
-    return {
-        "message": "Mycelium Music Recommendation API",
-        "version": "0.1.0",
-        "endpoints": {
+    """API information endpoint"""
+    return ApiInfoResponse(
+        message="Mycelium Music Recommendation API",
+        version="0.1.0",
+        endpoints={
             "library_stats": "/api/library/stats",
             "library_tracks": "/api/library/tracks",
             "search_text": "/api/search/text",
@@ -249,7 +344,7 @@ async def api_info():
             "download_audio": "/download_audio/{task_id}",
             "task_status": "/api/queue/task/{task_id}"
         }
-    }
+    )
 
 
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
@@ -347,7 +442,7 @@ async def search_by_audio(
                 filename=audio.filename
             )
 
-        logger.info(f"No active workers available for audio search")
+        logger.info("No active workers available for audio search")
         # No active workers - return confirmation required
         return SearchConfirmationRequiredResponse(
             status="confirmation_required",
@@ -429,54 +524,23 @@ async def get_library_tracks(
         raise HTTPException(status_code=500, detail=f"Failed to get library tracks: {str(e)}")
 
 
-@app.get("/api/config")
+@app.get("/api/config", response_model=ConfigResponse)
 async def get_config():
     """Get current configuration."""
     try:
         logger.info("Configuration get request received")
         # Use thread-safe access to config
-        with config_lock:
-            # Return current configuration as dict
-            config_dict = {
-                "media_server": {
-                    "type": config.media_server.type.value
-                },
-                "plex": {
-                    "url": config.plex.url,
-                    "token": config.plex.token,
-                    "music_library_name": config.plex.music_library_name
-                },
-                "server": {
-                    "gpu_batch_size": config.server.gpu_batch_size
-                },
-                "api": {
-                    "host": config.api.host,
-                    "port": config.api.port,
-                    "reload": config.api.reload
-                },
-                "chroma": {
-                    "collection_name": config.chroma.collection_name,
-                    "batch_size": config.chroma.batch_size
-                },
-                "clap": {
-                    "model_id": config.clap.model_id,
-                    "target_sr": config.clap.target_sr,
-                    "chunk_duration_s": config.clap.chunk_duration_s,
-                    "num_chunks": config.clap.num_chunks,
-                    "max_load_duration_s": config.clap.max_load_duration_s
-                },
-                "logging": {
-                    "level": config.logging.level
-                }
-            }
+        with shared_resources_lock:
+            config_dict = config.to_dict()
         logger.info("Configuration retrieved successfully")
-        return config_dict
+        # Pydantic will validate and coerce into the typed shape
+        return ConfigResponse(**config_dict)
     except Exception as e:
         logger.error(f"Failed to get configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get configuration: {str(e)}")
 
 
-@app.post("/api/config")
+@app.post("/api/config", response_model=SaveConfigResponse)
 async def save_config(config_request: ConfigRequest):
     """Save configuration to YAML file and hot-reload the application."""
     try:
@@ -510,38 +574,38 @@ async def save_config(config_request: ConfigRequest):
         try:
             reload_config()
             logger.info("Configuration hot-reloaded successfully")
-            return {
-                "message": "Configuration saved and reloaded successfully! Changes are now active.",
-                "status": "success",
-                "reloaded": True
-            }
+            return SaveConfigResponse(
+                message="Configuration saved and reloaded successfully! Changes are now active.",
+                status="success",
+                reloaded=True
+            )
         except Exception as reload_error:
             logger.error(f"Configuration saved but hot-reload failed: {reload_error}", exc_info=True)
-            return {
-                "message": "Configuration saved successfully, but hot-reload failed. Please restart the server to apply changes.",
-                "status": "warning",
-                "reloaded": False,
-                "reload_error": str(reload_error)
-            }
-            
+            return SaveConfigResponse(
+                message="Configuration saved successfully, but hot-reload failed. Please restart the server to apply changes.",
+                status="warning",
+                reloaded=False,
+                reload_error=str(reload_error)
+            )
+
     except Exception as e:
         logger.error(f"Failed to save configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
 
 
-@app.post("/api/library/scan")
+@app.post("/api/library/scan", response_model=ScanLibraryResponse)
 @with_service_lock
 async def scan_library():
     """Scan the Plex music library and save metadata to database."""
     try:
         result = service.scan_library_to_database()
-        return {
-            "message": f"Successfully scanned library and saved to database",
-            "total_tracks": result["total_tracks"],
-            "new_tracks": result["new_tracks"],
-            "updated_tracks": result["updated_tracks"],
-            "scan_timestamp": result["scan_timestamp"]
-        }
+        return ScanLibraryResponse(
+            message="Successfully scanned library and saved to database",
+            total_tracks=result["total_tracks"],
+            new_tracks=result["new_tracks"],
+            updated_tracks=result["updated_tracks"],
+            scan_timestamp=result["scan_timestamp"],
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -553,10 +617,10 @@ async def process_library():
     try:
         # Check if processing is already running
         if service.is_processing_active():
-            return {
-                "status": "already_running",
-                "message": "Processing is already in progress"
-            }
+            return WorkerProcessingResponse(
+                status="already_running",
+                message="Processing is already in progress"
+            )
 
         # Check for active workers first
         if service.can_use_workers():
@@ -597,23 +661,23 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
     try:
         # Check if processing is already running
         if service.is_processing_active():
-            return {
-                "message": "Processing is already in progress",
-                "status": "already_running"
-            }
+            return WorkerProcessingResponse(
+                message="Processing is already in progress",
+                status="already_running"
+            )
 
         # Start processing in background on server
         background_tasks.add_task(service.process_embeddings_from_database)
 
-        return {
-            "message": "Server-side embedding processing started in background",
-            "status": "server_started"
-        }
+        return WorkerProcessingResponse(
+            message="Server-side embedding processing started in background",
+            status="server_started"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/library/process/stop")
+@app.post("/api/library/process/stop", response_model=StopProcessingResponse)
 @with_service_lock
 async def stop_processing():
     """Stop the current embedding processing."""
@@ -623,28 +687,28 @@ async def stop_processing():
         # Also check for worker processing
         if service.has_active_worker_processing():
             worker_result = service.stop_worker_processing()
-            return {
-                "message": f"Processing stop requested. {worker_result['message']}",
-                "cleared_tasks": worker_result.get("cleared_tasks", 0),
-                "type": "worker_processing"
-            }
+            return StopProcessingResponse(
+                message=f"Processing stop requested. {worker_result['message']}",
+                cleared_tasks=worker_result.get("cleared_tasks", 0),
+                type="worker_processing"
+            )
         else:
-            return {
-                "message": "Processing stop requested - will finish current track and stop",
-                "type": "server_processing"
-            }
+            return StopProcessingResponse(
+                message="Processing stop requested - will finish current track and stop",
+                type="server_processing"
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/library/progress")
+@app.get("/api/library/progress", response_model=TrackDatabaseStats)
 @with_service_lock
 async def get_processing_progress(model_id: Optional[str] = Query(None, description="Model ID to get progress for")):
     """Get current processing progress and statistics."""
     logger.debug("Processing progress request received")
     try:
         stats = service.get_processing_progress(model_id)
-        return stats
+        return TrackDatabaseStats(**stats)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1102,30 +1166,34 @@ async def compute_audio_search_on_server(
         raise HTTPException(status_code=500, detail=f"Audio search failed: {str(e)}")
 
 
-@app.get("/api/queue/task/{task_id}")
+@app.get("/api/queue/task/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(task_id: str):
     """Get status of a specific task."""
     try:
         task = job_queue.get_task_status(task_id)
         if task:
-            response = {
-                "task_id": task.task_id,
-                "status": task.status.value,
-                "track_id": task.track_id,
-                "started_at": task.started_at.isoformat() if task.started_at else None,
-                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-                "error_message": task.error_message
-            }
-
-            # Include search results for search tasks
+            # Build typed response; coerce search_results if present
+            search_results_typed: Optional[List[SearchResultResponse]] = None
             if task.search_results:
-                response["search_results"] = task.search_results
+                try:
+                    search_results_typed = [SearchResultResponse(**sr) for sr in task.search_results]
+                except Exception:
+                    # Fallback to None if coercion fails
+                    search_results_typed = None
                 logger.debug(
                     f"Task {task_id} status: {task.status.value}, has search_results: {len(task.search_results)} results")
             else:
                 logger.debug(f"Task {task_id} status: {task.status.value}, no search_results yet")
 
-            return response
+            return TaskStatusResponse(
+                task_id=task.task_id,
+                status=task.status.value,
+                track_id=task.track_id,
+                started_at=task.started_at.isoformat() if task.started_at else None,
+                completed_at=task.completed_at.isoformat() if task.completed_at else None,
+                error_message=task.error_message,
+                search_results=search_results_typed,
+            )
         else:
             logger.warning(f"Task {task_id} not found in queue")
             raise HTTPException(status_code=404, detail="Task not found")
