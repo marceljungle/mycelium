@@ -5,29 +5,34 @@ set -euo pipefail
 # Usage: from repo root: bash openapi/generate.sh
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-SPEC_YAML="$ROOT_DIR/openapi/spec.yaml"
-SPEC_YML="$ROOT_DIR/openapi/spec.yml"
+SERVER_SPEC="$ROOT_DIR/openapi/server_openapi.yaml"
+WORKER_SPEC="$ROOT_DIR/openapi/worker_openapi.yaml"
 
-INPUT_SPEC=""
-if [ -f "$SPEC_YAML" ]; then
-  INPUT_SPEC="$SPEC_YAML"
-elif [ -f "$SPEC_YML" ]; then
-  INPUT_SPEC="$SPEC_YML"
-else
-  echo "Spec not found. Expected at: $SPEC_YAML or $SPEC_YML"
+if [ ! -f "$SERVER_SPEC" ]; then
+  echo "Server spec not found at: $SERVER_SPEC"
   exit 1
 fi
 
+## Always attempt to generate both server and worker clients
+
 # Generate TypeScript Fetch client using openapi-generator
 if command -v npx >/dev/null 2>&1; then
-  echo "Generating TypeScript Fetch client from $INPUT_SPEC ..."
-  OUT_DIR="$ROOT_DIR/frontend/src/api/generated"
-  # Clean previous generated client to avoid stale files
-  rm -rf "$OUT_DIR"
+  echo "Generating TypeScript Fetch client (server) from $SERVER_SPEC ..."
+  SERVER_OUT_DIR="$ROOT_DIR/frontend/src/api/generated"
+  rm -rf "$SERVER_OUT_DIR"
   npx @openapitools/openapi-generator-cli generate \
-    -i "$INPUT_SPEC" \
+    -i "$SERVER_SPEC" \
     -g typescript-fetch \
-    -o "$OUT_DIR" \
+    -o "$SERVER_OUT_DIR" \
+    --additional-properties=supportsES6=true,typescriptThreePlus=true
+
+  echo "Generating TypeScript Fetch client (worker) from $WORKER_SPEC ..."
+  WORKER_OUT_DIR="$ROOT_DIR/frontend/src/worker_api/generated"
+  rm -rf "$WORKER_OUT_DIR"
+  npx @openapitools/openapi-generator-cli generate \
+    -i "$WORKER_SPEC" \
+    -g typescript-fetch \
+    -o "$WORKER_OUT_DIR" \
     --additional-properties=supportsES6=true,typescriptThreePlus=true
 else
   echo "npx not found. Please install Node.js and ensure npx is available to generate TS client."
@@ -39,4 +44,4 @@ fi
 #   -g python \
 #   -o "$ROOT_DIR/openapi/python-client"
 
-echo "OpenAPI generation complete. Client written to frontend/src/api/generated"
+echo "OpenAPI generation complete."

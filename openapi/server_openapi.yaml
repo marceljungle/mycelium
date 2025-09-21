@@ -187,6 +187,55 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SearchResultResponse'
+  /compute/on_server:
+    post:
+      summary: Compute embedding on server
+      operationId: computeOnServer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComputeOnServerRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                additionalProperties: true
+  /api/library/scan:
+    post:
+      summary: Scan the Plex music library
+      operationId: scanLibrary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanLibraryResponse'
+  /api/playlists/create:
+    post:
+      summary: Create a playlist from track IDs
+      operationId: createPlaylist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaylistRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistResponse'
   /similar/by_track/{track_id}:
     get:
       summary: Similar tracks by track_id
@@ -412,3 +461,25 @@ components:
             $ref: '#/components/schemas/SearchResultResponse'
           nullable: true
       required: [task_id, status]
+    ComputeOnServerRequest:
+      type: object
+      properties:
+        track_id: { type: string }
+      required: [track_id]
+    CreatePlaylistRequest:
+      type: object
+      properties:
+        name: { type: string }
+        track_ids:
+          type: array
+          items: { type: string }
+        batch_size: { type: integer, default: 100 }
+      required: [name, track_ids]
+    PlaylistResponse:
+      type: object
+      properties:
+        name: { type: string }
+        track_count: { type: integer }
+        created_at: { type: string }
+        server_id: { type: string, nullable: true }
+      required: [name, track_count, created_at]

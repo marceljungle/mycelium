@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../config/api';
-import type { ProcessingResponse, TrackResponse, TracksListResponse, SearchResultResponse, TaskStatusResponse } from '../types/api';
+import { api } from '@/api/client';
+import type { TrackResponse, SearchResultResponse } from '../types/api';
 import PlaylistCreationModal from './PlaylistCreationModal';
 
 type Track = TrackResponse & { processed?: boolean };
@@ -41,16 +41,7 @@ export default function LibraryPage() {
     setLoading(true);
     setError(null);
     try {
-      let url = `${API_BASE_URL}/api/library/tracks?page=1&limit=100`;
-      if (searchTerm && searchTerm.trim()) {
-        url += `&search=${encodeURIComponent(searchTerm.trim())}`;
-      }
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Failed to fetch tracks');
-      }
-  const data: TracksListResponse = await response.json();
+      const data = await api.getLibraryTracks({ page: 1, limit: 100, search: searchTerm?.trim() || undefined });
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
@@ -76,29 +67,13 @@ export default function LibraryPage() {
     setLoading(true);
     setError(null);
     try {
-      let url = `${API_BASE_URL}/api/library/tracks?page=1&limit=100`;
-      
-      // Add advanced search parameters
-      const params = new URLSearchParams();
-      if (artistSearch.trim()) {
-        params.append('artist', artistSearch.trim());
-      }
-      if (albumSearch.trim()) {
-        params.append('album', albumSearch.trim());
-      }
-      if (titleSearch.trim()) {
-        params.append('title', titleSearch.trim());
-      }
-      
-      if (params.toString()) {
-        url += `&${params.toString()}`;
-      }
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Failed to fetch tracks');
-      }
-  const data: TracksListResponse = await response.json();
+      const data = await api.getLibraryTracks({
+        page: 1,
+        limit: 100,
+        artist: artistSearch.trim() || undefined,
+        album: albumSearch.trim() || undefined,
+        title: titleSearch.trim() || undefined,
+      });
       
       // Convert API response to Track objects
       const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
@@ -147,9 +122,8 @@ export default function LibraryPage() {
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
     try {
       console.log(`Polling task status for task_id: ${taskId}`);
-      const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
-      if (response.ok) {
-        const taskStatus: TaskStatusResponse = await response.json();
+      const taskStatus = await api.getTaskStatus({ taskId });
+      if (taskStatus) {
         console.log(`Task status response:`, taskStatus);
         
         if (taskStatus.status === 'success') {
@@ -164,7 +138,6 @@ export default function LibraryPage() {
         // Still in progress, continue polling
         return false;
       } else {
-        console.warn(`Task status request failed with status ${response.status}, assuming task completed`);
         // Task not found or error - assume it completed
         return true;
       }
@@ -235,10 +208,8 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      const response = await fetch(`${API_BASE_URL}/similar/by_track/${track.mediaServerRatingKey}?n_results=${numResults}`);
-      
-      if (response.ok) {
-        const data: LibrarySearchResult[] | ProcessingResponse = await response.json();
+      const data = await api.getSimilarByTrack({ trackId: track.mediaServerRatingKey, nResults: numResults });
+      if (data) {
         
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
@@ -254,19 +225,10 @@ export default function LibraryPage() {
             setProcessingState('server');
             try {
               // Try to process on server (now synchronous)
-              const processResponse = await fetch(`${API_BASE_URL}/compute/on_server`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ track_id: track.mediaServerRatingKey })
-              });
-              
-              if (processResponse.ok) {
-                  setProcessingState('none');
-                  await getRecommendations(track, true);
-              } else {
-                const errorData = await processResponse.json().catch(() => ({}));
-                setError(errorData.detail || 'Failed to process track. Please try again later.');
-              }
+              // Try to process on server using generated client
+              await api.computeOnServer({ computeOnServerRequest: { trackId: track.mediaServerRatingKey } });
+              setProcessingState('none');
+              await getRecommendations(track, true);
             } catch {
               setError('Error processing track. Please check your connection.');
             } finally {
@@ -293,8 +255,7 @@ export default function LibraryPage() {
           setRecommendationsLoading(false);
         }
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        setError(errorData.detail || 'Failed to get recommendations. Please try again.');
+        setError('Failed to get recommendations. Please try again.');
         setRecommendationsLoading(false);
       }
     } catch (err) {

@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
-import { API_BASE_URL } from '../config/api';
-import type { ProcessingResponse, SearchResultResponse, TaskStatusResponse } from '../types/api';
+import { api } from '@/api/client';
+import type { SearchResultResponse } from '../types/api';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
@@ -32,9 +32,8 @@ export default function SearchInterface() {
 
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
-      if (response.ok) {
-        const taskData: TaskStatusResponse = await response.json();
+      const taskData = await api.getTaskStatus({ taskId });
+      if (taskData) {
         console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.searchResults}`);
 
         if (taskData.status === 'success' && taskData.searchResults) {
@@ -56,7 +55,6 @@ export default function SearchInterface() {
         console.log(`Task ${taskId} still in progress (status: ${taskData.status})`);
         return false;
       } else {
-        console.error('Failed to poll task status:', response.status, response.statusText);
         return false;
       }
     } catch (error) {
@@ -104,13 +102,7 @@ export default function SearchInterface() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/search/text?q=${encodeURIComponent(query)}&n_results=${numResults}`);
-
-      if (!response.ok) {
-        throw new Error('Search failed. Make sure the Mycelium API is running.');
-      }
-
-  const data: SearchResultResponse[] | ProcessingResponse = await response.json();
+      const data = await api.searchText({ q: query, nResults: numResults });
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -139,24 +131,8 @@ export default function SearchInterface() {
           setProcessingState('server');
           try {
             // Process on server
-            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/text`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                query: query,
-                n_results: numResults
-              }),
-            });
-
-            if (serverResponse.ok) {
-              const serverResults = await serverResponse.json();
-              setResults(serverResults);
-            } else {
-              const errorData = await serverResponse.json().catch(() => ({}));
-              setError(errorData.detail || 'Failed to process text search on server. Please try again later.');
-            }
+            const serverResults = await api.computeTextSearch({ computeTextSearchRequest: { query, nResults: numResults } });
+            setResults(serverResults);
           } catch {
             setError('Error processing text search on server. Please check your connection.');
           } finally {
@@ -189,17 +165,7 @@ export default function SearchInterface() {
       formData.append('audio', audioFile);
       formData.append('n_results', numResults.toString());
 
-      const response = await fetch(`${API_BASE_URL}/api/search/audio`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Audio search failed. Please check the server logs for details.');
-      }
-
-  const data: SearchResultResponse[] | ProcessingResponse = await response.json();
+      const data = await api.searchAudio({ audio: audioFile, nResults: numResults });
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -231,18 +197,8 @@ export default function SearchInterface() {
             formData.append('audio', audioFile);
             formData.append('n_results', numResults.toString());
 
-            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/audio`, {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (serverResponse.ok) {
-              const serverResults = await serverResponse.json();
-              setResults(serverResults);
-            } else {
-              const errorData = await serverResponse.json().catch(() => ({}));
-              setError(errorData.detail || 'Failed to process audio search on server. Please try again later.');
-            }
+            const serverResults = await api.computeAudioSearch({ audio: audioFile, nResults: numResults });
+            setResults(serverResults);
           } catch {
             setError('Error processing audio search on server. Please check your connection.');
           } finally {

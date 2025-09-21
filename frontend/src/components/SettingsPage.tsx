@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config/api';
-import type { ConfigResponse, SaveConfigResponse } from '../types/api';
+import { api } from '@/api/client';
+import type { ConfigResponse } from '../types/api';
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
@@ -20,12 +20,8 @@ export default function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/config`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch configuration');
-      }
-  const configData: ConfigResponse = await response.json();
-      setConfig(configData);
+      const configData = await api.getConfig();
+      setConfig(configData as ConfigResponse);
       setOriginalConfig(JSON.parse(JSON.stringify(configData)));
     } catch {
       setError('Unable to fetch configuration. Make sure the API server is running.');
@@ -42,17 +38,7 @@ export default function SettingsPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save configuration');
-      }
-
-  const result: SaveConfigResponse = await response.json();
+      const result = await api.saveConfig({ configResponse: config as ConfigResponse });
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
       
       // Handle different response types based on reload success

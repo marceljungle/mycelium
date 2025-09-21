@@ -237,6 +237,7 @@ frontend/.env.test.local
 frontend/.env.production.local
 frontend/.vercel
 frontend/src/api/generated
+frontend/src/worker_api/generated
 
 src/mycelium/frontend_dist/
 src/mycelium/client_frontend_dist/

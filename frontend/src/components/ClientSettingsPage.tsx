@@ -1,36 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-interface ClientConfigData {
-  client: {
-    server_host: string;
-    server_port: number;
-    download_queue_size: number;
-    job_queue_size: number;
-    poll_interval: number;
-    download_workers: number;
-    gpu_batch_size: number;
-  };
-  client_api: {
-    host: string;
-    port: number;
-  };
-  clap: {
-    model_id: string;
-    target_sr: number;
-    chunk_duration_s: number;
-    num_chunks: number;
-    max_load_duration_s: number;
-  };
-  logging: {
-    level: string;
-  };
-}
+import { workerApi } from '@/worker_api/client';
+import type { WorkerConfigResponse } from '@/worker_api/client';
 
 export default function ClientSettingsPage() {
-  const [config, setConfig] = useState<ClientConfigData | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<ClientConfigData | null>(null);
+  const [config, setConfig] = useState<WorkerConfigResponse | null>(null);
+  const [originalConfig, setOriginalConfig] = useState<WorkerConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,23 +20,13 @@ export default function ClientSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      // Use port 3001 for client configuration API
-      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
-      const response = await fetch(`${clientApiUrl}/api/config`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch configuration');
-      }
-      const configData = await response.json();
-      const clientConfig: ClientConfigData = {
-        client: configData.client,
-        client_api: configData.client_api,
-        clap: configData.clap,
-        logging: configData.logging
-      };
-      setConfig(clientConfig);
-      setOriginalConfig(JSON.parse(JSON.stringify(clientConfig)));
-    } catch {
-      setError('Unable to fetch client configuration. Make sure the client API server is running on port 3001.');
+      const cfg = await workerApi.getWorkerConfig();
+      setConfig(cfg);
+      setOriginalConfig(JSON.parse(JSON.stringify(cfg)) as WorkerConfigResponse);
+    } catch (e) {
+      setError(
+        'Unable to fetch client configuration. Ensure the worker API is running and reachable.'
+      );
     } finally {
       setLoading(false);
     }
@@ -74,34 +40,9 @@ export default function ClientSettingsPage() {
     setSuccessMessage(null);
 
     try {
-      // Use port 3001 for client configuration API
-      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
-      const currentResponse = await fetch(`${clientApiUrl}/api/config`);
-      if (!currentResponse.ok) {
-        throw new Error('Failed to fetch current configuration');
-      }
-
-      const updatedConfig = {
-        client: config.client,
-        client_api: config.client_api,
-        clap: config.clap,
-        logging: config.logging
-      };
-
-      const response = await fetch(`${clientApiUrl}/api/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConfig)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save configuration');
-      }
-
-      const result = await response.json();
-      setOriginalConfig(JSON.parse(JSON.stringify(config)));
-
-      setSuccessMessage(result.message || 'Configuration saved successfully!');
+      const result = await workerApi.saveWorkerConfig({ workerConfigResponse: config });
+      setOriginalConfig(JSON.parse(JSON.stringify(config)) as WorkerConfigResponse);
+      setSuccessMessage(result.message ?? 'Configuration saved successfully!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
@@ -121,16 +62,21 @@ export default function ClientSettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
-  const updateConfig = (section: keyof ClientConfigData, key: string, value: string | number | boolean) => {
-    if (!config) return;
-
-    setConfig(prev => ({
-      ...prev!,
-      [section]: {
-        ...prev![section],
-        [key]: value
-      }
-    }));
+  const updateConfig = <K extends keyof WorkerConfigResponse, P extends keyof WorkerConfigResponse[K]>(
+    section: K,
+    key: P,
+    value: WorkerConfigResponse[K][P]
+  ) => {
+    setConfig(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [section]: {
+          ...(prev[section] as WorkerConfigResponse[K]),
+          [key]: value as WorkerConfigResponse[K][P],
+        },
+      } as WorkerConfigResponse;
+    });
   };
 
   if (loading) {
@@ -186,8 +132,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.client.server_host}
-                    onChange={(e) => updateConfig('client', 'server_host', e.target.value)}
+                    value={config.client.serverHost}
+                    onChange={(e) => updateConfig('client', 'serverHost', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="localhost"
                   />
@@ -198,8 +144,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.server_port}
-                    onChange={(e) => updateConfig('client', 'server_port', parseInt(e.target.value))}
+                    value={config.client.serverPort}
+                    onChange={(e) => updateConfig('client', 'serverPort', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="8000"
                   />
@@ -210,8 +156,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.download_queue_size}
-                    onChange={(e) => updateConfig('client', 'download_queue_size', parseInt(e.target.value))}
+                    value={config.client.downloadQueueSize}
+                    onChange={(e) => updateConfig('client', 'downloadQueueSize', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="15"
                     min="1"
@@ -227,8 +173,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.job_queue_size}
-                    onChange={(e) => updateConfig('client', 'job_queue_size', parseInt(e.target.value))}
+                    value={config.client.jobQueueSize}
+                    onChange={(e) => updateConfig('client', 'jobQueueSize', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="30"
                     min="1"
@@ -244,8 +190,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.poll_interval}
-                    onChange={(e) => updateConfig('client', 'poll_interval', parseInt(e.target.value))}
+                    value={config.client.pollInterval}
+                    onChange={(e) => updateConfig('client', 'pollInterval', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="5"
                     min="1"
@@ -261,8 +207,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.download_workers}
-                    onChange={(e) => updateConfig('client', 'download_workers', parseInt(e.target.value))}
+                    value={config.client.downloadWorkers}
+                    onChange={(e) => updateConfig('client', 'downloadWorkers', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="10"
                     min="1"
@@ -278,8 +224,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.gpu_batch_size}
-                    onChange={(e) => updateConfig('client', 'gpu_batch_size', parseInt(e.target.value))}
+                    value={config.client.gpuBatchSize}
+                    onChange={(e) => updateConfig('client', 'gpuBatchSize', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="4"
                     min="1"
@@ -307,8 +253,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.client_api.host}
-                    onChange={(e) => updateConfig('client_api', 'host', e.target.value)}
+                    value={config.clientApi.host}
+                    onChange={(e) => updateConfig('clientApi', 'host', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="localhost"
                   />
@@ -319,8 +265,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client_api.port}
-                    onChange={(e) => updateConfig('client_api', 'port', parseInt(e.target.value))}
+                    value={config.clientApi.port}
+                    onChange={(e) => updateConfig('clientApi', 'port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="3001"
                   />
@@ -339,8 +285,8 @@ export default function ClientSettingsPage() {
                     Model ID
                   </label>
                   <select
-                    value={config.clap.model_id}
-                    onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
+                    value={config.clap.modelId}
+                    onChange={(e) => updateConfig('clap', 'modelId', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
@@ -354,8 +300,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.target_sr}
-                    onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
+                    value={config.clap.targetSr}
+                    onChange={(e) => updateConfig('clap', 'targetSr', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -365,8 +311,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.chunk_duration_s}
-                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
+                    value={config.clap.chunkDurationS}
+                    onChange={(e) => updateConfig('clap', 'chunkDurationS', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -378,8 +324,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.num_chunks}
-                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
+                    value={config.clap.numChunks}
+                    onChange={(e) => updateConfig('clap', 'numChunks', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
                     max="10"
@@ -394,8 +340,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.max_load_duration_s}
-                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
+                    value={config.clap.maxLoadDurationS ?? 0}
+                    onChange={(e) => updateConfig('clap', 'maxLoadDurationS', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="10"
                     max="600"

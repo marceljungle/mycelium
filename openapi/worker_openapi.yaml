@@ -1,0 +1,111 @@
+openapi: 3.1.0
+info:
+  title: Mycelium Worker (Client) API
+  version: 0.1.0
+  description: Configuration API for Mycelium client workers
+servers:
+  - url: http://localhost:8001
+paths:
+  /api:
+    get:
+      summary: API information
+      operationId: getApiInfo
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  version: { type: string }
+                  endpoints:
+                    type: object
+                    properties:
+                      config_get: { type: string }
+                      config_save: { type: string }
+                required: [message, version, endpoints]
+  /api/config:
+    get:
+      summary: Get current worker configuration
+      operationId: getWorkerConfig
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkerConfigResponse'
+    post:
+      summary: Save worker configuration
+      operationId: saveWorkerConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkerConfigResponse'
+      responses:
+        '200':
+          description: Saved (and possibly reloaded)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveConfigResponse'
+components:
+  schemas:
+    WorkerClientSection:
+      type: object
+      properties:
+        server_host: { type: string }
+        server_port: { type: integer }
+        download_queue_size: { type: integer }
+        job_queue_size: { type: integer }
+        poll_interval: { type: number }
+        download_workers: { type: integer }
+        gpu_batch_size: { type: integer }
+      required:
+        - server_host
+        - server_port
+        - download_queue_size
+        - job_queue_size
+        - poll_interval
+        - download_workers
+        - gpu_batch_size
+    WorkerClientAPISection:
+      type: object
+      properties:
+        host: { type: string }
+        port: { type: integer }
+      required: [host, port]
+    WorkerClapSection:
+      type: object
+      properties:
+        model_id: { type: string }
+        target_sr: { type: integer }
+        chunk_duration_s: { type: integer }
+        num_chunks: { type: integer }
+        max_load_duration_s: { type: integer, nullable: true }
+      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    WorkerLoggingSection:
+      type: object
+      properties:
+        level: { type: string }
+      required: [level]
+    WorkerConfigResponse:
+      type: object
+      properties:
+        client: { $ref: '#/components/schemas/WorkerClientSection' }
+        client_api: { $ref: '#/components/schemas/WorkerClientAPISection' }
+        clap: { $ref: '#/components/schemas/WorkerClapSection' }
+        logging: { $ref: '#/components/schemas/WorkerLoggingSection' }
+      required: [client, client_api, clap, logging]
+    SaveConfigResponse:
+      type: object
+      properties:
+        message: { type: string }
+        status: { type: string }
+        reloaded: { type: boolean }
+        reload_error: { type: string, nullable: true }
+      required: [message, status, reloaded]
