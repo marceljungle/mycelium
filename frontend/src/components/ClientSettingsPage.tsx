@@ -23,7 +23,7 @@ export default function ClientSettingsPage() {
       const cfg = await workerApi.getWorkerConfig();
       setConfig(cfg);
       setOriginalConfig(JSON.parse(JSON.stringify(cfg)) as WorkerConfigResponse);
-    } catch (e) {
+    } catch {
       setError(
         'Unable to fetch client configuration. Ensure the worker API is running and reachable.'
       );
