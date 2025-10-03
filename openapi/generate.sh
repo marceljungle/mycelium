@@ -68,6 +68,12 @@ if command -v npx >/dev/null 2>&1; then
     -g python-pydantic-v1 \
     -o "$ROOT_DIR/src" \
     --additional-properties=packageName=mycelium.api.generated_sources.worker_schemas,projectName=MyceliumWorkerSchemas,packageVersion=0.1.0,generateSourceCodeOnly=true,pythonVersion=3.9
+
+  # Post-process generated Python models to convert v1 syntax to v2
+  echo "Converting generated Pydantic v1 models to v2 compatible syntax..."
+  python3 "$ROOT_DIR/openapi/fix_pydantic_v2.py" \
+    "$ROOT_DIR/src/mycelium/api/generated_sources/server_schemas" \
+    "$ROOT_DIR/src/mycelium/api/generated_sources/worker_schemas"
 else
   echo "npx not found. Skipping Python models generation."
 fi
