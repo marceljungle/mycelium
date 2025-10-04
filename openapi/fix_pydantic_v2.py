@@ -6,6 +6,7 @@ This script fixes incompatibilities between Pydantic v1 and v2:
 - Converts Config.allow_population_by_field_name to model_config with populate_by_name
 - Replaces const fields with Literal type hints
 - Updates deprecated methods like dict() and parse_obj() to model_dump() and model_validate()
+- Adds alias_generator to automatically convert snake_case to camelCase for JSON
 """
 
 import re
@@ -14,8 +15,20 @@ from pathlib import Path
 from typing import List
 
 
+def to_camel_case(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
+
+
+def to_camel_case(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
+
+
 def fix_config_class(content: str) -> str:
-    """Convert Pydantic v1 Config class to v2 model_config."""
+    """Convert Pydantic v1 Config class to v2 model_config with alias_generator."""
     
     # Pattern to find the Config class block
     config_pattern = re.compile(
@@ -31,16 +44,15 @@ def fix_config_class(content: str) -> str:
         has_populate = match.group(2) is not None
         has_validate = match.group(3) is not None
         
-        # Build model_config dict
+        # Build model_config dict with ConfigDict for better type safety
         config_items = []
+        config_items.append('alias_generator=to_camel')  # Auto-convert snake_case to camelCase
         if has_populate:
-            config_items.append('"populate_by_name": True')
+            config_items.append('populate_by_name=True')
         if has_validate:
-            config_items.append('"validate_assignment": True')
+            config_items.append('validate_assignment=True')
         
-        if config_items:
-            return f'{indent}model_config = {{{", ".join(config_items)}}}\n'
-        return ''
+        return f'{indent}model_config = ConfigDict({", ".join(config_items)})\n'
     
     return config_pattern.sub(replace_config, content)
 
@@ -65,18 +77,36 @@ def fix_methods(content: str) -> str:
 
 
 def add_pydantic_imports(content: str) -> str:
-    """Ensure ConfigDict is imported if model_config is used."""
+    """Ensure required Pydantic imports are present."""
     
-    if 'model_config = {' in content and 'from pydantic import' in content:
-        # Check if ConfigDict is already imported
-        if 'ConfigDict' not in content:
-            # Add ConfigDict to existing pydantic import
-            content = re.sub(
-                r'from pydantic import ([^\n]+)',
-                r'from pydantic import \1, ConfigDict',
-                content,
-                count=1
-            )
+    # Check if we need to add imports
+    needs_config_dict = 'model_config = ConfigDict' in content
+    needs_to_camel = 'alias_generator=to_camel' in content
+    
+    if not (needs_config_dict or needs_to_camel):
+        return content
+    
+    # Find the pydantic import line
+    pydantic_import_pattern = re.compile(r'from pydantic import ([^\n]+)')
+    match = pydantic_import_pattern.search(content)
+    
+    if not match:
+        return content
+    
+    imports = match.group(1)
+    new_imports = []
+    
+    # Add ConfigDict if needed and not present
+    if needs_config_dict and 'ConfigDict' not in imports:
+        new_imports.append('ConfigDict')
+    
+    # Add to_camel if needed and not present  
+    if needs_to_camel and 'to_camel' not in imports:
+        new_imports.append('to_camel')
+    
+    if new_imports:
+        updated_imports = f"{imports}, {', '.join(new_imports)}"
+        content = pydantic_import_pattern.sub(f'from pydantic import {updated_imports}', content, count=1)
     
     return content
 
