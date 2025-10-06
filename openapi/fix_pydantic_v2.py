@@ -6,14 +6,58 @@ This script fixes incompatibilities between Pydantic v1 and v2:
 - Converts Config.allow_population_by_field_name to model_config with populate_by_name
 - Replaces const fields with Literal type hints  
 - Updates deprecated methods like dict() and parse_obj() to model_dump() and model_validate()
+- Adds camelCase serialization aliases to match TypeScript client expectations
 
 Note: The TypeScript generator automatically handles snake_case to camelCase conversion.
-The Python models just need to be Pydantic v2 compatible.
+The Python models need aliases to serialize with camelCase for API responses.
 """
 
 import re
 import sys
 from pathlib import Path
+
+
+def snake_to_camel(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
+
+
+def add_field_aliases(content: str) -> str:
+    """Add camelCase aliases to Field definitions for snake_case properties."""
+    
+    # Pattern to match field definitions like: field_name: Type = Field(...)
+    field_pattern = re.compile(
+        r'^(\s+)([a-z_]+):\s+([^\n]+?)\s*=\s*Field\((.*?)\)$',
+        re.MULTILINE
+    )
+    
+    def replace_field(match):
+        indent = match.group(1)
+        field_name = match.group(2)
+        field_type = match.group(3)
+        field_args = match.group(4)
+        
+        # Skip if no underscore (already camelCase or single word)
+        if '_' not in field_name:
+            return match.group(0)
+        
+        # Convert to camelCase
+        camel_name = snake_to_camel(field_name)
+        
+        # Skip if already has alias parameter
+        if 'alias=' in field_args or 'serialization_alias=' in field_args:
+            return match.group(0)
+        
+        # Add serialization_alias parameter
+        if field_args.strip() == '...':
+            new_args = f'..., serialization_alias="{camel_name}"'
+        else:
+            new_args = f'{field_args}, serialization_alias="{camel_name}"'
+        
+        return f'{indent}{field_name}: {field_type} = Field({new_args})'
+    
+    return field_pattern.sub(replace_field, content)
 
 
 def fix_config_class(content: str) -> str:
@@ -89,6 +133,7 @@ def fix_pydantic_file(file_path):
         content = fix_methods(content)
         content = fix_literal_types(content)
         content = add_pydantic_imports(content)
+        content = add_field_aliases(content)  # Add camelCase aliases
         
         if content != original_content:
             file_path.write_text(content, encoding='utf-8')
