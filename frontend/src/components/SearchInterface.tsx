@@ -34,19 +34,19 @@ export default function SearchInterface() {
     try {
       const taskData = await api.getTaskStatus({ taskId });
       if (taskData) {
-        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.searchResults}`);
+        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.search_results}`);
 
-        if (taskData.status === 'success' && taskData.searchResults) {
+        if (taskData.status === 'success' && taskData.search_results) {
           // Task completed successfully with search results
-          console.log(`Task ${taskId} completed successfully with ${taskData.searchResults.length} results`);
-          setResults(taskData.searchResults);
+          console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
+          setResults(taskData.search_results);
           return true;
         } else if (taskData.status === 'failed') {
           // Task failed
-          console.error(`Task ${taskId} failed:`, taskData.errorMessage);
-          setError(taskData.errorMessage || 'Search task failed on worker');
+          console.error(`Task ${taskId} failed:`, taskData.error_message);
+          setError(taskData.error_message || 'Search task failed on worker');
           return true;
-        } else if (taskData.status === 'success' && !taskData.searchResults) {
+        } else if (taskData.status === 'success' && !taskData.search_results) {
           // Task marked as success but no results yet - this might be a race condition
           console.warn(`Task ${taskId} marked as success but no search results yet, continuing polling...`);
           return false;
@@ -113,9 +113,9 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        if (data.taskId) {
-          console.log('Text search sent to worker, starting polling for task:', data.taskId);
-          startTaskPolling(data.taskId);
+        if (data.task_id) {
+          console.log('Text search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
         } else {
           console.error('Processing response missing taskId for text search');
           setError('Worker processing started but no task ID was returned.');
@@ -131,7 +131,7 @@ export default function SearchInterface() {
           setProcessingState('server');
           try {
             // Process on server
-            const serverResults = await api.computeTextSearch({ computeTextSearchRequest: { query, nResults: numResults } });
+            const serverResults = await api.computeTextSearch({ computeTextSearchRequest: { query, n_results: numResults } });
             setResults(serverResults);
           } catch {
             setError('Error processing text search on server. Please check your connection.');
@@ -176,9 +176,9 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        if (data.taskId) {
-          console.log('Audio search sent to worker, starting polling for task:', data.taskId);
-          startTaskPolling(data.taskId);
+        if (data.task_id) {
+          console.log('Audio search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
         } else {
           console.error('Processing response missing taskId for audio search');
           setError('Worker processing started but no task ID was returned.');

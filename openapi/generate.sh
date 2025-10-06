@@ -24,7 +24,7 @@ if command -v npx >/dev/null 2>&1; then
     -i "$SERVER_SPEC" \
     -g typescript-fetch \
     -o "$SERVER_OUT_DIR" \
-    --additional-properties=supportsES6=true,typescriptThreePlus=true
+    --additional-properties=supportsES6=true,typescriptThreePlus=true,modelPropertyNaming=original
 
   echo "Generating TypeScript Fetch client (worker) from $WORKER_SPEC ..."
   WORKER_OUT_DIR="$ROOT_DIR/frontend/src/worker_api/generated"
@@ -33,7 +33,7 @@ if command -v npx >/dev/null 2>&1; then
     -i "$WORKER_SPEC" \
     -g typescript-fetch \
     -o "$WORKER_OUT_DIR" \
-    --additional-properties=supportsES6=true,typescriptThreePlus=true
+    --additional-properties=supportsES6=true,typescriptThreePlus=true,modelPropertyNaming=original
 else
   echo "npx not found. Please install Node.js and ensure npx is available to generate TS client."
 fi

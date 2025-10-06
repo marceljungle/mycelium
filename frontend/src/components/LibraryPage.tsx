@@ -49,8 +49,8 @@ export default function LibraryPage() {
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        mediaServerRatingKey: track.mediaServerRatingKey,
-        mediaServerType: track.mediaServerType,
+        media_server_rating_key: track.media_server_rating_key,
+        media_server_type: track.media_server_type,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -81,8 +81,8 @@ export default function LibraryPage() {
         album: track.album,
         title: track.title,
         filepath: track.filepath,
-        mediaServerRatingKey: track.mediaServerRatingKey,
-        mediaServerType: track.mediaServerType,
+        media_server_rating_key: track.media_server_rating_key,
+        media_server_type: track.media_server_type,
         processed: false // We'll determine this based on embeddings
       }));
       
@@ -130,8 +130,8 @@ export default function LibraryPage() {
           console.log(`Task ${taskId} completed successfully`);
           return true; // Task completed successfully
         } else if (taskStatus.status === 'failed') {
-          console.error(`Task ${taskId} failed:`, taskStatus.errorMessage);
-          setError(`Processing failed: ${taskStatus.errorMessage || 'Unknown error'}`);
+          console.error(`Task ${taskId} failed:`, taskStatus.error_message);
+          setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
           return false;
         }
         console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
@@ -208,21 +208,11 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
-      console.log('[LibraryPage] Fetching recommendations for track:', track.mediaServerRatingKey, 'numResults:', numResults);
-      const data = await api.getSimilarByTrack({ trackId: track.mediaServerRatingKey, nResults: numResults });
-      console.log('[LibraryPage] API response received:', data);
-      console.log('[LibraryPage] Response type:', typeof data, 'isArray:', Array.isArray(data));
+      const data = await api.getSimilarByTrack({ trackId: track.media_server_rating_key, nResults: numResults });
       if (data) {
         
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
-          console.log('[LibraryPage] Processing array of results, count:', data.length);
-          if (data.length > 0) {
-            console.log('[LibraryPage] First result:', JSON.stringify(data[0], null, 2));
-            console.log('[LibraryPage] First result.similarityScore:', data[0].similarityScore, 'type:', typeof data[0].similarityScore);
-            const rawResult = data[0] as unknown as Record<string, unknown>;
-            console.log('[LibraryPage] First result.similarity_score (snake_case check):', rawResult.similarity_score);
-          }
           setRecommendations(data);
           setRecommendationsLoading(false);
         } else if (data.status === 'confirmation_required') {
@@ -236,7 +226,7 @@ export default function LibraryPage() {
             try {
               // Try to process on server (now synchronous)
               // Try to process on server using generated client
-              await api.computeOnServer({ computeOnServerRequest: { trackId: track.mediaServerRatingKey } });
+              await api.computeOnServer({ computeOnServerRequest: { track_id: track.media_server_rating_key } });
               setProcessingState('none');
               await getRecommendations(track, true);
             } catch {
@@ -249,12 +239,12 @@ export default function LibraryPage() {
           }
         } else if (data.status === 'processing') {
           // Handle worker processing case - start polling immediately
-          if (!isRetry && data.taskId) {
-            console.log('Starting worker processing with task_id:', data.taskId);
+          if (!isRetry && data.task_id) {
+            console.log('Starting worker processing with task_id:', data.task_id);
             // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
-            startTaskPolling(data.taskId, track.mediaServerRatingKey, track);
-          } else if (!data.taskId) {
+            startTaskPolling(data.task_id, track.media_server_rating_key, track);
+          } else if (!data.task_id) {
             console.error('Worker processing response missing taskId:', data);
             setError('Worker processing started but missing task ID. Please try again.');
             setRecommendationsLoading(false);
@@ -457,10 +447,10 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {filteredTracks.map((track) => (
                 <button
-                  key={`${track.mediaServerRatingKey}`}
+                  key={`${track.media_server_rating_key}`}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack && `${selectedTrack.mediaServerRatingKey}` === `${track.mediaServerRatingKey}`
+                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
@@ -590,7 +580,7 @@ export default function LibraryPage() {
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {recommendations.map((result) => (
                 <div
-                  key={`${result.track.mediaServerRatingKey}`}
+                  key={`${result.track.media_server_rating_key}`}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
                   <div className="flex justify-between items-start">
@@ -603,17 +593,7 @@ export default function LibraryPage() {
                       </div>
                     </div>
                     <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
-                      {(() => {
-                        // Access both possible property names for debugging
-                        const rawResult = result as unknown as Record<string, unknown>;
-                        const score = result.similarityScore ?? rawResult.similarity_score as number | undefined;
-                        console.log('[LibraryPage] Rendering:', result.track.title, 'score:', score);
-                        if (score === undefined) {
-                          console.error('[LibraryPage] Score is undefined! Result:', result);
-                          return 'N/A';
-                        }
-                        return (score * 100).toFixed(1);
-                      })()}%
+                      {(result.similarity_score * 100).toFixed(1)}%
                     </div>
                   </div>
                 </div>
@@ -626,7 +606,7 @@ export default function LibraryPage() {
       <PlaylistCreationModal
         isOpen={isPlaylistModalOpen}
         onClose={() => setIsPlaylistModalOpen(false)}
-        trackIds={recommendations.map(result => result.track.mediaServerRatingKey)}
+        trackIds={recommendations.map(result => result.track.media_server_rating_key)}
         onSuccess={handlePlaylistCreated}
       />
     </div>

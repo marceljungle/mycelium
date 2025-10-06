@@ -132,8 +132,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.client.serverHost}
-                    onChange={(e) => updateConfig('client', 'serverHost', e.target.value)}
+                    value={config.client.server_host}
+                    onChange={(e) => updateConfig('client', 'server_host', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="localhost"
                   />
@@ -144,8 +144,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.serverPort}
-                    onChange={(e) => updateConfig('client', 'serverPort', parseInt(e.target.value))}
+                    value={config.client.server_port}
+                    onChange={(e) => updateConfig('client', 'server_port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="8000"
                   />
@@ -156,8 +156,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.downloadQueueSize}
-                    onChange={(e) => updateConfig('client', 'downloadQueueSize', parseInt(e.target.value))}
+                    value={config.client.download_queue_size}
+                    onChange={(e) => updateConfig('client', 'download_queue_size', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="15"
                     min="1"
@@ -173,8 +173,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.jobQueueSize}
-                    onChange={(e) => updateConfig('client', 'jobQueueSize', parseInt(e.target.value))}
+                    value={config.client.job_queue_size}
+                    onChange={(e) => updateConfig('client', 'job_queue_size', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="30"
                     min="1"
@@ -190,8 +190,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.pollInterval}
-                    onChange={(e) => updateConfig('client', 'pollInterval', parseInt(e.target.value))}
+                    value={config.client.poll_interval}
+                    onChange={(e) => updateConfig('client', 'poll_interval', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="5"
                     min="1"
@@ -207,8 +207,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.downloadWorkers}
-                    onChange={(e) => updateConfig('client', 'downloadWorkers', parseInt(e.target.value))}
+                    value={config.client.download_workers}
+                    onChange={(e) => updateConfig('client', 'download_workers', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="10"
                     min="1"
@@ -224,8 +224,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.client.gpuBatchSize}
-                    onChange={(e) => updateConfig('client', 'gpuBatchSize', parseInt(e.target.value))}
+                    value={config.client.gpu_batch_size}
+                    onChange={(e) => updateConfig('client', 'gpu_batch_size', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="4"
                     min="1"
@@ -253,8 +253,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="text"
-                    value={config.clientApi.host}
-                    onChange={(e) => updateConfig('clientApi', 'host', e.target.value)}
+                    value={config.client_api.host}
+                    onChange={(e) => updateConfig('client_api', 'host', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="localhost"
                   />
@@ -265,8 +265,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clientApi.port}
-                    onChange={(e) => updateConfig('clientApi', 'port', parseInt(e.target.value))}
+                    value={config.client_api.port}
+                    onChange={(e) => updateConfig('client_api', 'port', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="3001"
                   />
@@ -285,8 +285,8 @@ export default function ClientSettingsPage() {
                     Model ID
                   </label>
                   <select
-                    value={config.clap.modelId}
-                    onChange={(e) => updateConfig('clap', 'modelId', e.target.value)}
+                    value={config.clap.model_id}
+                    onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
@@ -300,8 +300,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.targetSr}
-                    onChange={(e) => updateConfig('clap', 'targetSr', parseInt(e.target.value))}
+                    value={config.clap.target_sr}
+                    onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -311,8 +311,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.chunkDurationS}
-                    onChange={(e) => updateConfig('clap', 'chunkDurationS', parseInt(e.target.value))}
+                    value={config.clap.chunk_duration_s}
+                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
@@ -324,8 +324,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.numChunks}
-                    onChange={(e) => updateConfig('clap', 'numChunks', parseInt(e.target.value))}
+                    value={config.clap.num_chunks}
+                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
                     max="10"
@@ -340,8 +340,8 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.maxLoadDurationS ?? 0}
-                    onChange={(e) => updateConfig('clap', 'maxLoadDurationS', parseInt(e.target.value))}
+                    value={config.clap.max_load_duration_s ?? 0}
+                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="10"
                     max="600"
