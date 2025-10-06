@@ -38,7 +38,7 @@ export default function SettingsPage() {
     setSuccessMessage(null);
 
     try {
-      const result = await api.saveConfig({ configResponse: config as ConfigResponse });
+      const result = await api.saveConfig({ configRequest: config });
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
       
       // Handle different response types based on reload success

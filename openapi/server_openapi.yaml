@@ -278,7 +278,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ConfigResponse'
+              $ref: '#/components/schemas/ConfigRequest'
       responses:
         '200':
           description: OK
@@ -483,3 +483,15 @@ components:
         created_at: { type: string }
         server_id: { type: string, nullable: true }
       required: [name, track_count, created_at]
+    ConfigRequest:
+      type: object
+      properties:
+        media_server: { type: object, additionalProperties: true }
+        plex: { type: object, additionalProperties: true }
+        api: { type: object, additionalProperties: true }
+        chroma: { type: object, additionalProperties: true }
+        clap: { type: object, additionalProperties: true }
+        server: { type: object, additionalProperties: true }
+        logging: { type: object, additionalProperties: true }
+        database: { type: object, additionalProperties: true, nullable: true }
+      required: [media_server, plex, api, chroma, clap, server, logging]

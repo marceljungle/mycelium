@@ -10,15 +10,15 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 from mycelium.api.generated_sources.server_schemas.models import (
+    ConfigRequest,
     ConfigResponse,
     CreatePlaylistRequest,
     LibraryStatsResponse,
@@ -62,29 +62,6 @@ from ..domain.worker import ContextType, TaskResult, TaskStatus, TaskType
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
-
-
-# Remaining local DTOs
-class ConfigRequest(BaseModel):
-    """Request model for updating configuration."""
-
-    media_server: Dict[str, Any]
-    plex: Dict[str, Any]
-    api: Dict[str, Any]
-    chroma: Dict[str, Any]
-    clap: Dict[str, Any]
-    server: Dict[str, Any]
-    logging: Dict[str, Any]
-    database: Optional[Dict[str, Any]] = None
-
-
-class ApiInfoResponse(BaseModel):
-    """Basic API info and advertised endpoints."""
-
-    message: str
-    version: str
-    endpoints: Dict[str, str]
-
 
 # Initialize configuration and service
 config = MyceliumConfig.load_from_yaml()
@@ -160,8 +137,7 @@ def reload_config() -> None:
 # Create FastAPI app
 app = FastAPI(
     title="Mycelium API",
-    description="Plex music collection and recommendation system using CLAP embeddings",
-    version="0.1.0",
+    description="Plex music collection and recommendation system using CLAP embeddings"
 )
 
 SERVER_SPEC_PATH = Path(__file__).resolve().parents[3] / "openapi" / "server_openapi.yaml"
@@ -209,40 +185,6 @@ async def get_openapi_yaml():
 async def root():
     """Redirect root to frontend application."""
     return RedirectResponse("/app")
-
-
-@app.get("/api", response_model=ApiInfoResponse)
-async def api_info():
-    """API information endpoint"""
-    return ApiInfoResponse(
-        message="Mycelium Music Recommendation API",
-        version="0.1.0",
-        endpoints={
-            "library_stats": "/api/library/stats",
-            "library_tracks": "/api/library/tracks",
-            "search_text": "/api/search/text",
-            "search_audio": "/api/search/audio",
-            "compute_text_search": "/compute/search/text",
-            "compute_audio_search": "/compute/search/audio",
-            "config_get": "/api/config",
-            "config_save": "/api/config",
-            "scan_library": "/api/library/scan",
-            "process_library": "/api/library/process",
-            "process_on_server": "/api/library/process/server",
-            "stop_processing": "/api/library/process/stop",
-            "processing_progress": "/api/library/progress",
-            "create_playlist": "/api/playlists/create",
-            "worker_register": "/workers/register",
-            "worker_get_job": "/workers/get_job",
-            "worker_submit_result": "/workers/submit_result",
-            "similar_by_track": "/similar/by_track/{track_id}",
-            "compute_on_server": "/compute/on_server",
-            "download_track": "/download_track/{track_id}",
-            "download_audio": "/download_audio/{task_id}",
-            "task_status": "/api/queue/task/{task_id}",
-        },
-    )
-
 
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
 @with_service_lock
