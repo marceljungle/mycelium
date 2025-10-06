@@ -932,7 +932,9 @@ async def get_similar_tracks(
             )
             # Perform similarity search
             results = service.search_similar_by_track_id(track_id, n_results)
-            return [
+            logger.info(f"Found {len(results)} similar tracks for track {track_id}")
+            
+            response_data = [
                 SearchResultResponse(
                     track=TrackResponse(
                         artist=result.track.artist,
@@ -947,6 +949,14 @@ async def get_similar_tracks(
                 )
                 for result in results
             ]
+            
+            # Log the first result for debugging
+            if response_data:
+                logger.info(f"First result - similarity_score: {response_data[0].similarity_score}, distance: {response_data[0].distance}")
+                logger.info(f"First result model_dump: {response_data[0].model_dump()}")
+                logger.info(f"First result model_dump(by_alias=True): {response_data[0].model_dump(by_alias=True)}")
+            
+            return response_data
 
         logger.info(f"No embedding found for track {track_id}, checking for workers")
 

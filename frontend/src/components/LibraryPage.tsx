@@ -208,11 +208,21 @@ export default function LibraryPage() {
     
     try {
       // Use the correct similar tracks endpoint
+      console.log('[LibraryPage] Fetching recommendations for track:', track.mediaServerRatingKey, 'numResults:', numResults);
       const data = await api.getSimilarByTrack({ trackId: track.mediaServerRatingKey, nResults: numResults });
+      console.log('[LibraryPage] API response received:', data);
+      console.log('[LibraryPage] Response type:', typeof data, 'isArray:', Array.isArray(data));
       if (data) {
         
         // Check if it's a list of results or a confirmation required response
         if (Array.isArray(data)) {
+          console.log('[LibraryPage] Processing array of results, count:', data.length);
+          if (data.length > 0) {
+            console.log('[LibraryPage] First result:', JSON.stringify(data[0], null, 2));
+            console.log('[LibraryPage] First result.similarityScore:', data[0].similarityScore, 'type:', typeof data[0].similarityScore);
+            const rawResult = data[0] as unknown as Record<string, unknown>;
+            console.log('[LibraryPage] First result.similarity_score (snake_case check):', rawResult.similarity_score);
+          }
           setRecommendations(data);
           setRecommendationsLoading(false);
         } else if (data.status === 'confirmation_required') {
@@ -593,7 +603,12 @@ export default function LibraryPage() {
                       </div>
                     </div>
                     <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
-                      {(result.similarityScore * 100).toFixed(1)}%
+                      {(() => {
+                        console.log('[LibraryPage] Rendering result:', result.track.title, 'similarityScore:', result.similarityScore, 'type:', typeof result.similarityScore);
+                        const percentage = (result.similarityScore * 100).toFixed(1);
+                        console.log('[LibraryPage] Calculated percentage:', percentage);
+                        return percentage;
+                      })()}%
                     </div>
                   </div>
                 </div>
