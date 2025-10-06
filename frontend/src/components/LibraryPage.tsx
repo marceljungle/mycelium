@@ -604,10 +604,15 @@ export default function LibraryPage() {
                     </div>
                     <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
                       {(() => {
-                        console.log('[LibraryPage] Rendering result:', result.track.title, 'similarityScore:', result.similarityScore, 'type:', typeof result.similarityScore);
-                        const percentage = (result.similarityScore * 100).toFixed(1);
-                        console.log('[LibraryPage] Calculated percentage:', percentage);
-                        return percentage;
+                        // Access both possible property names for debugging
+                        const rawResult = result as unknown as Record<string, unknown>;
+                        const score = result.similarityScore ?? rawResult.similarity_score as number | undefined;
+                        console.log('[LibraryPage] Rendering:', result.track.title, 'score:', score);
+                        if (score === undefined) {
+                          console.error('[LibraryPage] Score is undefined! Result:', result);
+                          return 'N/A';
+                        }
+                        return (score * 100).toFixed(1);
                       })()}%
                     </div>
                   </div>
