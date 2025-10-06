@@ -164,7 +164,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-SERVER_SPEC_PATH = Path(__file__).resolve().parents[2] / "openapi" / "server_openapi.yaml"
+SERVER_SPEC_PATH = Path(__file__).resolve().parents[3] / "openapi" / "server_openapi.yaml"
 app.state.external_openapi_cache = None
 
 def _custom_openapi():
