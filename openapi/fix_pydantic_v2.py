@@ -26,7 +26,7 @@ def snake_to_camel(snake_str: str) -> str:
 def add_field_aliases(content: str) -> str:
     """Add camelCase aliases to Field definitions for snake_case properties."""
     
-    # Pattern to match field definitions like: field_name: Type = Field(...)
+    # Pattern 1: field_name: Type = Field(...)
     field_pattern = re.compile(
         r'^(\s+)([a-z_]+):\s+([^\n]+?)\s*=\s*Field\((.*?)\)$',
         re.MULTILINE
@@ -57,7 +57,32 @@ def add_field_aliases(content: str) -> str:
         
         return f'{indent}{field_name}: {field_type} = Field({new_args})'
     
-    return field_pattern.sub(replace_field, content)
+    content = field_pattern.sub(replace_field, content)
+    
+    # Pattern 2: field_name: Optional[Type] = None (wrap in Field)
+    optional_pattern = re.compile(
+        r'^(\s+)([a-z_]+):\s+(Optional\[[^\]]+\])\s*=\s*None\s*$',
+        re.MULTILINE
+    )
+    
+    def replace_optional(match):
+        indent = match.group(1)
+        field_name = match.group(2)
+        field_type = match.group(3)
+        
+        # Skip if no underscore
+        if '_' not in field_name:
+            return match.group(0)
+        
+        # Convert to camelCase
+        camel_name = snake_to_camel(field_name)
+        
+        # Wrap in Field with default=None and serialization_alias
+        return f'{indent}{field_name}: {field_type} = Field(default=None, serialization_alias="{camel_name}")'
+    
+    content = optional_pattern.sub(replace_optional, content)
+    
+    return content
 
 
 def fix_config_class(content: str) -> str:
