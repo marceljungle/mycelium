@@ -15,9 +15,7 @@ from mycelium.api.generated_sources.worker_schemas.models import (
     WorkerConfigResponse,
     SaveConfigResponse,
 )
-
-from ..client_config import MyceliumClientConfig
-
+from ..client_config import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig, MyceliumClientConfig
 # Setup logger for this module
 logger = logging.getLogger(__name__)
 
@@ -65,8 +63,7 @@ def reload_client_config() -> None:
 # Create minimal FastAPI app for client configuration only
 app = FastAPI(
     title="Mycelium Client API",
-    description="Configuration API for Mycelium client workers",
-    version="0.1.0"
+    description="Configuration API for Mycelium client workers"
 )
 
 WORKER_SPEC_PATH = Path(__file__).resolve().parents[3] / "openapi" / "worker_openapi.yaml"
@@ -122,33 +119,7 @@ async def get_config():
     """Get current client configuration."""
     try:
         logger.info("Client configuration get request received")
-        
-        # Return current configuration as dict using global config
-        config_dict = {
-            "client": {
-                "server_host": config.client.server_host,
-                "server_port": config.client.server_port,
-                "download_queue_size": config.client.download_queue_size,
-                "job_queue_size": config.client.job_queue_size,
-                "poll_interval": config.client.poll_interval,
-                "download_workers": config.client.download_workers,
-                "gpu_batch_size": config.client.gpu_batch_size
-            },
-            "client_api": {
-                "host": config.client_api.host,
-                "port": config.client_api.port
-            },
-            "clap": {
-                "model_id": config.clap.model_id,
-                "target_sr": config.clap.target_sr,
-                "chunk_duration_s": config.clap.chunk_duration_s,
-                "num_chunks": config.clap.num_chunks,
-                "max_load_duration_s": config.clap.max_load_duration_s
-            },
-            "logging": {
-                "level": config.logging.level
-            }
-        }
+        config_dict = config.to_dict()
         logger.info("Client configuration retrieved successfully")
         return WorkerConfigResponse(**config_dict)
     except Exception as e:
@@ -161,11 +132,6 @@ async def save_config(config_request: WorkerConfigRequest):
     """Save client configuration to YAML file and hot-reload the application."""
     try:
         logger.info("Client configuration save request received")
-        
-        # Create new config object with updated values
-        from ..client_config import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig
-        
-        # Convert Dict[str, Any] to proper typed configs
         clap_config = CLAPConfig(**dict(config_request.clap))
         client_config = ClientConfig(**dict(config_request.client))
         client_api_config = ClientAPIConfig(**dict(config_request.client_api))

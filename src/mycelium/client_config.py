@@ -182,6 +182,34 @@ class MyceliumClientConfig:
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, indent=2)
 
+    def to_dict(self) -> dict:
+        """Convert client configuration to dictionary format."""
+        return {
+            "client": {
+                "server_host": self.client.server_host,
+                "server_port": self.client.server_port,
+                "download_queue_size": self.client.download_queue_size,
+                "job_queue_size": self.client.job_queue_size,
+                "poll_interval": self.client.poll_interval,
+                "download_workers": self.client.download_workers,
+                "gpu_batch_size": self.client.gpu_batch_size
+            },
+            "client_api": {
+                "host": self.client_api.host,
+                "port": self.client_api.port
+            },
+            "clap": {
+                "model_id": self.clap.model_id,
+                "target_sr": self.clap.target_sr,
+                "chunk_duration_s": self.clap.chunk_duration_s,
+                "num_chunks": self.clap.num_chunks,
+                "max_load_duration_s": self.clap.max_load_duration_s
+            },
+            "logging": {
+                "level": self.logging.level
+            }
+        }
+
     def setup_logging(self) -> None:
         """Setup logging configuration."""
         # Configure the root logger
