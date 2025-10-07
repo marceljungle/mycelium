@@ -23,9 +23,6 @@ class LibraryScanUseCase:
         """Scan the Plex music library and store track metadata."""
         logger.info("Starting library scan...")
 
-        # Start scan session
-        session_id = self.track_database.start_scan_session()
-
         try:
             # Get all tracks from Plex
             tracks = self.plex_repository.get_all_tracks()
@@ -39,16 +36,7 @@ class LibraryScanUseCase:
             stats = self.track_database.save_tracks(tracks=tracks,
                                                     scan_timestamp=scan_timestamp)
 
-            # Complete scan session
-            self.track_database.complete_scan_session(
-                session_id,
-                stats["total"],
-                stats["new"],
-                stats["updated"]
-            )
-
             result = {
-                "session_id": session_id,
                 "total_tracks": stats["total"],
                 "new_tracks": stats["new"],
                 "updated_tracks": stats["updated"],
@@ -68,7 +56,7 @@ class LibraryScanUseCase:
 
 
 class EmbeddingProcessingUseCase:
-    """Use case for resumable embedding processing from stored tracks."""
+    """Use case for embedding processing from stored tracks."""
 
     def __init__(
             self,
@@ -107,11 +95,6 @@ class EmbeddingProcessingUseCase:
             }
 
         logger.info(f"Found {len(unprocessed_tracks)} unprocessed tracks")
-
-        # Start processing session
-        session_id = self.track_database.start_processing_session(total_tracks=len(unprocessed_tracks),
-                                                                  model_id=self.model_id)
-
         processed_count = 0
         failed_count = 0
 
@@ -183,20 +166,7 @@ class EmbeddingProcessingUseCase:
                         logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
                         failed_count += 1
 
-                # Update session progress periodically
-                if (processed_count + failed_count) % 10 == 0:
-                    self.track_database.update_processing_session(
-                        session_id, processed_count, failed_count
-                    )
-
-            # Final session update
-            self.track_database.update_processing_session(session_id, processed_count, failed_count)
-
-            if not self._should_stop:
-                self.track_database.complete_processing_session(session_id)
-
             result = {
-                "session_id": session_id,
                 "processed": processed_count,
                 "failed": failed_count,
                 "total": len(unprocessed_tracks),
@@ -233,7 +203,6 @@ class ProcessingProgressUseCase:
     def get_current_stats(self, model_id: Optional[str] = None) -> Dict[str, Any]:
         """Get current processing statistics, optionally filtered by model."""
         stats = self.track_database.get_processing_stats(model_id)
-        latest_session = self.track_database.get_latest_processing_session()
 
         return {
             "total_tracks": stats["total_tracks"],
@@ -241,8 +210,7 @@ class ProcessingProgressUseCase:
             "unprocessed_tracks": stats["unprocessed_tracks"],
             "progress_percentage": (stats["processed_tracks"] / stats["total_tracks"] * 100) if stats[
                                                                                                     "total_tracks"] > 0 else 0,
-            "model_id": model_id,
-            "latest_session": latest_session
+            "model_id": model_id
         }
 
 

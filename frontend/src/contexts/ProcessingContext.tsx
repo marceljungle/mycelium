@@ -14,7 +14,6 @@ interface LibraryStats {
     unprocessed_tracks: number;
     progress_percentage: number;
     is_processing?: boolean;
-    latest_session?: Record<string, unknown>;
   };
 }
 

@@ -330,7 +330,6 @@ components:
         unprocessed_tracks: { type: integer }
         progress_percentage: { type: number }
         is_processing: { type: boolean, nullable: true }
-        latest_session: { type: object, additionalProperties: true, nullable: true }
       required: [total_tracks, processed_tracks, unprocessed_tracks, progress_percentage]
     LibraryStatsResponse:
       type: object
