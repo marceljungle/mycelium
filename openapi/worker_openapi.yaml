@@ -6,26 +6,6 @@ info:
 servers:
   - url: http://localhost:8001
 paths:
-  /api:
-    get:
-      summary: API information
-      operationId: getApiInfo
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message: { type: string }
-                  version: { type: string }
-                  endpoints:
-                    type: object
-                    properties:
-                      config_get: { type: string }
-                      config_save: { type: string }
-                required: [message, version, endpoints]
   /api/config:
     get:
       summary: Get current worker configuration
@@ -45,7 +25,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WorkerConfigResponse'
+              $ref: '#/components/schemas/WorkerConfigRequest'
       responses:
         '200':
           description: Saved (and possibly reloaded)
@@ -100,6 +80,14 @@ components:
         client_api: { $ref: '#/components/schemas/WorkerClientAPISection' }
         clap: { $ref: '#/components/schemas/WorkerClapSection' }
         logging: { $ref: '#/components/schemas/WorkerLoggingSection' }
+      required: [client, client_api, clap, logging]
+    WorkerConfigRequest:
+      type: object
+      properties:
+        client: { type: object, additionalProperties: true }
+        client_api: { type: object, additionalProperties: true }
+        clap: { type: object, additionalProperties: true }
+        logging: { type: object, additionalProperties: true }
       required: [client, client_api, clap, logging]
     SaveConfigResponse:
       type: object

@@ -40,7 +40,7 @@ export default function ClientSettingsPage() {
     setSuccessMessage(null);
 
     try {
-      const result = await workerApi.saveWorkerConfig({ workerConfigResponse: config });
+      const result = await workerApi.saveWorkerConfig({ workerConfigRequest: config });
       setOriginalConfig(JSON.parse(JSON.stringify(config)) as WorkerConfigResponse);
       setSuccessMessage(result.message ?? 'Configuration saved successfully!');
     } catch (err) {
