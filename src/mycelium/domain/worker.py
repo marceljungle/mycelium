@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+from mycelium.domain import SearchResult
+
 
 class TaskType(str, Enum):
     """Type of tasks that can be assigned to workers."""
@@ -56,7 +58,7 @@ class Task:
     audio_filename: Optional[str] = None  # For audio search tasks
     n_results: Optional[int] = None  # For search tasks - number of results to return
     # Results storage for search tasks
-    search_results: Optional[List[dict]] = None
+    search_results: Optional[List[SearchResult]] = None
 
     def __post_init__(self):
         if self.created_at is None:

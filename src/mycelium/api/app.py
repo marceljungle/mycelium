@@ -33,6 +33,7 @@ from mycelium.api.generated_sources.server_schemas.models import (
     TrackResponse,
     TracksListResponse,
 )
+from mycelium.domain import SearchResult
 
 # Worker API request/response models
 from .worker_models import (
@@ -661,7 +662,7 @@ async def submit_result(request: TaskResultRequest):
             task = job_queue.get_task_status(request.task_id)
 
             if task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
-                # Traditional track embedding task
+                # Track embedding task
                 logger.info(
                     f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}"
                 )
@@ -685,22 +686,14 @@ async def submit_result(request: TaskResultRequest):
                             request.embedding, task.n_results or 10
                         )
 
-                        # Convert to dict format and store in task
-                        results_dict = [
-                            {
-                                "track": {
-                                    "artist": result.track.artist,
-                                    "album": result.track.album,
-                                    "title": result.track.title,
-                                    "filepath": str(result.track.filepath),
-                                    "media_server_rating_key": result.track.media_server_rating_key,
-                                    "media_server_type": result.track.media_server_type.value,
-                                },
-                                "similarity_score": result.similarity_score,
-                                "distance": result.distance,
-                            }
+                        # Convert search results to API response models
+                        results_responses = [
+                            map_search_result_to_response(result)
                             for result in search_results
                         ]
+
+                        # Convert to dict format for storage in task
+                        results_dict = [result.model_dump() for result in results_responses]
 
                         # Update task with search results - ensure task status is set to success
                         with job_queue._lock:
@@ -730,7 +723,7 @@ async def submit_result(request: TaskResultRequest):
                     job_queue.cleanup_task_files(request.task_id)
 
             elif task and task.task_type == TaskType.COMPUTE_TEXT_EMBEDDING:
-                # Text search task - perform search on server
+                # Text search task
                 logger.info(
                     f"Performing text search for task {request.task_id} with query '{task.text_query}'"
                 )
@@ -740,26 +733,9 @@ async def submit_result(request: TaskResultRequest):
                         request.embedding, task.n_results or 10
                     )
 
-                    # Convert to dict format and store in task
-                    results_dict = [
-                        {
-                            "track": {
-                                "artist": result.track.artist,
-                                "album": result.track.album,
-                                "title": result.track.title,
-                                "filepath": str(result.track.filepath),
-                                "media_server_rating_key": result.track.media_server_rating_key,
-                                "media_server_type": result.track.media_server_type.value,
-                            },
-                            "similarity_score": result.similarity_score,
-                            "distance": result.distance,
-                        }
-                        for result in search_results
-                    ]
-
                     # Update task with search results - ensure task status is set to success
                     with job_queue._lock:
-                        task.search_results = results_dict
+                        task.search_results = search_results
                         if task.status != TaskStatus.SUCCESS:
                             logger.info(
                                 f"Setting task {request.task_id} status to SUCCESS"
@@ -768,7 +744,7 @@ async def submit_result(request: TaskResultRequest):
                             task.completed_at = datetime.now()
 
                     logger.info(
-                        f"Text search completed for task {request.task_id}, found {len(results_dict)} results"
+                        f"Text search completed for task {request.task_id}, found {len(search_results)} results"
                     )
                 except Exception as e:
                     logger.error(
@@ -956,9 +932,6 @@ async def compute_on_server(request: ComputeOnServerRequest):
     """Compute embedding on server CPU after user confirmation."""
     try:
         logger.info(f"Starting server-side computation for track {request.track_id}")
-
-        # For better UX, process synchronously for single tracks (should be fast enough)
-        # Load track info
         track_info = service.get_track_by_id(request.track_id)
         if not track_info:
             logger.warning(f"Track not found for ID: {request.track_id}")
@@ -1122,7 +1095,7 @@ async def get_task_status(task_id: str):
             if task.search_results:
                 try:
                     search_results_typed = [
-                        SearchResultResponse(**sr) for sr in task.search_results
+                        map_search_result_to_response(sr) for sr in task.search_results
                     ]
                 except Exception:
                     # Fallback to None if coercion fails
@@ -1151,6 +1124,19 @@ async def get_task_status(task_id: str):
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
 
+def map_search_result_to_response(result: SearchResult) -> SearchResultResponse:
+    return SearchResultResponse(
+        track=TrackResponse(
+            artist=result.track.artist,
+            album=result.track.album,
+            title=result.track.title,
+            filepath=str(result.track.filepath),
+            media_server_rating_key=result.track.media_server_rating_key,
+            media_server_type=result.track.media_server_type.value,
+        ),
+        similarity_score=result.similarity_score,
+        distance=result.distance,
+    )
 
 if __name__ == "__main__":
     uvicorn.run(
