@@ -200,8 +200,8 @@ async def get_library_stats():
 
 @app.get("/api/search/text", response_model=ProcessingResponse)
 async def search_by_text_get(
-    q: str = Query(..., description="Search query"),
-    n_results: int = Query(10, description="Number of results to return"),
+    q: str = Query(...),
+    n_results: int = Query(10),
 ):
     """Search for music tracks by text description (GET endpoint)."""
     logger.info(f"Text search GET request - q: '{q}', n_results: {n_results}")
