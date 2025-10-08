@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from mycelium.application.use_cases import (
+from mycelium.application.search_use_cases import (
     MusicSearchUseCase
 )
-from mycelium.application.workflow_use_cases import (
+from mycelium.application.library_management_use_cases import (
     LibraryScanUseCase,
     EmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
