@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 
 from .job_queue import JobQueueService
 from ..domain.models import TrackEmbedding
-from ..domain.repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
+from ..domain.repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator
 from ..domain.worker import ContextType
 from ..infrastructure.track_database import TrackDatabase
 
@@ -15,18 +15,18 @@ logger = logging.getLogger(__name__)
 class LibraryScanUseCase:
     """Use case for scanning and storing track metadata."""
 
-    def __init__(self, plex_repository: PlexRepository, track_database: TrackDatabase):
-        self.plex_repository = plex_repository
+    def __init__(self, media_server_repository: MediaServerRepository, track_database: TrackDatabase):
+        self.media_server_repository = media_server_repository
         self.track_database = track_database
 
     def execute(self, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
-        """Scan the Plex music library and store track metadata."""
+        """Scan the media server music library and store track metadata."""
         logger.info("Starting library scan...")
 
         try:
-            # Get all tracks from Plex
-            tracks = self.plex_repository.get_all_tracks()
-            logger.info(f"Found {len(tracks)} tracks in Plex library")
+            # Get all tracks from media server
+            tracks = self.media_server_repository.get_all_tracks()
+            logger.info(f"Found {len(tracks)} tracks in library")
 
             if progress_callback:
                 progress_callback({"stage": "scanning", "current": len(tracks), "total": len(tracks)})

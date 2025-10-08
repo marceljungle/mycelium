@@ -16,7 +16,7 @@ import requests
 
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
-from mycelium.infrastructure import CLAPEmbeddingGenerator
+from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 

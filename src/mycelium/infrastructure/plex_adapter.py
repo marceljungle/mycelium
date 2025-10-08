@@ -10,11 +10,11 @@ from plexapi.server import PlexServer
 from tqdm import tqdm
 
 from ..domain.models import Track, Playlist, MediaServerType
-from ..domain.repositories import PlexRepository
+from ..domain.repositories import MediaServerRepository
 
 
-class PlexMusicRepository(PlexRepository):
-    """Implementation of PlexRepository for accessing Plex music library."""
+class PlexMusicRepository(MediaServerRepository):
+    """Implementation of MediaServerRepository for accessing Plex music library."""
 
     def __init__(
         self,

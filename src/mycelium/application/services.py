@@ -36,7 +36,7 @@ class MyceliumService:
         self.logger = logging.getLogger(__name__)
 
         # Initialize repositories and adapters
-        self.plex_repository = PlexMusicRepository(
+        self.media_server_repository = PlexMusicRepository(
             plex_url=config.plex.url,
             plex_token=config.plex.token,
             music_library_name=config.plex.music_library_name
@@ -65,7 +65,7 @@ class MyceliumService:
         )
 
         self.separated_scan = LibraryScanUseCase(
-            plex_repository=self.plex_repository,
+            media_server_repository=self.media_server_repository,
             track_database=self.track_database
         )
         self.resumable_processing = EmbeddingProcessingUseCase(
@@ -176,8 +176,8 @@ class MyceliumService:
         if stored_track:
             return stored_track.to_track()
 
-        # Fallback to Plex API
-        return self.plex_repository.get_track_by_id(track_id)
+        # Fallback to media server API
+        return self.media_server_repository.get_track_by_id(track_id)
 
     def get_all_tracks(self, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
         """Get all tracks from the database with optional pagination."""
@@ -319,8 +319,8 @@ class MyceliumService:
             # Create playlist object
             playlist = Playlist(name=name, tracks=tracks)
 
-            # Create playlist on the media server (Plex) with batching
-            created_playlist = self.plex_repository.create_playlist(playlist, batch_size=batch_size)
+            # Create playlist on the media server with batching
+            created_playlist = self.media_server_repository.create_playlist(playlist, batch_size=batch_size)
 
             self.logger.info(f"Successfully created playlist '{name}' with {len(tracks)} tracks")
             return created_playlist

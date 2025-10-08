@@ -1,13 +1,13 @@
 """Domain package initialization."""
 
 from .models import Track, TrackEmbedding, SearchResult
-from .repositories import PlexRepository, EmbeddingRepository, EmbeddingGenerator
+from .repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator
 
 __all__ = [
     "Track",
     "TrackEmbedding", 
     "SearchResult",
-    "PlexRepository",
+    "MediaServerRepository",
     "EmbeddingRepository",
     "EmbeddingGenerator",
 ]
