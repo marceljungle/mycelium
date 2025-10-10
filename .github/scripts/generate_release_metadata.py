@@ -40,6 +40,7 @@ ACCEPTED_LABEL_BUMPS = {
     "fix": "patch",
     "bugfix": "patch",
 }
+RELEASE_LABEL_GATES = {"hotfix", "minor", "major"}
 
 
 class ReleaseMetadataError(RuntimeError):
@@ -412,6 +413,9 @@ def main() -> None:
         if not pr_labels and open_pr:
             pr_labels = [label["name"].lower() for label in open_pr.get("labels", [])]
 
+    release_label = next((label for label in pr_labels if label in RELEASE_LABEL_GATES), "")
+    has_release_label = bool(release_label)
+
     bump_type = calculate_bump_type(pr_labels, manual_bump, default_bump)
     release_version = bump_version(base_version, bump_type)
     dev_version = next_dev_version(release_version)
@@ -447,6 +451,8 @@ def main() -> None:
         "total_prs_considered": sum(len(entries) for entries in categorized.values()),
         "previous_tag": previous_tag,
         "start_date": start_date,
+        "release_label": release_label,
+        "has_release_label": has_release_label,
     }
 
     print(json.dumps(metadata))
