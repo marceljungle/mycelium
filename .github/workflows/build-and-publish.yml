@@ -258,10 +258,12 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Build frontend
+      - name: Build frontend assets
         run: |
+          chmod +x ./build.sh
           chmod +x ./build_frontend.sh
-          ./build_frontend.sh
+          chmod +x ./build_client_frontend.sh
+          ./build.sh
 
       - name: Verify frontend build
         run: |

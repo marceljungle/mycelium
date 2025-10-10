@@ -1,38 +1,27 @@
 #!/bin/bash
 
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+FRONTEND_DIR="$ROOT_DIR/frontend"
+SERVER_DIST_DIR="$ROOT_DIR/src/mycelium/frontend_dist"
+SERVER_OUT_DIR="$FRONTEND_DIR/out"
+
 echo "Building Next.js frontend..."
 
-# Generate OpenAPI clients (server and worker) before building
-echo "Generating OpenAPI clients (server and worker)..."
-if ! npm run openapi:generate --prefix frontend; then
-    echo "Error: OpenAPI client generation failed"
-    exit 1
-fi
+echo "Running Next.js build (server mode)..."
+npm run build --prefix "$FRONTEND_DIR"
 
-# Build main server frontend (without client mode)
-if ! npm run build --prefix frontend; then
-    echo "Error: Frontend build failed"
-    exit 1
-fi
-
-# Remove existing frontend_dist directory if it exists
-if [ -d "src/mycelium/frontend_dist" ]; then
+if [ -d "$SERVER_DIST_DIR" ]; then
     echo "Removing existing frontend_dist directory..."
-    rm -rf src/mycelium/frontend_dist
+    rm -rf "$SERVER_DIST_DIR"
 fi
 
-# Create new frontend_dist directory
 echo "Creating new frontend_dist directory..."
-mkdir -p src/mycelium/frontend_dist
+mkdir -p "$SERVER_DIST_DIR"
 
-# Copy all contents from frontend/out/ to src/mycelium/frontend_dist
 echo "Copying frontend build output to src/mycelium/frontend_dist..."
-cp -r frontend/out/* src/mycelium/frontend_dist/
+cp -a "$SERVER_OUT_DIR"/. "$SERVER_DIST_DIR"/
 
 echo "Frontend build completed successfully!"
 echo "Static files are now available in src/mycelium/frontend_dist/"
-
-# Also build client frontend
-echo ""
-echo "Building client frontend..."
-./build_client_frontend.sh

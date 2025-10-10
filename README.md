@@ -191,12 +191,16 @@ The package build follows a two-stage process:
 To build locally:
 
 ```bash
-# Build frontend and create distribution directories
-./build_frontend.sh
+# Generate OpenAPI clients and build both frontend bundles
+./build.sh
 
 # Build Python wheel (after frontend build)
 python -m build
 ```
+
+The `build.sh` orchestrator supports optional flags (run `./build.sh --help`) to
+skip specific stages or trigger `python -m build` automatically when using the
+`--with-wheel` flag.
 
 ### GitHub Actions Workflow
 
