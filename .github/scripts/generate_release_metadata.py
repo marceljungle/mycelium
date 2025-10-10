@@ -8,7 +8,6 @@ workflow with a full git checkout available.
 """
 from __future__ import annotations
 
-import datetime as dt
 import json
 import os
 import subprocess
@@ -143,6 +142,14 @@ def get_release_pr_number(repo: str, sha: str, token: str) -> t.Optional[int]:
     return payload[0]["number"]
 
 
+def get_pull_request(repo: str, pr_number: int, token: str) -> dict[str, t.Any]:
+    """Fetch pull request details."""
+
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+    payload, _ = github_request(url, token)
+    return payload
+
+
 def get_pr_labels(repo: str, pr_number: int, token: str) -> list[str]:
     """Fetch labels for a pull request."""
 
@@ -244,7 +251,6 @@ def categorize_prs(prs: list[dict[str, t.Any]]) -> dict[str, list[str]]:
     for pr in prs:
         title = pr.get("title", "Untitled PR")
         number = pr.get("number")
-        url = pr.get("html_url") or pr.get("pull_request", {}).get("html_url")
         label_names = [label["name"].lower() for label in pr.get("labels", [])]
         entry = f"- {title} (#{number})"
 
@@ -256,6 +262,60 @@ def categorize_prs(prs: list[dict[str, t.Any]]) -> dict[str, list[str]]:
         if not matched:
             results["other"].append(entry)
     return results
+
+
+def format_preview_summary(
+    release_version: str,
+    bump_type: str,
+    previous_tag: t.Optional[str],
+    categories: dict[str, list[str]],
+    open_pr: t.Optional[dict[str, t.Any]],
+) -> str:
+    """Create a concise summary suitable for PR preview comments."""
+
+    total_entries = sum(len(entries) for entries in categories.values())
+    lines: list[str] = []
+    lines.append(f"## Release Preview for v{release_version}")
+    lines.append("")
+    lines.append(f"- **Bump type:** {bump_type.capitalize()}")
+    if previous_tag:
+        lines.append(f"- **Previous tag:** {previous_tag}")
+        lines.append(
+            f"- **Diff:** https://github.com/{os.environ['GITHUB_REPOSITORY']}/compare/{previous_tag}...v{release_version}"
+        )
+    lines.append(f"- **Total merged PRs considered:** {total_entries}")
+
+    if open_pr:
+        title = open_pr.get("title", "Unknown title")
+        number = open_pr.get("number")
+        html_url = open_pr.get("html_url")
+        label_names = ", ".join(
+            label.get("name", "") for label in open_pr.get("labels", [])
+        ) or "None"
+        lines.append(
+            f"- **Current PR:** [{title}]({html_url}) (#{number})"
+        )
+        lines.append(f"- **Current PR labels:** {label_names}")
+
+    lines.append("")
+
+    order = (
+        ("features", "🚀 Features"),
+        ("fixes", "🐛 Fixes"),
+        ("chores", "🔧 Chores"),
+        ("other", "📝 Other Changes"),
+    )
+
+    for key, heading in order:
+        lines.append(f"### {heading}")
+        entries = categories.get(key) or []
+        if entries:
+            lines.extend(entries)
+        else:
+            lines.append("- _No matching pull requests_")
+        lines.append("")
+
+    return "\n".join(lines).rstrip()
 
 
 def format_release_notes(
@@ -309,6 +369,8 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN")
     manual_bump = os.environ.get("MANUAL_BUMP")
     default_bump = os.environ.get("DEFAULT_BUMP", "patch").lower()
+    include_open_pr = os.environ.get("INCLUDE_OPEN_PR", "false").lower() == "true"
+    pull_request_number_raw = os.environ.get("PULL_REQUEST_NUMBER")
 
     if not token:
         raise ReleaseMetadataError("GITHUB_TOKEN environment variable is required")
@@ -329,6 +391,17 @@ def main() -> None:
         release_pr_number = get_release_pr_number(repository, sha, token)
         if release_pr_number:
             pr_labels = get_pr_labels(repository, release_pr_number, token)
+    open_pr: t.Optional[dict[str, t.Any]] = None
+    if include_open_pr and pull_request_number_raw:
+        try:
+            pull_request_number = int(pull_request_number_raw)
+        except ValueError as exc:
+            raise ReleaseMetadataError(
+                f"Invalid pull request number: {pull_request_number_raw}"
+            ) from exc
+        open_pr = get_pull_request(repository, pull_request_number, token)
+        if not pr_labels and open_pr:
+            pr_labels = [label["name"].lower() for label in open_pr.get("labels", [])]
 
     bump_type = calculate_bump_type(pr_labels, manual_bump, default_bump)
     release_version = bump_version(base_version, bump_type)
@@ -339,6 +412,13 @@ def main() -> None:
     prs_main = search_merged_prs(repository, token, start_date, "main", exclude)
     categorized = categorize_prs(prs_develop + prs_main)
     release_notes = format_release_notes(categorized, release_version, previous_tag)
+    preview_summary = format_preview_summary(
+        release_version,
+        bump_type,
+        previous_tag,
+        categorized,
+        open_pr,
+    )
 
     metadata = {
         "current_version": current_version,
@@ -348,6 +428,9 @@ def main() -> None:
         "bump_type": bump_type,
         "release_pr_number": release_pr_number,
         "release_notes": release_notes,
+        "preview_summary": preview_summary,
+        "categorized_prs": categorized,
+        "total_prs_considered": sum(len(entries) for entries in categorized.values()),
         "previous_tag": previous_tag,
         "start_date": start_date,
     }
