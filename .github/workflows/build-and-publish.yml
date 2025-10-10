@@ -165,28 +165,28 @@ jobs:
           python -m build
 
       - name: Verify package contents include frontend assets
-    env:
-      DIST_CANONICAL_NAME: ${{ needs.prepare.outputs.canonical_distribution_name }}
+        env:
+          DIST_CANONICAL_NAME: ${{ needs.prepare.outputs.canonical_distribution_name }}
         run: |
           python - <<'PY'
-      import glob
-      import os
-      import tarfile
+          import glob
+          import os
+          import tarfile
 
-      canonical_name = os.environ.get('DIST_CANONICAL_NAME')
-      if not canonical_name:
-        raise SystemExit('Missing canonical distribution name metadata')
+          canonical_name = os.environ.get('DIST_CANONICAL_NAME')
+          if not canonical_name:
+            raise SystemExit('Missing canonical distribution name metadata')
 
-      tar_pattern = f"dist/{canonical_name}-*.tar.gz"
-      tar_files = glob.glob(tar_pattern)
-      if not tar_files:
-        raise SystemExit(f'No source distribution found matching {tar_pattern}')
+          tar_pattern = f"dist/{canonical_name}-*.tar.gz"
+          tar_files = glob.glob(tar_pattern)
+          if not tar_files:
+            raise SystemExit(f'No source distribution found matching {tar_pattern}')
 
-      with tarfile.open(tar_files[0], 'r:gz') as archive:
-        members = archive.getnames()
-        frontend_files = [path for path in members if 'frontend_dist' in path]
-        if not frontend_files:
-          raise SystemExit('Frontend files missing from source distribution')
+          with tarfile.open(tar_files[0], 'r:gz') as archive:
+            members = archive.getnames()
+            frontend_files = [path for path in members if 'frontend_dist' in path]
+            if not frontend_files:
+              raise SystemExit('Frontend files missing from source distribution')
           PY
 
       - name: Upload build artifacts
