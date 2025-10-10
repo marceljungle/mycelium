@@ -83,8 +83,7 @@ def run_server_mode(config) -> None:
         uvicorn.run(
             "mycelium.api.app:app",
             host=config.api.host,
-            port=config.api.port,
-            reload=config.api.reload
+            port=config.api.port
         )
     except KeyboardInterrupt:
         logger.info("Shutting down server...")
@@ -96,9 +95,7 @@ def run_server_mode(config) -> None:
 
 
 def run_client_mode(
-        client_config,
-        server_host: str = "localhost",
-        server_port: int = 8000
+        client_config
 ) -> None:
     """Run client mode (GPU worker + Client API with Frontend)."""
     # Lazy import client dependencies only when needed
@@ -106,9 +103,6 @@ def run_client_mode(
     from mycelium.client import run_client
     
     logger.info("Starting Mycelium Client...")
-
-    client_config.client.server_host = server_host
-    client_config.client.server_port = server_port
 
     client_thread = threading.Thread(
         target=run_client
@@ -125,19 +119,14 @@ def run_client_mode(
         uvicorn.run(
             "mycelium.api.client_app:app",
             host=host,
-            port=port,
-            reload=False
+            port=port
         )
     except KeyboardInterrupt:
         logger.info("Shutting down client...")
 
 
 @app.command()
-def server(
-        host: Annotated[Optional[str], typer.Option(help="Host to bind to (overrides config)")] = None,
-        port: Annotated[Optional[int], typer.Option(help="Port to bind to (overrides config)")] = None,
-        reload: Annotated[Optional[bool], typer.Option(help="Enable auto-reload (overrides config)")] = None
-) -> None:
+def server() -> None:
     """Start server mode (API + Frontend)."""
     try:
         # Lazy import config only when needed
@@ -145,14 +134,6 @@ def server(
         
         config = MyceliumConfig.load_from_yaml()
         config.setup_logging()
-
-        # Override API config if provided
-        if host is not None:
-            config.api.host = host
-        if port is not None:
-            config.api.port = port
-        if reload is not None:
-            config.api.reload = reload
 
         run_server_mode(config)
     except KeyboardInterrupt:
@@ -167,12 +148,7 @@ def server(
 
 
 @app.command()
-def client(
-        server_host: Annotated[
-            Optional[str], typer.Option("--server-host", help="Server host to connect to (overrides config)")] = None,
-        server_port: Annotated[
-            Optional[int], typer.Option("--server-port", help="Server port to connect to (overrides config)")] = None
-) -> None:
+def client() -> None:
     """Start client mode (GPU worker)."""
     try:
         # Lazy import client config only when needed
@@ -181,14 +157,8 @@ def client(
         client_config = MyceliumClientConfig.load_from_yaml()
         client_config.setup_logging()
 
-        # Use config defaults if not provided
-        final_host = server_host if server_host is not None else client_config.client.server_host
-        final_port = server_port if server_port is not None else client_config.client.server_port
-
         run_client_mode(
-            client_config=client_config,
-            server_host=final_host,
-            server_port=final_port
+            client_config=client_config
         )
     except Exception as e:
         typer.echo(f"Client error: {e}", err=True)
@@ -204,7 +174,7 @@ def main() -> None:
         cleanup_server_resources()
         typer.echo("\nOperation cancelled by user")
         raise typer.Exit(130)
-    except Exception as e:
+    except Exception:
         cleanup_server_resources()
         raise
 

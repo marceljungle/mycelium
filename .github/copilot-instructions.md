@@ -298,8 +298,8 @@ mycelium/
 │   │   └── worker.py       # Worker domain logic
 │   ├── application/        # Use cases and orchestration
 │   │   ├── services.py     # Main application service
-│   │   ├── use_cases.py    # Individual use case implementations
-│   │   ├── workflow_use_cases.py  # Complex workflow orchestration
+│   │   ├── search_use_cases.py    # Music search use case implementations
+│   │   ├── library_management_use_cases.py  # Library scanning and processing workflows
 │   │   └── job_queue.py    # Worker coordination and task distribution
 │   ├── infrastructure/     # External service adapters
 │   │   ├── plex_adapter.py     # Plex API integration

@@ -2,24 +2,12 @@
 
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
-import { API_BASE_URL } from '../config/api';
-
-interface SearchResult {
-  track: {
-    artist: string;
-    album: string;
-    title: string;
-    filepath: string;
-    media_server_rating_key: string;
-    media_server_type: string;
-  };
-  similarity_score: number;
-  distance: number;
-}
+import { api } from '@/server_api/client';
+import type { SearchResultResponse } from '@/server_api/generated/models';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<SearchResultResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +32,10 @@ export default function SearchInterface() {
 
   const pollTaskStatus = async (taskId: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/queue/task/${taskId}`);
-      if (response.ok) {
-        const taskData = await response.json();
+      const taskData = await api.getTaskStatus({ taskId });
+      if (taskData) {
         console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.search_results}`);
-        
+
         if (taskData.status === 'success' && taskData.search_results) {
           // Task completed successfully with search results
           console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
@@ -68,7 +55,6 @@ export default function SearchInterface() {
         console.log(`Task ${taskId} still in progress (status: ${taskData.status})`);
         return false;
       } else {
-        console.error('Failed to poll task status:', response.status, response.statusText);
         return false;
       }
     } catch (error) {
@@ -116,13 +102,7 @@ export default function SearchInterface() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/search/text?q=${encodeURIComponent(query)}&n_results=${numResults}`);
-
-      if (!response.ok) {
-        throw new Error('Search failed. Make sure the Mycelium API is running.');
-      }
-
-      const data = await response.json();
+      const data = await api.searchText({ q: query, nResults: numResults });
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -133,8 +113,14 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        console.log('Text search sent to worker, starting polling for task:', data.task_id);
-        startTaskPolling(data.task_id);
+        if (data.task_id) {
+          console.log('Text search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
+        } else {
+          console.error('Processing response missing taskId for text search');
+          setError('Worker processing started but no task ID was returned.');
+          setLoading(false);
+        }
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(
@@ -145,24 +131,8 @@ export default function SearchInterface() {
           setProcessingState('server');
           try {
             // Process on server
-            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/text`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                query: query,
-                n_results: numResults
-              }),
-            });
-
-            if (serverResponse.ok) {
-              const serverResults = await serverResponse.json();
-              setResults(serverResults);
-            } else {
-              const errorData = await serverResponse.json().catch(() => ({}));
-              setError(errorData.detail || 'Failed to process text search on server. Please try again later.');
-            }
+            const serverResults = await api.computeTextSearch({ computeTextSearchRequest: { query, n_results: numResults } });
+            setResults(serverResults);
           } catch {
             setError('Error processing text search on server. Please check your connection.');
           } finally {
@@ -195,17 +165,7 @@ export default function SearchInterface() {
       formData.append('audio', audioFile);
       formData.append('n_results', numResults.toString());
 
-      const response = await fetch(`${API_BASE_URL}/api/search/audio`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Audio search failed. Please check the server logs for details.');
-      }
-
-      const data = await response.json();
+      const data = await api.searchAudio({ audio: audioFile, nResults: numResults });
       
       // Check if it's direct search results or a processing response
       if (Array.isArray(data)) {
@@ -216,8 +176,14 @@ export default function SearchInterface() {
 
       } else if (data.status === 'processing') {
         // Worker processing - start polling
-        console.log('Audio search sent to worker, starting polling for task:', data.task_id);
-        startTaskPolling(data.task_id);
+        if (data.task_id) {
+          console.log('Audio search sent to worker, starting polling for task:', data.task_id);
+          startTaskPolling(data.task_id);
+        } else {
+          console.error('Processing response missing taskId for audio search');
+          setError('Worker processing started but no task ID was returned.');
+          setAudioLoading(false);
+        }
       } else if (data.status === 'confirmation_required') {
         // No workers available - ask for confirmation
         const shouldProcess = window.confirm(
@@ -231,18 +197,8 @@ export default function SearchInterface() {
             formData.append('audio', audioFile);
             formData.append('n_results', numResults.toString());
 
-            const serverResponse = await fetch(`${API_BASE_URL}/compute/search/audio`, {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (serverResponse.ok) {
-              const serverResults = await serverResponse.json();
-              setResults(serverResults);
-            } else {
-              const errorData = await serverResponse.json().catch(() => ({}));
-              setError(errorData.detail || 'Failed to process audio search on server. Please try again later.');
-            }
+            const serverResults = await api.computeAudioSearch({ audio: audioFile, nResults: numResults });
+            setResults(serverResults);
           } catch {
             setError('Error processing audio search on server. Please check your connection.');
           } finally {

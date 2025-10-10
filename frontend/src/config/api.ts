@@ -39,3 +39,14 @@ export const API_ENDPOINTS = {
   SEARCH_TEXT: `${API_BASE_URL}/api/search/text`,
   LIBRARY_STATS: `${API_BASE_URL}/api/library/stats`,
 } as const;
+
+// Worker API configuration (client/worker runtime)
+export const WORKER_API_BASE_URL = (() => {
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    const hostname = window.location.hostname;
+    const port = process.env.NEXT_PUBLIC_WORKER_API_PORT || '8001';
+    return `${protocol}//${hostname}:${port}`;
+  }
+  return 'http://localhost:8001';
+})();

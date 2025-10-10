@@ -31,15 +31,6 @@ class MediaServerRepository(ABC):
         pass
 
 
-class PlexRepository(MediaServerRepository):
-    """Interface for Plex data access."""
-    
-    @abstractmethod
-    def get_all_tracks(self) -> List[Track]:
-        """Get all tracks from the Plex music library."""
-        pass
-
-
 class EmbeddingRepository(ABC):
     """Interface for managing track embeddings."""
     

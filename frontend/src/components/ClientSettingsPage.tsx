@@ -1,36 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-interface ClientConfigData {
-  client: {
-    server_host: string;
-    server_port: number;
-    download_queue_size: number;
-    job_queue_size: number;
-    poll_interval: number;
-    download_workers: number;
-    gpu_batch_size: number;
-  };
-  client_api: {
-    host: string;
-    port: number;
-  };
-  clap: {
-    model_id: string;
-    target_sr: number;
-    chunk_duration_s: number;
-    num_chunks: number;
-    max_load_duration_s: number;
-  };
-  logging: {
-    level: string;
-  };
-}
+import { workerApi } from '@/worker_api/client';
+import type { WorkerConfigResponse } from '@/worker_api/client';
 
 export default function ClientSettingsPage() {
-  const [config, setConfig] = useState<ClientConfigData | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<ClientConfigData | null>(null);
+  const [config, setConfig] = useState<WorkerConfigResponse | null>(null);
+  const [originalConfig, setOriginalConfig] = useState<WorkerConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,23 +20,13 @@ export default function ClientSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      // Use port 3001 for client configuration API
-      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
-      const response = await fetch(`${clientApiUrl}/api/config`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch configuration');
-      }
-      const configData = await response.json();
-      const clientConfig: ClientConfigData = {
-        client: configData.client,
-        client_api: configData.client_api,
-        clap: configData.clap,
-        logging: configData.logging
-      };
-      setConfig(clientConfig);
-      setOriginalConfig(JSON.parse(JSON.stringify(clientConfig)));
+      const cfg = await workerApi.getWorkerConfig();
+      setConfig(cfg);
+      setOriginalConfig(JSON.parse(JSON.stringify(cfg)) as WorkerConfigResponse);
     } catch {
-      setError('Unable to fetch client configuration. Make sure the client API server is running on port 3001.');
+      setError(
+        'Unable to fetch client configuration. Ensure the worker API is running and reachable.'
+      );
     } finally {
       setLoading(false);
     }
@@ -74,34 +40,9 @@ export default function ClientSettingsPage() {
     setSuccessMessage(null);
 
     try {
-      // Use port 3001 for client configuration API
-      const clientApiUrl = `${window.location.protocol}//${window.location.hostname}:3001`;
-      const currentResponse = await fetch(`${clientApiUrl}/api/config`);
-      if (!currentResponse.ok) {
-        throw new Error('Failed to fetch current configuration');
-      }
-
-      const updatedConfig = {
-        client: config.client,
-        client_api: config.client_api,
-        clap: config.clap,
-        logging: config.logging
-      };
-
-      const response = await fetch(`${clientApiUrl}/api/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedConfig)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save configuration');
-      }
-
-      const result = await response.json();
-      setOriginalConfig(JSON.parse(JSON.stringify(config)));
-
-      setSuccessMessage(result.message || 'Configuration saved successfully!');
+      const result = await workerApi.saveWorkerConfig({ workerConfigRequest: config });
+      setOriginalConfig(JSON.parse(JSON.stringify(config)) as WorkerConfigResponse);
+      setSuccessMessage(result.message ?? 'Configuration saved successfully!');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
@@ -121,16 +62,21 @@ export default function ClientSettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
-  const updateConfig = (section: keyof ClientConfigData, key: string, value: string | number | boolean) => {
-    if (!config) return;
-
-    setConfig(prev => ({
-      ...prev!,
-      [section]: {
-        ...prev![section],
-        [key]: value
-      }
-    }));
+  const updateConfig = <K extends keyof WorkerConfigResponse, P extends keyof WorkerConfigResponse[K]>(
+    section: K,
+    key: P,
+    value: WorkerConfigResponse[K][P]
+  ) => {
+    setConfig(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [section]: {
+          ...(prev[section] as WorkerConfigResponse[K]),
+          [key]: value as WorkerConfigResponse[K][P],
+        },
+      } as WorkerConfigResponse;
+    });
   };
 
   if (loading) {
@@ -394,7 +340,7 @@ export default function ClientSettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.max_load_duration_s}
+                    value={config.clap.max_load_duration_s ?? 0}
                     onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="10"
