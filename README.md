@@ -68,10 +68,10 @@ cd frontend && npm install
 
 ```bash
 # Start server (API + Frontend)
-mycelium server
+mycelium-ai server
 
 # For distributed processing (optional)
-mycelium client --server-host 192.168.1.100  # On GPU machine
+mycelium-ai client --server-host 192.168.1.100  # On GPU machine
 ```
 
 Visit `http://localhost:8000` for the web interface.
@@ -82,7 +82,7 @@ Visit `http://localhost:8000` for the web interface.
 
 ```bash
 # 1. Start the web interface
-mycelium server
+mycelium-ai server
 
 # 2. Open http://localhost:8000 in your browser
 # 3. Use the web interface to:
@@ -94,8 +94,8 @@ mycelium server
 ### Available Commands
 
 ```bash
-mycelium server                            # Start server (API + Frontend)
-mycelium client --server-host HOST         # Start GPU worker client
+mycelium-ai server                         # Start server (API + Frontend)
+mycelium-ai client --server-host HOST      # Start GPU worker client
 ```
 
 ### Web Interface
@@ -112,10 +112,10 @@ For large libraries, use GPU workers for faster processing:
 
 ```bash
 # On main server
-mycelium server
+mycelium-ai server
 
 # On GPU machine(s)  
-mycelium client --server-host YOUR_SERVER_IP
+mycelium-ai client --server-host YOUR_SERVER_IP
 ```
 
 ## Configuration
@@ -172,7 +172,7 @@ mycelium/
 
 ## Tips
 
-- **Large libraries**: Use GPU workers (`mycelium client`) for faster processing
+- **Large libraries**: Use GPU workers (`mycelium-ai client`) for faster processing
 - **Plex token**: Get from Plex settings → Network → "Show Advanced" 
 - **Resume processing**: Embedding generation can be stopped and resumed anytime
 - **Performance**: Batch processing adapts to available memory automatically

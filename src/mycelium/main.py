@@ -9,8 +9,8 @@ import typer
 from typing_extensions import Annotated
 
 app = typer.Typer(
-    name="mycelium",
-    help="Mycelium - Plex Music Recommendation System",
+    name="mycelium-ai",
+    help="Mycelium AI - Plex Music Recommendation System",
     no_args_is_help=True
 )
 

@@ -485,14 +485,14 @@ async def search_by_text(
 ### Development Workflow
 ```bash
 # Start full development environment
-mycelium server             # Backend + Frontend combined (recommended)
+mycelium-ai server          # Backend + Frontend combined (recommended)
 
 # Alternative: Run separately  
-mycelium server --backend-only &
+mycelium-ai server --backend-only &
 cd frontend && npm run dev  
 
 # Distributed processing (optional)
-mycelium client --server-host 192.168.1.100  # On GPU machine
+mycelium-ai client --server-host 192.168.1.100  # On GPU machine
 ```
 
 ### Build and Testing
@@ -503,7 +503,7 @@ npm run lint                # Fix linting errors first
 npm run build              # 5-15 seconds if successful
 
 # Backend testing (when dependencies installed)
-mycelium server &          # Start server for testing
+mycelium-ai server &       # Start server for testing
 curl http://localhost:8000/api/library/stats  # Test API
 
 # End-to-end testing
@@ -565,7 +565,7 @@ POST /workers/submit_result    # Submit job result
 ### Development Issues
 - **Module not found**: Ensure `pip install -e .` completed successfully
 - **Frontend build fails**: Run `npm run lint` first, check for TypeScript errors
-- **API connection errors**: Verify server is running with `mycelium server`
+- **API connection errors**: Verify server is running with `mycelium-ai server`
 - **Plex connection issues**: Check token in `~/.config/mycelium/config.yml`
 
 ### Network and Infrastructure Issues
@@ -598,13 +598,13 @@ mkdir -p ~/.config/mycelium && cp config.example.yml ~/.config/mycelium/config.y
 
 # Development workflow  
 cd frontend && npm run dev          # Start frontend only
-mycelium server                     # Start backend + frontend (recommended)
+mycelium-ai server                  # Start backend + frontend (recommended)
 
 # Distributed processing (recommended)
-mycelium client --server-host 192.168.1.100  # Start GPU worker
+mycelium-ai client --server-host 192.168.1.100  # Start GPU worker
 
 # Validation
 cd frontend && npm run lint         # Frontend linting
 cd frontend && npm run build        # Frontend build test
-mycelium server                     # Start server and test web interface
+mycelium-ai server                  # Start server and test web interface
 ```

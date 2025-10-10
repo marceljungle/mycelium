@@ -246,7 +246,7 @@ export default function LibraryStats() {
               No GPU workers are currently connected to process embeddings. Processing on the server may be very slow if it lacks sufficient hardware (GPU/powerful CPU).
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-              To use GPU workers, start a client with: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">mycelium client --server-host your-server-ip</code>
+              To use GPU workers, start a client with: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">mycelium-ai client --server-host your-server-ip</code>
             </p>
             <div className="flex space-x-3">
               <button
