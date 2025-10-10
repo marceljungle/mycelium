@@ -44,6 +44,8 @@ jobs:
       release_notes: ${{ steps.metadata.outputs.release_notes }}
       release_pr_number: ${{ steps.metadata.outputs.release_pr_number }}
       previous_tag: ${{ steps.metadata.outputs.previous_tag }}
+      release_label: ${{ steps.metadata.outputs.release_label }}
+      has_release_label: ${{ steps.metadata.outputs.has_release_label }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -75,12 +77,16 @@ jobs:
           RELEASE_NOTES=$(jq -r '.release_notes' metadata.json)
           RELEASE_PR_NUMBER=$(jq -r '.release_pr_number // ""' metadata.json)
           PREVIOUS_TAG=$(jq -r '.previous_tag // ""' metadata.json)
+          RELEASE_LABEL=$(jq -r '.release_label // ""' metadata.json)
+          HAS_RELEASE_LABEL=$(jq -r '.has_release_label' metadata.json)
 
           echo "release_version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "next_dev_version=$NEXT_DEV_VERSION" >> "$GITHUB_OUTPUT"
           echo "bump_type=$BUMP_TYPE" >> "$GITHUB_OUTPUT"
           echo "release_pr_number=$RELEASE_PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_label=$RELEASE_LABEL" >> "$GITHUB_OUTPUT"
+          echo "has_release_label=$HAS_RELEASE_LABEL" >> "$GITHUB_OUTPUT"
 
           {
             echo 'release_notes<<EOF'
@@ -91,6 +97,14 @@ jobs:
   build:
     name: Build project artifacts
     needs: prepare
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          needs.prepare.outputs.has_release_label == 'true'
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -173,6 +187,14 @@ jobs:
     needs:
       - prepare
       - build
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          needs.prepare.outputs.has_release_label == 'true'
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -232,6 +254,14 @@ jobs:
       - prepare
       - build
       - release
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.ref == 'refs/heads/main' &&
+          needs.prepare.outputs.has_release_label == 'true'
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -267,7 +297,17 @@ jobs:
     needs:
       - prepare
       - publish
-    if: needs.publish.result == 'success'
+    if: >-
+      ${{
+        needs.publish.result == 'success' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          (
+            github.ref == 'refs/heads/main' &&
+            needs.prepare.outputs.has_release_label == 'true'
+          )
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
