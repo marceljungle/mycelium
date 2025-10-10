@@ -46,8 +46,8 @@ jobs:
       previous_tag: ${{ steps.metadata.outputs.previous_tag }}
       release_label: ${{ steps.metadata.outputs.release_label }}
       has_release_label: ${{ steps.metadata.outputs.has_release_label }}
-  distribution_name: ${{ steps.metadata.outputs.distribution_name }}
-  canonical_distribution_name: ${{ steps.metadata.outputs.canonical_distribution_name }}
+      distribution_name: ${{ steps.metadata.outputs.distribution_name }}
+      canonical_distribution_name: ${{ steps.metadata.outputs.canonical_distribution_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
