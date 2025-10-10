@@ -1,0 +1,496 @@
+openapi: 3.1.0
+info:
+  title: Mycelium API
+  version: 0.1.0
+  description: Plex music collection and recommendation system using CLAP embeddings
+servers:
+  - url: http://localhost:8000
+paths:
+  /api/library/stats:
+    get:
+      summary: Get library statistics
+      operationId: getLibraryStats
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryStatsResponse'
+  /api/library/tracks:
+    get:
+      summary: List library tracks
+      operationId: getLibraryTracks
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: artist
+          schema: { type: string }
+        - in: query
+          name: album
+          schema: { type: string }
+        - in: query
+          name: title
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TracksListResponse'
+  /api/library/process:
+    post:
+      summary: Start embeddings processing
+      operationId: processLibrary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResponse'
+  /api/library/process/server:
+    post:
+      summary: Start server-side processing
+      operationId: processLibraryOnServer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResponse'
+  /api/library/process/stop:
+    post:
+      summary: Stop processing
+      operationId: stopProcessing
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopProcessingResponse'
+  /api/library/progress:
+    get:
+      summary: Get processing progress
+      operationId: getProcessingProgress
+      parameters:
+        - in: query
+          name: model_id
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDatabaseStats'
+  /api/search/text:
+    get:
+      summary: Search by text
+      operationId: searchText
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+        - in: query
+          name: n_results
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Processing/confirmation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResponse'
+  /api/search/audio:
+    post:
+      summary: Search by audio file
+      operationId: searchAudio
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                n_results:
+                  type: integer
+                  default: 10
+      responses:
+        '200':
+          description: Processing/confirmation response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResponse'
+  /compute/search/text:
+    post:
+      summary: Compute text search on server
+      operationId: computeTextSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                n_results: { type: integer, default: 10 }
+              required: [query]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResultResponse'
+  /compute/search/audio:
+    post:
+      summary: Compute audio search on server
+      operationId: computeAudioSearch
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                n_results:
+                  type: integer
+                  default: 10
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResultResponse'
+  /compute/on_server:
+    post:
+      summary: Compute embedding on server
+      operationId: computeOnServer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComputeOnServerRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                additionalProperties: true
+  /api/library/scan:
+    post:
+      summary: Scan the Plex music library
+      operationId: scanLibrary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanLibraryResponse'
+  /api/playlists/create:
+    post:
+      summary: Create a playlist from track IDs
+      operationId: createPlaylist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaylistRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistResponse'
+  /similar/by_track/{track_id}:
+    get:
+      summary: Similar tracks by track_id
+      operationId: getSimilarByTrack
+      parameters:
+        - in: path
+          name: track_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: n_results
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/SearchResultResponse'
+                  - $ref: '#/components/schemas/ProcessingResponse'
+  /api/config:
+    get:
+      summary: Get configuration
+      operationId: getConfig
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    post:
+      summary: Save configuration
+      operationId: saveConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveConfigResponse'
+  /api/queue/task/{task_id}:
+    get:
+      summary: Get task status
+      operationId: getTaskStatus
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+components:
+  schemas:
+    TrackResponse:
+      type: object
+      properties:
+        artist: { type: string }
+        album: { type: string }
+        title: { type: string }
+        filepath: { type: string }
+        media_server_rating_key: { type: string }
+        media_server_type: { type: string }
+      required: [artist, album, title, filepath, media_server_rating_key, media_server_type]
+    SearchResultResponse:
+      type: object
+      properties:
+        track:
+          $ref: '#/components/schemas/TrackResponse'
+        similarity_score: { type: number }
+        distance: { type: number }
+      required: [track, similarity_score, distance]
+    TrackDatabaseStats:
+      type: object
+      properties:
+        total_tracks: { type: integer }
+        processed_tracks: { type: integer }
+        unprocessed_tracks: { type: integer }
+        progress_percentage: { type: number }
+        is_processing: { type: boolean, nullable: true }
+      required: [total_tracks, processed_tracks, unprocessed_tracks, progress_percentage]
+    LibraryStatsResponse:
+      type: object
+      properties:
+        total_embeddings: { type: integer }
+        collection_name: { type: string }
+        database_path: { type: string }
+        track_database_stats:
+          $ref: '#/components/schemas/TrackDatabaseStats'
+      required: [total_embeddings, collection_name, database_path]
+    TracksListResponse:
+      type: object
+      properties:
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackResponse'
+        total_count: { type: integer }
+        page: { type: integer }
+        limit: { type: integer }
+      required: [tracks, total_count, page, limit]
+    ProcessingResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [processing, confirmation_required, already_running, worker_processing_started, worker_error, no_workers, server_started]
+        message: { type: string, nullable: true }
+        task_id: { type: string, nullable: true }
+        track_id: { type: string, nullable: true }
+        query: { type: string, nullable: true }
+        filename: { type: string, nullable: true }
+        active_workers: { type: integer, nullable: true }
+        tasks_created: { type: integer, nullable: true }
+        confirmation_required: { type: boolean, nullable: true }
+      required: [status]
+    SaveConfigResponse:
+      type: object
+      properties:
+        message: { type: string }
+        status: { type: string }
+        reloaded: { type: boolean }
+        reload_error: { type: string, nullable: true }
+      required: [message, status, reloaded]
+    MediaServerSection:
+      type: object
+      properties:
+        type: { type: string }
+      required: [type]
+    PlexSection:
+      type: object
+      properties:
+        url: { type: string }
+        token: { type: string, nullable: true }
+        music_library_name: { type: string }
+      required: [url, music_library_name]
+    ServerSection:
+      type: object
+      properties:
+        gpu_batch_size: { type: integer }
+      required: [gpu_batch_size]
+    APISection:
+      type: object
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        reload: { type: boolean }
+      required: [host, port, reload]
+    ChromaSection:
+      type: object
+      properties:
+        collection_name: { type: string }
+        batch_size: { type: integer }
+      required: [collection_name, batch_size]
+    ClapSection:
+      type: object
+      properties:
+        model_id: { type: string }
+        target_sr: { type: integer }
+        chunk_duration_s: { type: integer }
+        num_chunks: { type: integer }
+        max_load_duration_s: { type: integer, nullable: true }
+      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    LoggingSection:
+      type: object
+      properties:
+        level: { type: string }
+      required: [level]
+    ConfigResponse:
+      type: object
+      properties:
+        media_server: { $ref: '#/components/schemas/MediaServerSection' }
+        plex: { $ref: '#/components/schemas/PlexSection' }
+        server: { $ref: '#/components/schemas/ServerSection' }
+        api: { $ref: '#/components/schemas/APISection' }
+        chroma: { $ref: '#/components/schemas/ChromaSection' }
+        clap: { $ref: '#/components/schemas/ClapSection' }
+        logging: { $ref: '#/components/schemas/LoggingSection' }
+      required: [media_server, plex, server, api, chroma, clap, logging]
+    ScanLibraryResponse:
+      type: object
+      properties:
+        message: { type: string }
+        total_tracks: { type: integer }
+        new_tracks: { type: integer }
+        updated_tracks: { type: integer }
+        scan_timestamp: { type: string }
+      required: [message, total_tracks, new_tracks, updated_tracks, scan_timestamp]
+    StopProcessingResponse:
+      type: object
+      properties:
+        message: { type: string }
+        type: { type: string, nullable: true }
+        cleared_tasks: { type: integer, nullable: true }
+      required: [message]
+    TaskStatusResponse:
+      type: object
+      properties:
+        task_id: { type: string }
+        status: { type: string }
+        track_id: { type: string, nullable: true }
+        started_at: { type: string, nullable: true }
+        completed_at: { type: string, nullable: true }
+        error_message: { type: string, nullable: true }
+        search_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultResponse'
+          nullable: true
+      required: [task_id, status]
+    ComputeOnServerRequest:
+      type: object
+      properties:
+        track_id: { type: string }
+      required: [track_id]
+    CreatePlaylistRequest:
+      type: object
+      properties:
+        name: { type: string }
+        track_ids:
+          type: array
+          items: { type: string }
+        batch_size: { type: integer, default: 100 }
+      required: [name, track_ids]
+    PlaylistResponse:
+      type: object
+      properties:
+        name: { type: string }
+        track_count: { type: integer }
+        created_at: { type: string }
+        server_id: { type: string, nullable: true }
+      required: [name, track_count, created_at]
+    ConfigRequest:
+      type: object
+      properties:
+        media_server: { type: object, additionalProperties: true }
+        plex: { type: object, additionalProperties: true }
+        api: { type: object, additionalProperties: true }
+        chroma: { type: object, additionalProperties: true }
+        clap: { type: object, additionalProperties: true }
+        server: { type: object, additionalProperties: true }
+        logging: { type: object, additionalProperties: true }
+        database: { type: object, additionalProperties: true, nullable: true }
+      required: [media_server, plex, api, chroma, clap, server, logging]

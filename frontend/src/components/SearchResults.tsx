@@ -2,22 +2,10 @@
 
 import { useState } from 'react';
 import PlaylistCreationModal from './PlaylistCreationModal';
-
-interface SearchResult {
-  track: {
-    artist: string;
-    album: string;
-    title: string;
-    filepath: string;
-    media_server_rating_key: string;
-    media_server_type: string;
-  };
-  similarity_score: number;
-  distance: number;
-}
+import type { SearchResultResponse } from '@/server_api/generated/models';
 
 interface SearchResultsProps {
-  results: SearchResult[];
+  results: SearchResultResponse[];
   loading: boolean;
 }
 

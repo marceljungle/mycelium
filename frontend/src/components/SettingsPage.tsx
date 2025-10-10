@@ -1,44 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config/api';
-
-interface ConfigData {
-  media_server: {
-    type: string;
-  };
-  plex: {
-    url: string;
-    token: string;
-    music_library_name: string;
-  };
-  server: {
-    gpu_batch_size: number;
-  };
-  api: {
-    host: string;
-    port: number;
-    reload: boolean;
-  };
-  chroma: {
-    collection_name: string;
-    batch_size: number;
-  };
-  clap: {
-    model_id: string;
-    target_sr: number;
-    chunk_duration_s: number;
-    num_chunks: number;
-    max_load_duration_s: number;
-  };
-  logging: {
-    level: string;
-  };
-}
+import { api } from '@/server_api/client';
+import type { ConfigResponse } from '@/server_api/generated/models';
 
 export default function SettingsPage() {
-  const [config, setConfig] = useState<ConfigData | null>(null);
-  const [originalConfig, setOriginalConfig] = useState<ConfigData | null>(null);
+  const [config, setConfig] = useState<ConfigResponse | null>(null);
+  const [originalConfig, setOriginalConfig] = useState<ConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,12 +20,8 @@ export default function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/config`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch configuration');
-      }
-      const configData = await response.json();
-      setConfig(configData);
+      const configData = await api.getConfig();
+      setConfig(configData as ConfigResponse);
       setOriginalConfig(JSON.parse(JSON.stringify(configData)));
     } catch {
       setError('Unable to fetch configuration. Make sure the API server is running.');
@@ -74,17 +38,7 @@ export default function SettingsPage() {
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save configuration');
-      }
-
-      const result = await response.json();
+      const result = await api.saveConfig({ configRequest: config });
       setOriginalConfig(JSON.parse(JSON.stringify(config)));
       
       // Handle different response types based on reload success
@@ -114,16 +68,24 @@ export default function SettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
-  const updateConfig = (section: keyof ConfigData, key: string, value: string | number | boolean) => {
+  const updateConfig = <K extends keyof ConfigResponse, P extends keyof ConfigResponse[K]>(
+    section: K,
+    key: P,
+    value: ConfigResponse[K][P]
+  ) => {
     if (!config) return;
 
-    setConfig(prev => ({
-      ...prev!,
-      [section]: {
-        ...prev![section],
-        [key]: value
-      }
-    }));
+    setConfig((prev) =>
+      prev
+        ? ({
+            ...prev,
+            [section]: {
+              ...(prev[section] as ConfigResponse[K]),
+              [key]: value,
+            },
+          } as ConfigResponse)
+        : prev
+    );
   };
 
   if (loading) {
@@ -228,7 +190,7 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="password"
-                    value={config.plex.token}
+                    value={config.plex.token ?? ''}
                     onChange={(e) => updateConfig('plex', 'token', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Your Plex authentication token"
@@ -380,7 +342,7 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.clap.max_load_duration_s}
+                    value={config.clap.max_load_duration_s ?? 0}
                     onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="10"
