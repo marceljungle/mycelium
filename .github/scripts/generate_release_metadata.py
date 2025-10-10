@@ -63,8 +63,8 @@ def run_git(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def get_current_version(path: str) -> str:
-    """Extract current version from pyproject.toml using tomllib."""
+def get_project_metadata(path: str) -> tuple[str, str]:
+    """Return the distribution name and version from ``pyproject.toml``."""
 
     try:
         import tomllib
@@ -73,8 +73,16 @@ def get_current_version(path: str) -> str:
 
     with open(path, "rb") as handle:
         data = tomllib.load(handle)
-    version = data["project"]["version"]
-    return version
+    project = data.get("project", {})
+    try:
+        name = project["name"]
+        version = project["version"]
+    except KeyError as exc:
+        missing_key = exc.args[0]
+        raise ReleaseMetadataError(
+            f"Missing '{missing_key}' in pyproject.toml [project] table"
+        ) from exc
+    return name, version
 
 
 def parse_semver(version: str) -> t.Tuple[int, int, int]:
@@ -322,6 +330,7 @@ def format_release_notes(
     categories: dict[str, list[str]],
     release_version: str,
     previous_tag: t.Optional[str],
+    distribution_name: str,
 ) -> str:
     """Compose markdown release notes."""
 
@@ -348,7 +357,7 @@ def format_release_notes(
 
     lines.append("### 📦 Installation")
     lines.append("```bash")
-    lines.append(f"pip install mycelium=={release_version}")
+    lines.append(f"pip install {distribution_name}=={release_version}")
     lines.append("```")
     lines.append("")
 
@@ -375,7 +384,7 @@ def main() -> None:
     if not token:
         raise ReleaseMetadataError("GITHUB_TOKEN environment variable is required")
 
-    current_version = get_current_version("pyproject.toml")
+    distribution_name, current_version = get_project_metadata("pyproject.toml")
 
     previous_tag = get_previous_tag()
     if previous_tag:
@@ -411,7 +420,12 @@ def main() -> None:
     prs_develop = search_merged_prs(repository, token, start_date, "develop", exclude)
     prs_main = search_merged_prs(repository, token, start_date, "main", exclude)
     categorized = categorize_prs(prs_develop + prs_main)
-    release_notes = format_release_notes(categorized, release_version, previous_tag)
+    release_notes = format_release_notes(
+        categorized,
+        release_version,
+        previous_tag,
+        distribution_name,
+    )
     preview_summary = format_preview_summary(
         release_version,
         bump_type,

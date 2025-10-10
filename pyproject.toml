@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mycelium"
+name = "mycelium-ai"
 version = "0.4.0"
 description = "Plex collection creator and recommendation system using LAION-CLAP"
 readme = "README.md"
@@ -58,7 +58,7 @@ Repository = "https://github.com/marceljungle/mycelium"
 Issues = "https://github.com/marceljungle/mycelium/issues"
 
 [project.scripts]
-mycelium = "mycelium.main:main"
+"mycelium-ai" = "mycelium.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
