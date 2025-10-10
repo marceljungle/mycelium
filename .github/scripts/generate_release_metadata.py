@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import typing as t
@@ -386,6 +387,7 @@ def main() -> None:
         raise ReleaseMetadataError("GITHUB_TOKEN environment variable is required")
 
     distribution_name, current_version = get_project_metadata("pyproject.toml")
+    canonical_distribution_name = re.sub(r"[-_.]+", "_", distribution_name.lower())
 
     previous_tag = get_previous_tag()
     if previous_tag:
@@ -453,6 +455,8 @@ def main() -> None:
         "start_date": start_date,
         "release_label": release_label,
         "has_release_label": has_release_label,
+        "distribution_name": distribution_name,
+        "canonical_distribution_name": canonical_distribution_name,
     }
 
     print(json.dumps(metadata))
