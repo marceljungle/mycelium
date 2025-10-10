@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mycelium-ai"
-version = "0.4.0"
+version = "0.5.1-dev"
 description = "Plex collection creator and recommendation system using LAION-CLAP"
 readme = "README.md"
 requires-python = ">=3.9"
