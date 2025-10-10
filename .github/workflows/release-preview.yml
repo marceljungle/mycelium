@@ -80,6 +80,7 @@ jobs:
           body: |
             <!-- release-preview -->
             ${{ steps.metadata.outputs.preview_summary }}
+          body-includes: "<!-- release-preview -->"
           edit-mode: replace
         if: steps.label.outputs.has_label == 'true'
 
@@ -91,4 +92,5 @@ jobs:
           body: |
             <!-- release-preview -->
             ⚠️ Release preview unavailable. Add a `hotfix`, `minor`, or `major` label to view the upcoming release summary.
+          body-includes: "<!-- release-preview -->"
           edit-mode: replace
