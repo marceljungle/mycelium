@@ -589,25 +589,35 @@ cd frontend
 npm run lint                 # ESLint + TypeScript checking
 npm run lint -- --fix       # Auto-fix linting issues
 npm run build                # Verify build succeeds
+
+# OpenAPI client generation (after spec changes)
+bash openapi/generate.sh     # Regenerate TypeScript and Python clients
 ```
 
 ### Pre-commit Workflow
 1. **Always run linters** before committing changes
-2. **Frontend build must pass** - `npm run build` should succeed without errors
-3. **Type checking** - Both `mypy` (Python) and `tsc` (TypeScript) should pass
-4. **Test relevant functionality** manually if no automated tests exist
-5. **Review diff** - Ensure only intended changes are included
+2. **OpenAPI regeneration** if you modified `openapi/*.yaml` files
+3. **Frontend build must pass** - `npm run build` should succeed without errors
+4. **Type checking** - Both `mypy` (Python) and `tsc` (TypeScript) should pass
+5. **Test relevant functionality** manually if no automated tests exist
+6. **Review diff** - Ensure only intended changes are included
+7. **Don't commit generated code separately** - generated code changes should be part of the feature commit
 
 ### Code Review Checklist
 When reviewing PRs, check for:
 - [ ] Type hints on all Python functions
 - [ ] Proper error handling and logging
-- [ ] Input validation on API endpoints
+- [ ] Input validation handled by generated Pydantic models
 - [ ] React components have proper TypeScript interfaces
 - [ ] No hardcoded values (use configuration)
 - [ ] Async/await used correctly for I/O operations
 - [ ] Database connections properly closed
 - [ ] User-facing error messages are clear and helpful
+- [ ] **OpenAPI specs updated** if API changes were made
+- [ ] **Generated clients regenerated** after OpenAPI spec changes
+- [ ] **No manual edits to generated code** (files in `generated/` or `generated_sources/`)
+- [ ] **Frontend uses generated API clients** from `@/server_api/client` or `@/worker_api/client`
+- [ ] **Both frontends tested** if changes affect UI (server mode and client mode)
 
 ### Performance Monitoring
 - **Profile long-running operations** (embedding generation, large searches)
@@ -618,9 +628,10 @@ When reviewing PRs, check for:
 ### Documentation Standards
 - **Python**: Google-style docstrings for all public functions/classes
 - **TypeScript**: JSDoc comments for complex functions
-- **API**: OpenAPI/Swagger documentation via FastAPI
+- **API**: OpenAPI YAML specs in `openapi/` directory (source of truth)
 - **README**: Keep setup and usage instructions current
 - **Changelog**: Document breaking changes and new features
+- **OpenAPI Specs**: Keep descriptions clear and examples accurate
 
 ```python
 # Good documentation example
@@ -648,6 +659,36 @@ async def search_by_text(
     """
 ```
 
+```yaml
+# Good OpenAPI documentation example (in openapi/*.yaml)
+/api/search/text:
+  get:
+    summary: Search by text query
+    description: |
+      Search for tracks using natural language description.
+      Uses CLAP model to encode text and find similar tracks.
+    operationId: searchText
+    parameters:
+      - in: query
+        name: q
+        required: true
+        schema: { type: string }
+        description: Natural language search query
+      - in: query
+        name: limit
+        schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        description: Maximum number of results
+    responses:
+      '200':
+        description: Search results
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SearchResultResponse'
+```
+
 ## Development Environment Setup
 
 ### Critical Setup Notes
@@ -665,15 +706,29 @@ async def search_by_text(
    ```bash
    cd frontend
    npm install              # ~90 seconds
-   npm run dev             # Start development server
    ```
 
-3. **Configuration:**
+3. **Server Configuration (Required for server mode):**
    ```bash
-   # YAML configuration (required)
+   # YAML configuration (auto-generated on first run)
    mkdir -p ~/.config/mycelium
    cp config.example.yml ~/.config/mycelium/config.yml
-   # Edit config.yml with your Plex token
+   # Edit config.yml with your Plex token and settings
+   ```
+
+4. **Client Configuration (Optional, only for GPU workers):**
+   ```bash
+   # YAML configuration for worker mode
+   cp client_config.example.yml ~/.config/mycelium/client_config.yml
+   # Edit client_config.yml with server connection info
+   ```
+
+5. **OpenAPI Client Generation (Required for development):**
+   ```bash
+   # Generate TypeScript and Python clients from OpenAPI specs
+   bash openapi/generate.sh
+   # Or use the full build script
+   ./build.sh              # Generates clients + builds both frontends
    ```
 
 ### Development Workflow
@@ -834,6 +889,23 @@ from mycelium.api.generated_sources.worker_schemas.models import (
 - **Frontend build fails**: Run `npm run lint` first, check for TypeScript errors
 - **API connection errors**: Verify server is running with `mycelium-ai server`
 - **Plex connection issues**: Check token in `~/.config/mycelium/config.yml`
+- **Generated code import errors**: Run `bash openapi/generate.sh` to regenerate clients
+- **Type mismatch in frontend**: Regenerate TypeScript clients from updated OpenAPI spec
+- **Pydantic validation errors**: Check that OpenAPI spec matches FastAPI endpoint implementation
+
+### OpenAPI-Related Issues
+- **"Module 'generated_sources' not found"**: Run `bash openapi/generate.sh` first
+- **TypeScript errors in generated code**: OpenAPI spec may have invalid types, check the YAML
+- **Pydantic v1 vs v2 errors**: Generated code is auto-converted by `fix_pydantic_v2.py`
+- **API response doesn't match spec**: Update OpenAPI spec first, then regenerate clients
+- **Frontend can't import from '@/server_api/client'**: Check that `frontend/src/server_api/generated/` exists
+
+### Build and Deployment Issues
+- **Frontend build succeeds but missing in wheel**: Run `./build.sh --with-wheel` not just `python -m build`
+- **Server mode shows 404 for frontend**: Check that `src/mycelium/frontend_dist/` exists after build
+- **Client mode shows 404 for frontend**: Check that `src/mycelium/client_frontend_dist/` exists after build
+- **API endpoints return 404**: Verify FastAPI app is loading the correct OpenAPI spec
+- **CORS errors in browser**: Check CORS middleware configuration in `app.py` or `client_app.py`
 
 ### Network and Infrastructure Issues
 - **PyPI timeouts**: Use `pip install --timeout 600 --retries 5 -e .`
