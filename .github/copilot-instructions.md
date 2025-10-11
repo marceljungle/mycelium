@@ -156,7 +156,7 @@ The project has **TWO separate frontend builds** from the same source:
    - Uses server API client (`@/server_api/client`)
    - Shows server configuration and full library management
 
-2. **Client/Worker Frontend** (port 3001):
+2. **Client/Worker Frontend** (port 3001 by default, configurable):
    - Built with `API_BASE_URL=http://localhost:3001/api` (absolute URLs)
    - Served from `src/mycelium/client_frontend_dist/`
    - Uses worker API client (`@/worker_api/client`)
@@ -826,7 +826,7 @@ GET  /openapi.yaml                  # Download OpenAPI spec
 GET  /docs                          # Swagger UI (if not using external spec)
 ```
 
-### Worker API Endpoints (Port 3001 by default)
+### Worker API Endpoints (Port 3001 by default, configurable)
 ```bash
 # Worker Configuration (client-side API)
 GET  /api/config                    # Get current worker config
@@ -835,6 +835,8 @@ POST /api/config                    # Update worker configuration (hot-reload)
 # OpenAPI Documentation
 GET  /openapi.yaml                  # Download OpenAPI spec
 ```
+
+**Note**: The worker API port is configurable via `client_api.port` in `client_config.yml`. Default is 3001, though the OpenAPI spec example shows 8001.
 
 ### Using Generated Clients
 ```typescript
