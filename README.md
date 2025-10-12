@@ -48,6 +48,13 @@ Mycelium connects to your Plex media server and uses AI to understand your music
 ### Installation
 
 ```bash
+# Install from PyPI
+pip install mycelium-ai
+```
+
+Or install from source:
+
+```bash
 # Clone and install
 git clone https://github.com/marceljungle/mycelium.git
 cd mycelium
