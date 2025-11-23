@@ -38,6 +38,20 @@ Mycelium connects to your Plex media server and uses AI to understand your music
 - Modern web interface (Next.js + TypeScript)
 - Web-based configuration
 
+## Interface
+
+### Smart Search
+Search your library using natural language descriptions to find the perfect match for your mood.
+![Text Search Interface](docs/screenshots/home-text-search.png)
+
+### Audio Analysis
+Upload any audio file to find tracks in your library with similar sonic characteristics.
+![Audio Search Interface](docs/screenshots/home-audio-search.png)
+
+### Library & Recommendations
+Manage your collection and discover hidden gems through AI-powered recommendations.
+![Library View](docs/screenshots/library-view-search.png)
+
 ## Setup
 
 ### Requirements
