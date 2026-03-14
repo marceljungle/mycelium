@@ -1,8 +1,9 @@
 """Repository interfaces for domain layer."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from .models import Track, TrackEmbedding, SearchResult, Playlist
 
@@ -13,21 +14,17 @@ class MediaServerRepository(ABC):
     @abstractmethod
     def get_all_tracks(self) -> List[Track]:
         """Get all tracks from the music library."""
-        pass
+        ...
     
     @abstractmethod
     def get_track_by_id(self, track_id: str) -> Optional[Track]:
         """Get a specific track by its ID."""
-        pass
+        ...
     
     @abstractmethod
     def create_playlist(self, playlist: Playlist, batch_size: int = 100) -> Playlist:
-        """Create a playlist on the media server.
-        
-        Args:
-            playlist: The playlist to create
-            batch_size: Number of tracks to add per batch for large playlists (default: 100)
-        """
+        """Create a playlist on the media server."""
+        ...
         pass
 
 
@@ -129,3 +126,90 @@ class EmbeddingGenerator(ABC):
     @staticmethod
     def can_use_half_precision() -> bool:
         """Checks once if the device supports half precision."""
+
+
+class TrackRepository(ABC):
+    """Interface for persisting and querying track metadata.
+
+    Implementations provide the storage backend (SQLite, PostgreSQL, etc.)
+    while the domain and application layers depend only on this interface.
+    """
+
+    @abstractmethod
+    def save_tracks(
+        self, tracks: List[Track], scan_timestamp: Optional[datetime] = None
+    ) -> Dict[str, int]:
+        """Persist tracks and return statistics (new / updated / total)."""
+        ...
+
+    @abstractmethod
+    def get_track_by_id(self, media_server_rating_key: str) -> Optional[Track]:
+        """Retrieve a single track by its media-server key."""
+        ...
+
+    @abstractmethod
+    def get_all_tracks(
+        self, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Track]:
+        """List tracks with optional pagination."""
+        ...
+
+    @abstractmethod
+    def search_tracks(
+        self, search_query: str, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Track]:
+        """Full-text search across artist / album / title."""
+        ...
+
+    @abstractmethod
+    def count_search_tracks(self, search_query: str) -> int:
+        """Count tracks matching a simple search query."""
+        ...
+
+    @abstractmethod
+    def search_tracks_advanced(
+        self,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Track]:
+        """Search with per-field filters (AND logic)."""
+        ...
+
+    @abstractmethod
+    def count_search_tracks_advanced(
+        self,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> int:
+        """Count tracks matching advanced criteria."""
+        ...
+
+    @abstractmethod
+    def get_unprocessed_tracks(
+        self, model_id: str, limit: Optional[int] = None
+    ) -> List[Any]:
+        """Return tracks not yet processed by *model_id*."""
+        ...
+
+    @abstractmethod
+    def mark_track_processed(
+        self, media_server_rating_key: str, model_id: str
+    ) -> None:
+        """Record that *model_id* has processed a track."""
+        ...
+
+    @abstractmethod
+    def get_processing_stats(
+        self, model_id: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Return processing statistics keyed by {total,processed,unprocessed}_tracks."""
+        ...
+
+    @abstractmethod
+    def get_track_count(self) -> int:
+        """Return total number of stored tracks."""
+        ...

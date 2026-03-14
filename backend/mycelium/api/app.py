@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import functools
-import yaml
 import logging
 import os
 import tempfile
@@ -17,9 +16,13 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from mycelium.api.generated_sources.server_schemas.models import (
+
+from mycelium.api.schemas import (
+    CapabilitiesResponse,
     ConfigRequest,
     ConfigResponse,
+    ComputeOnServerRequest,
+    ComputeSearchOnServerRequest,
     CreatePlaylistRequest,
     LibraryStatsResponse,
     PlaylistResponse,
@@ -33,6 +36,7 @@ from mycelium.api.generated_sources.server_schemas.models import (
     TrackResponse,
     TracksListResponse,
 )
+from mycelium.application.embedding.registry import get_model_spec
 from mycelium.domain import SearchResult
 
 # Worker API request/response models
@@ -42,8 +46,6 @@ from .worker_models import (
     JobRequest,
     TaskResultRequest,
     TaskResultResponse,
-    ComputeOnServerRequest,
-    ComputeSearchOnServerRequest,
 )
 
 from ..application.jobs.queue import JobQueueService
@@ -54,7 +56,6 @@ from ..config import (
     ChromaConfig,
     DatabaseConfig,
     EmbeddingConfig,
-    EmbeddingModelType,
     LoggingConfig,
     MediaServerConfig,
     MuQConfig,
@@ -67,6 +68,36 @@ from ..domain.worker import ContextType, TaskResult, TaskStatus, TaskType
 # Setup logger for this module
 logger = logging.getLogger(__name__)
 
+
+def _build_service(cfg: MyceliumConfig) -> MyceliumService:
+    """Composition root: wire infrastructure adapters into the service layer."""
+    from ..application.embedding.factory import create_embedding_generator
+    from ..infrastructure.plex.adapter import PlexMusicRepository
+    from ..infrastructure.db.chroma import ChromaEmbeddingRepository
+    from ..infrastructure.db.tracks import TrackDatabase
+
+    return MyceliumService(
+        config=cfg,
+        media_server_repository=PlexMusicRepository(
+            plex_url=cfg.plex.url,
+            plex_token=cfg.plex.token,
+            music_library_name=cfg.plex.music_library_name,
+        ),
+        embedding_generator=create_embedding_generator(cfg),
+        embedding_repository=ChromaEmbeddingRepository(
+            db_path=cfg.chroma.get_db_path(),
+            collection_name=cfg.chroma.collection_name,
+            model_id=cfg.active_model_id,
+            batch_size=cfg.chroma.batch_size,
+            media_server_type=cfg.media_server.type,
+        ),
+        track_database=TrackDatabase(
+            db_path=cfg.database.get_db_path(),
+            media_server_type=cfg.media_server.type,
+        ),
+    )
+
+
 # Initialize configuration and service
 config = MyceliumConfig.load_from_yaml()
 
@@ -76,7 +107,7 @@ config.setup_logging()
 logger.info("Initializing Mycelium service...")
 
 # Initialize the main service
-service = MyceliumService(config=config)
+service = _build_service(config)
 
 # Initialize job queue service
 job_queue = JobQueueService()
@@ -116,7 +147,7 @@ def reload_config() -> None:
                 logger.info(f"Updated logging level to {new_config.logging.level}")
 
             # Reinitialize service with new configuration
-            new_service = MyceliumService(config=new_config)
+            new_service = _build_service(new_config)
 
             # Reinitialize job queue service
             new_job_queue = JobQueueService()
@@ -141,19 +172,8 @@ def reload_config() -> None:
 # Create FastAPI app
 app = FastAPI(
     title="Mycelium API",
-    description="Plex music collection and recommendation system using CLAP embeddings"
+    description="Plex music collection and recommendation system using audio embeddings"
 )
-
-SERVER_SPEC_PATH = Path(__file__).resolve().parents[3] / "openapi" / "server_openapi.yaml"
-app.state.external_openapi_cache = None
-
-def _custom_openapi():
-    if app.state.external_openapi_cache is None:
-        with SERVER_SPEC_PATH.open("r", encoding="utf-8") as f:
-            app.state.external_openapi_cache = yaml.safe_load(f)
-    return app.state.external_openapi_cache
-
-app.openapi = _custom_openapi
 
 # Add CORS middleware for frontend
 app.add_middleware(
@@ -176,31 +196,23 @@ if frontend_dist_path.exists():
     app.mount("/app", StaticFiles(directory=str(frontend_dist_path), html=True), name="frontend")
 
 
-# Serve the API-first OpenAPI YAML (for tooling and validation)
-@app.get("/openapi.yaml")
-async def get_openapi_yaml():
-    """Serve the external API-first OpenAPI YAML if available."""
-    if SERVER_SPEC_PATH.exists():
-        return FileResponse(path=str(SERVER_SPEC_PATH), media_type="application/yaml")
-    raise HTTPException(status_code=404, detail="OpenAPI YAML not found")
-
-
 @app.get("/")
 async def root():
     """Redirect root to frontend application."""
     return RedirectResponse("/app")
 
 
-@app.get("/api/capabilities")
+@app.get("/api/capabilities", response_model=CapabilitiesResponse)
 async def get_capabilities():
     """Get the capabilities of the current embedding model configuration."""
-    return {
-        "embedding_model_type": config.embedding.type,
-        "model_id": config.active_model_id,
-        "supports_text_search": service.supports_text_search,
-        "supports_audio_search": True,
-        "supports_similar_tracks": True,
-    }
+    spec = get_model_spec(config.embedding.type)
+    return CapabilitiesResponse(
+        embedding_model_type=config.embedding.type,
+        model_id=config.active_model_id,
+        supports_text_search=spec.supports_text_search,
+        supports_audio_search=True,
+        supports_similar_tracks=True,
+    )
 
 
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
@@ -381,17 +393,7 @@ async def get_library_tracks(
         logger.info(f"Retrieved {len(tracks)} tracks from database")
 
         return TracksListResponse(
-            tracks=[
-                TrackResponse(
-                    artist=track.artist,
-                    album=track.album,
-                    title=track.title,
-                    filepath=str(track.filepath),
-                    media_server_rating_key=track.media_server_rating_key,
-                    media_server_type=track.media_server_type.value,
-                )
-                for track in tracks
-            ],
+            tracks=[_track_to_response(track) for track in tracks],
             total_count=total_count,
             page=page,
             limit=limit,
@@ -884,29 +886,7 @@ async def get_similar_tracks(
             results = service.search_similar_by_track_id(track_id, n_results)
             logger.info(f"Found {len(results)} similar tracks for track {track_id}")
             
-            response_data = [
-                SearchResultResponse(
-                    track=TrackResponse(
-                        artist=result.track.artist,
-                        album=result.track.album,
-                        title=result.track.title,
-                        filepath=str(result.track.filepath),
-                        media_server_rating_key=result.track.media_server_rating_key,
-                        media_server_type=result.track.media_server_type.value,
-                    ),
-                    similarity_score=result.similarity_score,
-                    distance=result.distance,
-                )
-                for result in results
-            ]
-            
-            # Log the first result for debugging
-            if response_data:
-                logger.info(f"First result - similarity_score: {response_data[0].similarity_score}, distance: {response_data[0].distance}")
-                logger.info(f"First result model_dump: {response_data[0].model_dump()}")
-                logger.info(f"First result model_dump(by_alias=True): {response_data[0].model_dump(by_alias=True)}")
-            
-            return response_data
+            return [map_search_result_to_response(r) for r in results]
 
         logger.info(f"No embedding found for track {track_id}, checking for workers")
 
@@ -1024,21 +1004,7 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
             f"Text search completed successfully - found {len(results)} results"
         )
 
-        return [
-            SearchResultResponse(
-                track=TrackResponse(
-                    artist=result.track.artist,
-                    album=result.track.album,
-                    title=result.track.title,
-                    filepath=str(result.track.filepath),
-                    media_server_rating_key=result.track.media_server_rating_key,
-                    media_server_type=result.track.media_server_type.value,
-                ),
-                similarity_score=result.similarity_score,
-                distance=result.distance,
-            )
-            for result in results
-        ]
+        return [map_search_result_to_response(r) for r in results]
 
     except HTTPException:
         # Re-raise HTTP exceptions as they are
@@ -1092,21 +1058,7 @@ async def compute_audio_search_on_server(
                 f"Audio search completed successfully - found {len(results)} results"
             )
 
-            return [
-                SearchResultResponse(
-                    track=TrackResponse(
-                        artist=result.track.artist,
-                        album=result.track.album,
-                        title=result.track.title,
-                        filepath=str(result.track.filepath),
-                        media_server_rating_key=result.track.media_server_rating_key,
-                        media_server_type=result.track.media_server_type.value,
-                    ),
-                    similarity_score=result.similarity_score,
-                    distance=result.distance,
-                )
-                for result in results
-            ]
+            return [map_search_result_to_response(r) for r in results]
         finally:
             # Clean up temporary file
             try:
@@ -1162,19 +1114,31 @@ async def get_task_status(task_id: str):
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
 
+
+# ---------------------------------------------------------------------------
+# Mapping helpers
+# ---------------------------------------------------------------------------
+
+def _track_to_response(track: "Track") -> TrackResponse:
+    """Convert a domain Track to an API TrackResponse."""
+    return TrackResponse(
+        artist=track.artist,
+        album=track.album,
+        title=track.title,
+        filepath=str(track.filepath),
+        media_server_rating_key=track.media_server_rating_key,
+        media_server_type=track.media_server_type.value,
+    )
+
+
 def map_search_result_to_response(result: SearchResult) -> SearchResultResponse:
+    """Convert a domain SearchResult to an API SearchResultResponse."""
     return SearchResultResponse(
-        track=TrackResponse(
-            artist=result.track.artist,
-            album=result.track.album,
-            title=result.track.title,
-            filepath=str(result.track.filepath),
-            media_server_rating_key=result.track.media_server_rating_key,
-            media_server_type=result.track.media_server_type.value,
-        ),
+        track=_track_to_response(result.track),
         similarity_score=result.similarity_score,
         distance=result.distance,
     )
+
 
 if __name__ == "__main__":
     uvicorn.run(

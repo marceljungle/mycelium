@@ -4,7 +4,6 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-DO_OPENAPI=1
 DO_SERVER_FRONTEND=1
 DO_CLIENT_FRONTEND=1
 DO_PYTHON_BUILD=0
@@ -13,12 +12,11 @@ usage() {
   cat <<'EOF'
 Usage: ./build.sh [options]
 
-Runs the full Mycelium build workflow. By default this script generates OpenAPI
-clients, builds both frontend bundles, and stops before packaging Python
-artifacts. Pass --with-wheel to invoke the Python build as well.
+Runs the full Mycelium build workflow. By default this script builds both
+frontend bundles and stops before packaging Python artifacts. Pass --with-wheel
+to invoke the Python build as well.
 
 Options:
-  --skip-openapi           Skip OpenAPI client generation
   --skip-server-frontend   Skip building the server-mode frontend
   --skip-client-frontend   Skip building the client-mode frontend
   --skip-frontends         Skip both frontend builds
@@ -29,9 +27,6 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-openapi)
-      DO_OPENAPI=0
-      ;;
     --skip-server-frontend)
       DO_SERVER_FRONTEND=0
       ;;
@@ -57,13 +52,6 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-
-if (( DO_OPENAPI )); then
-  echo "Generating OpenAPI clients..."
-  bash "$ROOT_DIR/openapi/generate.sh"
-else
-  echo "Skipping OpenAPI client generation"
-fi
 
 if (( DO_SERVER_FRONTEND )); then
   echo "Building server frontend..."

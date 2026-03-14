@@ -1,10 +1,49 @@
-// OpenAPI generated client wrapper for Worker API
-// Centralizes configuration and exports a ready-to-use API instance.
-import { Configuration, DefaultApi } from './generated';
 import { WORKER_API_BASE_URL } from '@/config/api';
+import type {
+  WorkerConfigRequest,
+  WorkerConfigResponse,
+  SaveConfigResponse,
+} from './types';
 
-export const workerApiConfig = new Configuration({ basePath: WORKER_API_BASE_URL });
+// Re-export all types
+export * from './types';
 
-export * from './generated';
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-export const workerApi = new DefaultApi(workerApiConfig);
+class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${WORKER_API_BASE_URL}${path}`, init);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new ApiError(res.status, body || `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ---------------------------------------------------------------------------
+// Worker API
+// ---------------------------------------------------------------------------
+
+export const workerApi = {
+  getWorkerConfig(): Promise<WorkerConfigResponse> {
+    return request('/api/config');
+  },
+
+  saveWorkerConfig(params: {
+    workerConfigRequest: WorkerConfigRequest;
+  }): Promise<SaveConfigResponse> {
+    return request('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params.workerConfigRequest),
+    });
+  },
+};

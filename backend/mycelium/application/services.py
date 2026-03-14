@@ -2,59 +2,50 @@
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any, List, Optional
 
 from mycelium.application.embedding.factory import create_embedding_generator
-from mycelium.application.search.use_cases import (
-    MusicSearchUseCase
-)
+from mycelium.application.search.use_cases import MusicSearchUseCase
 from mycelium.application.library.use_cases import (
     LibraryScanUseCase,
     EmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
-    WorkerBasedProcessingUseCase
+    WorkerBasedProcessingUseCase,
 )
 from mycelium.config import MyceliumConfig
-from mycelium.domain.models import Playlist
-from mycelium.domain.models import Track, TrackEmbedding, SearchResult
-from mycelium.infrastructure.plex.adapter import PlexMusicRepository
-from mycelium.infrastructure.db.chroma import ChromaEmbeddingRepository
-from mycelium.infrastructure import (
-    TrackDatabase
+from mycelium.domain.models import Playlist, Track, TrackEmbedding, SearchResult
+from mycelium.domain.repositories import (
+    EmbeddingGenerator,
+    EmbeddingRepository,
+    MediaServerRepository,
+    TrackRepository,
 )
 
 
 class MyceliumService:
-    """Main service for orchestrating the Mycelium application."""
+    """Main service for orchestrating the Mycelium application.
+
+    Receives its dependencies (repositories, generators) through constructor
+    injection so the application layer never imports from infrastructure.
+    """
 
     def __init__(
-            self,
-            config: MyceliumConfig
+        self,
+        config: MyceliumConfig,
+        media_server_repository: MediaServerRepository,
+        embedding_generator: EmbeddingGenerator,
+        embedding_repository: EmbeddingRepository,
+        track_database: TrackRepository,
     ):
         self._config = config
         self.worker_processing = None
         self.logger = logging.getLogger(__name__)
 
-        # Initialize repositories and adapters
-        self.media_server_repository = PlexMusicRepository(
-            plex_url=config.plex.url,
-            plex_token=config.plex.token,
-            music_library_name=config.plex.music_library_name
-        )
-
-        # Create embedding generator based on configured model type
-        self.embedding_generator = create_embedding_generator(config)
-
-        self.embedding_repository = ChromaEmbeddingRepository(
-            db_path=config.chroma.get_db_path(),
-            collection_name=config.chroma.collection_name,
-            model_id=config.active_model_id,
-            batch_size=config.chroma.batch_size,
-            media_server_type=config.media_server.type
-        )
-
-        self.track_database = TrackDatabase(db_path=config.database.get_db_path(),
-                                            media_server_type=config.media_server.type)
+        # Store injected ports
+        self.media_server_repository = media_server_repository
+        self.embedding_generator = embedding_generator
+        self.embedding_repository = embedding_repository
+        self.track_database = track_database
 
         self.music_search = MusicSearchUseCase(
             embedding_repository=self.embedding_repository,

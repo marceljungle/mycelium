@@ -1,20 +1,19 @@
-"""Configuration management for Mycelium"""
+"""Configuration management for Mycelium."""
 
 import logging
 import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
+from mycelium.application.embedding.registry import (
+    MODEL_REGISTRY,
+    get_model_spec,
+    get_valid_model_types,
+)
 from mycelium.domain.models import MediaServerType
-
-
-class EmbeddingModelType:
-    """Supported embedding model types."""
-    CLAP = "clap"
-    MUQ = "muq"
 
 
 def get_user_data_dir() -> Path:
@@ -93,15 +92,15 @@ class MuQConfig:
 @dataclass
 class EmbeddingConfig:
     """Configuration for embedding model selection."""
-    type: str = EmbeddingModelType.CLAP
+    type: str = "clap"
 
-    def __post_init__(self):
-        """Validate embedding model type."""
-        valid_types = {EmbeddingModelType.CLAP, EmbeddingModelType.MUQ}
-        if self.type not in valid_types:
+    def __post_init__(self) -> None:
+        """Validate embedding model type against the registry."""
+        valid = get_valid_model_types()
+        if self.type not in valid:
             raise ValueError(
                 f"Invalid embedding model type '{self.type}'. "
-                f"Must be one of: {', '.join(sorted(valid_types))}"
+                f"Must be one of: {', '.join(valid)}"
             )
 
 
@@ -170,9 +169,18 @@ class MyceliumConfig:
     @property
     def active_model_id(self) -> str:
         """Get the model_id for the currently selected embedding model."""
-        if self.embedding.type == EmbeddingModelType.MUQ:
-            return self.muq.model_id
-        return self.clap.model_id
+        return self.get_active_model_config().get(
+            "model_id",
+            get_model_spec(self.embedding.type).default_config.get("model_id", ""),
+        )
+
+    def get_active_model_config(self) -> Dict[str, Any]:
+        """Return the config dict for the currently active model type."""
+        model_type = self.embedding.type
+        section = getattr(self, model_type, None)
+        if section is not None:
+            return asdict(section)
+        return get_model_spec(model_type).default_config.copy()
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumConfig":
@@ -198,7 +206,7 @@ class MyceliumConfig:
         )
 
         embedding_config = EmbeddingConfig(
-            type=config_data.get("embedding", {}).get("type", EmbeddingModelType.CLAP)
+            type=config_data.get("embedding", {}).get("type", "clap")
         )
 
         clap_config = CLAPConfig(
@@ -385,7 +393,6 @@ class MyceliumConfig:
 
 # Export all necessary components
 __all__ = [
-    "EmbeddingModelType",
     "EmbeddingConfig",
     "MediaServerConfig",
     "MyceliumConfig",
@@ -400,5 +407,5 @@ __all__ = [
     "get_config_file_path",
     "get_user_data_dir",
     "get_user_log_dir",
-    "get_config_dir"
+    "get_config_dir",
 ]

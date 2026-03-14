@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from ...domain.models import Track, MediaServerType
+from ...domain.repositories import TrackRepository
 from ...config import get_user_data_dir
 
 
@@ -61,7 +62,7 @@ class TrackEmbeddingRecord:
 
 logger = logging.getLogger(__name__)
 
-class TrackDatabase:
+class TrackDatabase(TrackRepository):
     """SQLite database for managing track metadata and processing state."""
     
     def __init__(self, db_path: Optional[str], media_server_type: MediaServerType) -> None:

@@ -1,22 +1,21 @@
 """Minimal FastAPI application for Mycelium client configuration."""
 
 import functools
-import yaml
 import logging
 import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from mycelium.api.generated_sources.worker_schemas.models import (
+from mycelium.api.schemas import (
+    SaveConfigResponse,
     WorkerConfigRequest,
     WorkerConfigResponse,
-    SaveConfigResponse,
 )
 from ..client_config import (
-    CLAPConfig, ClientConfig, ClientAPIConfig, EmbeddingConfig, EmbeddingModelType,
+    CLAPConfig, ClientConfig, ClientAPIConfig, EmbeddingConfig,
     LoggingConfig, MuQConfig, MyceliumClientConfig,
 )
 # Setup logger for this module
@@ -69,17 +68,6 @@ app = FastAPI(
     description="Configuration API for Mycelium client workers"
 )
 
-WORKER_SPEC_PATH = Path(__file__).resolve().parents[3] / "openapi" / "worker_openapi.yaml"
-app.state.external_openapi_cache = None
-
-def _custom_openapi():
-    if app.state.external_openapi_cache is None:
-        with WORKER_SPEC_PATH.open("r", encoding="utf-8") as f:
-            app.state.external_openapi_cache = yaml.safe_load(f)
-    return app.state.external_openapi_cache
-
-app.openapi = _custom_openapi
-
 # Add CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -99,15 +87,6 @@ if client_frontend_dist_path.exists():
     
     # Mount client frontend application under /app with SPA routing support
     app.mount("/app", StaticFiles(directory=str(client_frontend_dist_path), html=True), name="client_frontend")
-
-
-# Serve the API-first OpenAPI YAML (for tooling and validation)
-@app.get("/openapi.yaml")
-async def get_openapi_yaml():
-    """Serve the external API-first OpenAPI YAML if available."""
-    if WORKER_SPEC_PATH.exists():
-        return FileResponse(path=str(WORKER_SPEC_PATH), media_type="application/yaml")
-    raise HTTPException(status_code=404, detail="OpenAPI YAML not found")
 
 
 @app.get("/")

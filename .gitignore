@@ -242,4 +242,3 @@ frontend/src/worker_api/generated
 backend/mycelium/frontend_dist/
 backend/mycelium/client_frontend_dist/
 backend/mycelium/api/generated_sources/
-src/.openapi-generator/

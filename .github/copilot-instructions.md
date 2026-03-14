@@ -116,27 +116,26 @@ The project follows clean architecture with clear separation of concerns:
 - **Infrastructure Layer** (`backend/mycelium/infrastructure/`): External service adapters
 - **API Layer** (`backend/mycelium/api/`): Web interface and endpoint definitions
 
-### OpenAPI-First Development
-**Critical**: The project uses OpenAPI specifications as the single source of truth for APIs.
+### API Types — Single Source of Truth
+All API types are **hand-written** — no code generation.
+
+- **Python DTOs**: `backend/mycelium/api/schemas.py` (Pydantic v2)
+- **TypeScript types**: `frontend/src/server_api/types.ts` and `frontend/src/worker_api/types.ts`
+- **API clients**: `frontend/src/server_api/client.ts` and `frontend/src/worker_api/client.ts` (typed `fetch` wrappers)
 
 #### Workflow for API Changes:
-1. **Edit OpenAPI spec first**: Modify `openapi/server_openapi.yaml` or `openapi/worker_openapi.yaml`
-2. **Regenerate clients**: Run `bash openapi/generate.sh` to generate:
-   - TypeScript clients (`frontend/src/server_api/generated/`, `frontend/src/worker_api/generated/`)
-   - Python Pydantic models (`backend/mycelium/api/generated_sources/`)
+1. **Update Python DTOs**: Edit `backend/mycelium/api/schemas.py`
+2. **Update TypeScript types**: Edit `frontend/src/server_api/types.ts` (or `worker_api/types.ts`)
 3. **Update FastAPI endpoints**: Modify `app.py` or `client_app.py` to implement changes
-4. **Verify compliance**: FastAPI apps load external specs for validation
-5. **Update frontend**: Use generated TypeScript types for type safety
+4. **Update frontend client**: Add/modify methods in `client.ts` if new endpoints are added
 
 #### Key Points:
-- **Never modify generated code** - always regenerate from OpenAPI specs
-- **Use generated models in FastAPI** - Import from `generated_sources.server_schemas.models` or `worker_schemas.models`
-- **Frontend uses generated clients** - Import from `@/server_api/client` or `@/worker_api/client`
-- **Pydantic v2 syntax** - Generated models are converted to v2 via `fix_pydantic_v2.py`
+- **Python DTOs are hand-written** — Import from `mycelium.api.schemas` (Pydantic v2 native)
+- **TypeScript types are hand-written** — Import from `@/server_api/client` or `@/worker_api/client`
 
 ```python
-# Correct: Use generated models in FastAPI endpoints
-from mycelium.api.generated_sources.server_schemas.models import (
+# Correct: Use hand-written DTOs in FastAPI endpoints
+from mycelium.api.schemas import (
     LibraryStatsResponse,
     SearchResultResponse,
 )
@@ -146,6 +145,13 @@ async def get_library_stats():
     stats = service.get_database_stats()
     return LibraryStatsResponse(**stats)
 ```
+
+### Model Registry
+To add a new embedding model, only two changes are needed:
+1. Create an adapter in `infrastructure/model/` implementing `EmbeddingGenerator`
+2. Add one entry to `MODEL_REGISTRY` in `application/embedding/registry.py`
+
+The factory, config validation, and CLI will pick it up automatically.
 
 ### Dual Frontend Architecture
 The project has **TWO separate frontend builds** from the same source:
@@ -164,7 +170,7 @@ The project has **TWO separate frontend builds** from the same source:
 
 ```bash
 # Build both frontends
-./build.sh                          # Builds both + generates OpenAPI clients
+./build.sh                          # Builds both frontends
 ./build_frontend.sh                 # Server frontend only
 ./build_client_frontend.sh          # Worker frontend only
 
@@ -309,17 +315,16 @@ describe('SearchInterface', () => {
 - **Mocking**: Mock external services (Plex API, CLAP models) in tests
 
 ### API Development Best Practices
-- **OpenAPI-First**: Always edit OpenAPI specs first, then regenerate clients
-- **Request/Response Models**: Use generated Pydantic models from `generated_sources`
+- **Request/Response Models**: Use hand-written Pydantic v2 DTOs from `api/schemas.py`
 - **Error Handling**: Return appropriate HTTP status codes with structured error responses
 - **Async/Await**: Use async endpoints for I/O operations (database, external APIs)
-- **Validation**: Validation is handled automatically by generated Pydantic models
-- **Documentation**: OpenAPI specs serve as the primary documentation
+- **Validation**: Validation is handled automatically by Pydantic models
+- **Documentation**: FastAPI auto-generates OpenAPI docs from Pydantic models at `/docs`
 - **Rate Limiting**: Consider rate limiting for expensive operations
 
 ```python
-# Correct: Use generated models in FastAPI endpoints
-from mycelium.api.generated_sources.server_schemas.models import (
+# Correct: Use hand-written DTOs in FastAPI endpoints
+from mycelium.api.schemas import (
     SearchResultResponse,
     LibraryStatsResponse,
 )
@@ -334,38 +339,6 @@ async def get_library_stats():
         logger.error(f"Failed to get library stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 ```
-
-### OpenAPI Client Generation Workflow
-
-When making API changes:
-
-```bash
-# 1. Edit the OpenAPI spec
-vim openapi/server_openapi.yaml  # or worker_openapi.yaml
-
-# 2. Regenerate all clients
-bash openapi/generate.sh
-# This generates:
-# - TypeScript clients: frontend/src/server_api/generated/ and worker_api/generated/
-# - Python models: backend/mycelium/api/generated_sources/server_schemas/ and worker_schemas/
-
-# 3. Update FastAPI endpoint implementation
-vim backend/mycelium/api/app.py  # or client_app.py
-
-# 4. Update frontend to use new types
-# Generated TypeScript types are automatically available
-
-# 5. Test the changes
-mycelium-ai server &
-curl http://localhost:8000/api/your/new/endpoint
-```
-
-**Important Notes**:
-- Never manually edit generated code
-- OpenAPI specs use Pydantic v1 generator, then converted to v2 syntax
-- Generated models are in `generated_sources.server_schemas.models` and `worker_schemas.models`
-- Frontend imports from `@/server_api/client` and `@/worker_api/client`
-- Both FastAPI apps load external OpenAPI specs for validation
 
 ### Performance Considerations
 - **Async Programming**: Use async/await for I/O-bound operations
@@ -413,10 +386,8 @@ mycelium/
 │   ├── api/                # FastAPI web endpoints
 │   │   ├── app.py          # Main server API application and routes
 │   │   ├── client_app.py   # Worker/client API for configuration
-│   │   ├── worker_models.py # Worker-specific API models
-│   │   └── generated_sources/ # OpenAPI-generated Pydantic models
-│   │       ├── server_schemas/ # Server API models
-│   │       └── worker_schemas/ # Worker API models
+│   │   ├── schemas.py       # Hand-written Pydantic v2 API DTOs
+│   │   └── worker_models.py # Worker-specific API models
 │   ├── config.py           # Server configuration management
 │   ├── client_config.py    # Client/worker configuration management
 │   ├── main.py             # CLI entry point with Typer
@@ -430,21 +401,15 @@ mycelium/
 │   │   ├── SettingsPage.tsx    # Server configuration UI
 │   │   ├── ClientSettingsPage.tsx # Worker configuration UI
 │   │   └── LibraryStats.tsx    # Statistics and operations UI
-│   ├── src/server_api/     # Generated TypeScript client for server API
-│   │   ├── client.ts       # API client wrapper
-│   │   └── generated/      # OpenAPI-generated TypeScript client
-│   ├── src/worker_api/     # Generated TypeScript client for worker API
-│   │   ├── client.ts       # API client wrapper
-│   │   └── generated/      # OpenAPI-generated TypeScript client
+│   ├── src/server_api/     # Server API client (hand-written)
+│   │   ├── types.ts        # TypeScript types (mirrors schemas.py)
+│   │   └── client.ts       # Typed fetch API client
+│   ├── src/worker_api/     # Worker API client (hand-written)
+│   │   ├── types.ts        # TypeScript types (mirrors schemas.py)
+│   │   └── client.ts       # Typed fetch API client
 │   ├── src/config/         # Frontend configuration
 │   └── next.config.ts      # Next.js config (exports static build)
-├── openapi/                # OpenAPI-first API definitions
-│   ├── server_openapi.yaml # Server API specification
-│   ├── worker_openapi.yaml # Worker API specification
-│   ├── generate.sh         # Generate clients from OpenAPI specs
-│   ├── export_schema.py    # Export schemas from FastAPI
-│   └── fix_pydantic_v2.py  # Convert Pydantic v1 to v2 syntax
-├── build.sh                # Orchestrator: OpenAPI + frontends + optional wheel
+├── build.sh                # Orchestrator: frontends + optional wheel
 ├── build_frontend.sh       # Build server frontend (output: backend/mycelium/frontend_dist)
 ├── build_client_frontend.sh # Build worker frontend (output: backend/mycelium/client_frontend_dist)
 ├── build_wheel.sh          # Build Python wheel with both frontends
@@ -484,7 +449,7 @@ The same React codebase is built **twice** with different API configurations:
 import { api } from '@/server_api/client';        // For server API
 import { workerApi } from '@/worker_api/client';  // For worker API
 
-// API_BASE_URL is set during build and used by generated clients
+// API_BASE_URL is set during build and used by API clients
 // Server build: API_BASE_URL=/api
 // Client build: API_BASE_URL=http://localhost:3001/api
 ```
@@ -534,8 +499,8 @@ import { z } from 'zod';
 
 // 3. Local imports (absolute paths using @/)
 import { API_BASE_URL } from '@/config/api';
-import { api } from '@/server_api/client';     // Generated server API client
-import { workerApi } from '@/worker_api/client';  // Generated worker API client
+import { api } from '@/server_api/client';        // Server API client
+import { workerApi } from '@/worker_api/client';  // Worker API client
 import type { Track } from '@/server_api/client';  // Generated types
 import { SearchResults } from '@/components/SearchResults';
 ```
@@ -546,27 +511,21 @@ import { SearchResults } from '@/components/SearchResults';
 The project uses a multi-stage build system with shell scripts:
 
 1. **`build.sh`** - Orchestrator script:
-   - Runs OpenAPI client generation (`openapi/generate.sh`)
    - Builds server frontend (`build_frontend.sh`)
    - Builds client frontend (`build_client_frontend.sh`)
    - Optionally builds Python wheel (`build_wheel.sh` with `--with-wheel` flag)
 
-2. **`openapi/generate.sh`** - OpenAPI client generation:
-   - Generates TypeScript clients (server + worker) using `@openapitools/openapi-generator-cli`
-   - Generates Python Pydantic models (server + worker)
-   - Converts Pydantic v1 to v2 syntax using `fix_pydantic_v2.py`
-
-3. **`build_frontend.sh`** - Server frontend build:
+2. **`build_frontend.sh`** - Server frontend build:
    - Runs `npm run build` in frontend directory
    - Copies output to `backend/mycelium/frontend_dist/`
    - Used by server mode (port 8000)
 
-4. **`build_client_frontend.sh`** - Worker frontend build:
+3. **`build_client_frontend.sh`** - Worker frontend build:
    - Runs `npm run build` with different `API_BASE_URL`
    - Copies output to `backend/mycelium/client_frontend_dist/`
    - Used by client mode (port 3001)
 
-5. **`build_wheel.sh`** - Python packaging:
+4. **`build_wheel.sh`** - Python packaging:
    - Runs `python -m build` to create wheel
    - Includes both frontend builds in the package
 
@@ -575,7 +534,6 @@ The Python wheel (`mycelium-ai`) includes:
 - Python source code from `backend/mycelium/`
 - Server frontend static files in `mycelium/frontend_dist/`
 - Client frontend static files in `mycelium/client_frontend_dist/`
-- OpenAPI-generated Python models in `mycelium/api/generated_sources/`
 
 ```toml
 # pyproject.toml package data
@@ -598,34 +556,28 @@ cd frontend
 npm run lint                 # ESLint + TypeScript checking
 npm run lint -- --fix       # Auto-fix linting issues
 npm run build                # Verify build succeeds
-
-# OpenAPI client generation (after spec changes)
-bash openapi/generate.sh     # Regenerate TypeScript and Python clients
 ```
 
 ### Pre-commit Workflow
 1. **Always run linters** before committing changes
-2. **OpenAPI regeneration** if you modified `openapi/*.yaml` files
-3. **Frontend build must pass** - `npm run build` should succeed without errors
-4. **Type checking** - Both `mypy` (Python) and `tsc` (TypeScript) should pass
-5. **Test relevant functionality** manually if no automated tests exist
-6. **Review diff** - Ensure only intended changes are included
-7. **Don't commit generated code separately** - generated code changes should be part of the feature commit
+2. **Frontend build must pass** - `npm run build` should succeed without errors
+3. **Type checking** - Both `mypy` (Python) and `tsc` (TypeScript) should pass
+4. **Test relevant functionality** manually if no automated tests exist
+5. **Review diff** - Ensure only intended changes are included
+6. **Keep Python and TypeScript types in sync** — when changing `schemas.py`, update `types.ts` too
 
 ### Code Review Checklist
 When reviewing PRs, check for:
 - [ ] Type hints on all Python functions
 - [ ] Proper error handling and logging
-- [ ] Input validation handled by generated Pydantic models
+- [ ] Input validation handled by Pydantic v2 DTOs in `api/schemas.py`
 - [ ] React components have proper TypeScript interfaces
 - [ ] No hardcoded values (use configuration)
 - [ ] Async/await used correctly for I/O operations
 - [ ] Database connections properly closed
 - [ ] User-facing error messages are clear and helpful
-- [ ] **OpenAPI specs updated** if API changes were made
-- [ ] **Generated clients regenerated** after OpenAPI spec changes
-- [ ] **No manual edits to generated code** (files in `generated/` or `generated_sources/`)
-- [ ] **Frontend uses generated API clients** from `@/server_api/client` or `@/worker_api/client`
+- [ ] **Python and TypeScript types in sync** — `schemas.py` matches `types.ts`
+- [ ] **Frontend uses API clients** from `@/server_api/client` or `@/worker_api/client`
 - [ ] **Both frontends tested** if changes affect UI (server mode and client mode)
 
 ### Performance Monitoring
@@ -637,10 +589,9 @@ When reviewing PRs, check for:
 ### Documentation Standards
 - **Python**: Google-style docstrings for all public functions/classes
 - **TypeScript**: JSDoc comments for complex functions
-- **API**: OpenAPI YAML specs in `openapi/` directory (source of truth)
+- **API**: FastAPI auto-serves interactive docs at `/docs`
 - **README**: Keep setup and usage instructions current
 - **Changelog**: Document breaking changes and new features
-- **OpenAPI Specs**: Keep descriptions clear and examples accurate
 
 ```python
 # Good documentation example
@@ -668,34 +619,6 @@ async def search_by_text(
     """
 ```
 
-```yaml
-# Good OpenAPI documentation example (in openapi/*.yaml)
-/api/search/text:
-  get:
-    summary: Search by text query
-    description: |
-      Search for tracks using natural language description.
-      Uses CLAP model to encode text and find similar tracks.
-    operationId: searchText
-    parameters:
-      - in: query
-        name: q
-        required: true
-        schema: { type: string }
-        description: Natural language search query
-      - in: query
-        name: limit
-        schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-        description: Maximum number of results
-    responses:
-      '200':
-        description: Search results
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/SearchResultResponse'
 ```
 
 ## Development Environment Setup
@@ -732,14 +655,6 @@ async def search_by_text(
    # Edit client_config.yml with server connection info
    ```
 
-5. **OpenAPI Client Generation (Required for development):**
-   ```bash
-   # Generate TypeScript and Python clients from OpenAPI specs
-   bash openapi/generate.sh
-   # Or use the full build script
-   ./build.sh              # Generates clients + builds both frontends
-   ```
-
 ### Development Workflow
 ```bash
 # Start full development environment
@@ -760,23 +675,18 @@ mycelium-ai client          # Connects to server, processes jobs
 
 ### Build and Testing
 ```bash
-# OpenAPI client generation (do this first after spec changes)
-bash openapi/generate.sh    # Generates TS + Python clients from specs
-
 # Frontend build (both frontends - must succeed)
-./build.sh                  # Full build: OpenAPI + both frontends
-./build.sh --skip-openapi   # Skip OpenAPI generation
+./build.sh                  # Full build: both frontends
 cd frontend
 npm run lint                # Fix linting errors first
 npm run build              # 5-15 seconds if successful (builds server frontend)
 
 # Build Python wheel with both frontends
-./build.sh --with-wheel     # Generates OpenAPI clients, builds frontends, and packages
+./build.sh --with-wheel     # Builds frontends and packages Python wheel
 
 # Backend testing (when dependencies installed)
 mycelium-ai server &       # Start server for testing
 curl http://localhost:8000/api/library/stats  # Test API
-curl http://localhost:8000/openapi.yaml       # Verify OpenAPI spec served
 
 # Worker API testing
 mycelium-ai client &       # Start client for testing
@@ -793,12 +703,8 @@ curl http://localhost:3001/api/config         # Test worker config API
 
 ## API Reference
 
-### OpenAPI-First Design
-The project uses an **API-first approach** with OpenAPI specifications as the source of truth:
-- **Server API**: Defined in `openapi/server_openapi.yaml` (port 8000)
-- **Worker API**: Defined in `openapi/worker_openapi.yaml` (port 3001 by default)
-- **Client Generation**: TypeScript and Python clients generated from specs via `openapi/generate.sh`
-- **Validation**: FastAPI apps load external specs to ensure API compliance
+### API Design
+The API is defined by FastAPI endpoints with Pydantic v2 DTOs. FastAPI auto-generates interactive docs at `/docs`.
 
 ### Server API Endpoints (Port 8000)
 ```bash
@@ -830,9 +736,8 @@ GET  /workers/get_job               # Get processing job
 POST /workers/submit_result         # Submit job result
 GET  /workers/status                # Get all workers status
 
-# OpenAPI Documentation
-GET  /openapi.yaml                  # Download OpenAPI spec
-GET  /docs                          # Swagger UI (if not using external spec)
+# Documentation
+GET  /docs                          # Interactive Swagger UI
 ```
 
 ### Worker API Endpoints (Port 3001 by default, configurable)
@@ -840,16 +745,13 @@ GET  /docs                          # Swagger UI (if not using external spec)
 # Worker Configuration (client-side API)
 GET  /api/config                    # Get current worker config
 POST /api/config                    # Update worker configuration (hot-reload)
-
-# OpenAPI Documentation
-GET  /openapi.yaml                  # Download OpenAPI spec
 ```
 
-**Note**: The worker API port is configurable via `client_api.port` in `client_config.yml`. Default is 3001, though the OpenAPI spec example shows 8001.
+**Note**: The worker API port is configurable via `client_api.port` in `client_config.yml`. Default is 3001.
 
-### Using Generated Clients
+### Using API Clients
 ```typescript
-// Frontend: Use generated TypeScript clients
+// Frontend: Use hand-written TypeScript clients
 import { api } from '@/server_api/client';  // Server API client
 import { workerApi } from '@/worker_api/client';  // Worker API client
 
@@ -861,12 +763,10 @@ const config = await workerApi.getWorkerConfig();
 ```
 
 ```python
-# Backend: Use generated Pydantic models for validation
-from mycelium.api.generated_sources.server_schemas.models import (
+# Backend: Use hand-written Pydantic v2 DTOs
+from mycelium.api.schemas import (
     SearchResultResponse,
     LibraryStatsResponse,
-)
-from mycelium.api.generated_sources.worker_schemas.models import (
     WorkerConfigResponse,
 )
 ```
@@ -900,22 +800,14 @@ from mycelium.api.generated_sources.worker_schemas.models import (
 - **Frontend build fails**: Run `npm run lint` first, check for TypeScript errors
 - **API connection errors**: Verify server is running with `mycelium-ai server`
 - **Plex connection issues**: Check token in `~/.config/mycelium/config.yml`
-- **Generated code import errors**: Run `bash openapi/generate.sh` to regenerate clients
-- **Type mismatch in frontend**: Regenerate TypeScript clients from updated OpenAPI spec
-- **Pydantic validation errors**: Check that OpenAPI spec matches FastAPI endpoint implementation
-
-### OpenAPI-Related Issues
-- **"Module 'generated_sources' not found"**: Run `bash openapi/generate.sh` first
-- **TypeScript errors in generated code**: OpenAPI spec may have invalid types, check the YAML
-- **Pydantic v1 vs v2 errors**: Generated code is auto-converted by `fix_pydantic_v2.py`
-- **API response doesn't match spec**: Update OpenAPI spec first, then regenerate clients
-- **Frontend can't import from '@/server_api/client'**: Check that `frontend/src/server_api/generated/` exists
+- **Type mismatch in frontend**: Ensure `schemas.py` and `types.ts` are in sync
+- **Pydantic validation errors**: Check that DTOs in `api/schemas.py` match endpoint implementation
 
 ### Build and Deployment Issues
 - **Frontend build succeeds but missing in wheel**: Run `./build.sh --with-wheel` not just `python -m build`
 - **Server mode shows 404 for frontend**: Check that `backend/mycelium/frontend_dist/` exists after build
 - **Client mode shows 404 for frontend**: Check that `backend/mycelium/client_frontend_dist/` exists after build
-- **API endpoints return 404**: Verify FastAPI app is loading the correct OpenAPI spec
+- **API endpoints return 404**: Verify FastAPI app routes are correctly defined
 - **CORS errors in browser**: Check CORS middleware configuration in `app.py` or `client_app.py`
 
 ### Network and Infrastructure Issues
@@ -952,9 +844,8 @@ mkdir -p ~/.config/mycelium && cp config.example.yml ~/.config/mycelium/config.y
 cp client_config.example.yml ~/.config/mycelium/client_config.yml
 # Edit ~/.config/mycelium/client_config.yml and set server_host
 
-# OpenAPI + Frontend build workflow
-bash openapi/generate.sh    # Generate clients from OpenAPI specs
-./build.sh                  # Build both frontends (includes OpenAPI generation)
+# Frontend build workflow
+./build.sh                  # Build both frontends
 ./build.sh --with-wheel     # Full build + Python packaging
 
 # Development workflow  
@@ -968,8 +859,6 @@ mycelium-ai client                  # On GPU machine(s)
 # Validation
 cd frontend && npm run lint         # Frontend linting
 cd frontend && npm run build        # Frontend build test (server mode)
-bash openapi/generate.sh            # Regenerate API clients
 mycelium-ai server                  # Start server and test web interface
 curl http://localhost:8000/api/library/stats  # Test API
-curl http://localhost:8000/openapi.yaml       # Verify OpenAPI spec
 ```
