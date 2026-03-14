@@ -5,9 +5,8 @@ from typing import Optional, Dict, Any
 
 from ..jobs.queue import JobQueueService
 from ...domain.models import TrackEmbedding
-from ...domain.repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator
+from ...domain.repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator, TrackRepository
 from ...domain.worker import ContextType
-from ...infrastructure.db.tracks import TrackDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class LibraryScanUseCase:
     """Use case for scanning and storing track metadata."""
 
-    def __init__(self, media_server_repository: MediaServerRepository, track_database: TrackDatabase):
+    def __init__(self, media_server_repository: MediaServerRepository, track_database: TrackRepository):
         self.media_server_repository = media_server_repository
         self.track_database = track_database
 
@@ -62,9 +61,9 @@ class EmbeddingProcessingUseCase:
             self,
             embedding_generator: EmbeddingGenerator,
             embedding_repository: EmbeddingRepository,
-            track_database: TrackDatabase,
+            track_database: TrackRepository,
             model_id: str,
-            gpu_batch_size: int = 16
+            gpu_batch_size: int = 16,
     ):
         self.embedding_generator = embedding_generator
         self.embedding_repository = embedding_repository
@@ -197,7 +196,7 @@ class EmbeddingProcessingUseCase:
 class ProcessingProgressUseCase:
     """Use case for tracking processing progress."""
 
-    def __init__(self, track_database: TrackDatabase):
+    def __init__(self, track_database: TrackRepository):
         self.track_database = track_database
 
     def get_current_stats(self, model_id: Optional[str] = None) -> Dict[str, Any]:
@@ -220,9 +219,9 @@ class WorkerBasedProcessingUseCase:
     def __init__(
             self,
             job_queue_service: JobQueueService,
-            track_database: TrackDatabase,
+            track_database: TrackRepository,
             api_host: str = "localhost",
-            api_port: int = 8000
+            api_port: int = 8000,
     ):
         self.job_queue = job_queue_service
         self.track_database = track_database

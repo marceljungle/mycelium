@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/server_api/client';
-import type { ConfigResponse } from '@/server_api/generated/models';
+import type { ConfigResponse } from '@/server_api/client';
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
@@ -297,11 +297,6 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              {(config.embedding?.type ?? 'clap') === 'clap' && (
-                <p className="text-sm text-blue-600 dark:text-blue-400">
-                  ℹ️ CLAP enables both text and audio search. Switching to MuQ will require re-processing your library.
-                </p>
-              )}
               {config.embedding?.type === 'muq' && (
                 <p className="text-sm text-amber-600 dark:text-amber-400">
                   ⚠️ MuQ only supports audio-based search. Text search will be disabled. Switching models requires re-processing your library.
@@ -369,17 +364,19 @@ export default function SettingsPage() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label htmlFor="muq-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Model ID
                   </label>
                   <input
+                    id="muq-model-id"
+                    name="muq-model-id"
                     type="text"
                     value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-v1'}
-                    onChange={(e) => updateConfig('muq', 'model_id', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    HuggingFace model identifier for MuQ
+                    Only one MuQ model is currently available
                   </p>
                 </div>
                 <div>

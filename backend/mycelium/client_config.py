@@ -4,15 +4,14 @@ import os
 import logging
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
-
-class EmbeddingModelType:
-    """Supported embedding model types."""
-    CLAP = "clap"
-    MUQ = "muq"
+from mycelium.application.embedding.registry import (
+    get_model_spec,
+    get_valid_model_types,
+)
 
 
 def get_user_data_dir() -> Path:
@@ -79,14 +78,14 @@ class MuQConfig:
 @dataclass
 class EmbeddingConfig:
     """Configuration for embedding model selection."""
-    type: str = EmbeddingModelType.CLAP
+    type: str = "clap"
 
-    def __post_init__(self):
-        valid_types = {EmbeddingModelType.CLAP, EmbeddingModelType.MUQ}
-        if self.type not in valid_types:
+    def __post_init__(self) -> None:
+        valid = get_valid_model_types()
+        if self.type not in valid:
             raise ValueError(
                 f"Invalid embedding model type '{self.type}'. "
-                f"Must be one of: {', '.join(sorted(valid_types))}"
+                f"Must be one of: {', '.join(valid)}"
             )
 
 
@@ -130,9 +129,18 @@ class MyceliumClientConfig:
     @property
     def active_model_id(self) -> str:
         """Get the model_id for the currently selected embedding model."""
-        if self.embedding.type == EmbeddingModelType.MUQ:
-            return self.muq.model_id
-        return self.clap.model_id
+        return self.get_active_model_config().get(
+            "model_id",
+            get_model_spec(self.embedding.type).default_config.get("model_id", ""),
+        )
+
+    def get_active_model_config(self) -> Dict[str, Any]:
+        """Return the config dict for the currently active model type."""
+        model_type = self.embedding.type
+        section = getattr(self, model_type, None)
+        if section is not None:
+            return asdict(section)
+        return get_model_spec(model_type).default_config.copy()
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumClientConfig":
@@ -149,7 +157,7 @@ class MyceliumClientConfig:
         
         # Load from YAML only - no environment variable fallbacks
         embedding_config = EmbeddingConfig(
-            type=config_data.get("embedding", {}).get("type", EmbeddingModelType.CLAP)
+            type=config_data.get("embedding", {}).get("type", "clap")
         )
 
         clap_config = CLAPConfig(

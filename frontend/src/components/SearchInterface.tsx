@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { api } from '@/server_api/client';
-import type { SearchResultResponse, CapabilitiesResponse } from '@/server_api/generated/models';
+import type { SearchResultResponse, CapabilitiesResponse } from '@/server_api/client';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
