@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from ..domain.models import Track, MediaServerType
-from ..config import get_user_data_dir
+from ...domain.models import Track, MediaServerType
+from ...config import get_user_data_dir
 
 
 @dataclass

@@ -1,7 +1,7 @@
 """Infrastructure package initialization."""
 
 # Import database first as it has no external dependencies
-from .track_database import TrackDatabase, StoredTrack, TrackEmbeddingRecord
+from .db.tracks import TrackDatabase, StoredTrack, TrackEmbeddingRecord
 
 __all__ = [
     "TrackDatabase",

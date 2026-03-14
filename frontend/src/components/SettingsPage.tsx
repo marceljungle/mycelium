@@ -351,41 +351,10 @@ export default function SettingsPage() {
                     onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
-                    max="30"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Number of Chunks
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.num_chunks}
-                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="10"
+                    max="60"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Number of audio chunks to extract per track
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Max Load Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.max_load_duration_s ?? 0}
-                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="10"
-                    max="600"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Maximum seconds of audio to load per track
+                    Duration of each sequential audio window
                   </p>
                 </div>
               </div>
@@ -419,7 +388,7 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.muq?.target_sr ?? 16000}
+                    value={config.muq?.target_sr ?? 24000}
                     onChange={(e) => updateConfig('muq', 'target_sr', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
@@ -430,45 +399,14 @@ export default function SettingsPage() {
                   </label>
                   <input
                     type="number"
-                    value={config.muq?.chunk_duration_s ?? 10}
+                    value={config.muq?.chunk_duration_s ?? 30}
                     onChange={(e) => updateConfig('muq', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
-                    max="30"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Number of Chunks
-                  </label>
-                  <input
-                    type="number"
-                    value={config.muq?.num_chunks ?? 3}
-                    onChange={(e) => updateConfig('muq', 'num_chunks', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="10"
+                    max="60"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Number of audio chunks to extract per track
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Max Load Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.muq?.max_load_duration_s ?? 120}
-                    onChange={(e) => updateConfig('muq', 'max_load_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="10"
-                    max="600"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Maximum seconds of audio to load per track
+                    Duration of each sequential audio window
                   </p>
                 </div>
               </div>

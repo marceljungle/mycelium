@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import List, Optional, Dict
 
-from ..domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
+from ...domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
 logger = logging.getLogger(__name__)
 

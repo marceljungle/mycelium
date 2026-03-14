@@ -14,7 +14,7 @@ from typing import Optional, List
 
 import requests
 
-from mycelium.application.embedding_factory import create_embedding_generator
+from mycelium.application.embedding.factory import create_embedding_generator
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
 from mycelium.domain.repositories import EmbeddingGenerator

@@ -1,7 +1,6 @@
 """CLAP model integration for generating embeddings."""
 
 import logging
-import random
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,7 +8,7 @@ import librosa
 import torch
 from transformers import ClapModel, ClapProcessor
 
-from ..domain.repositories import EmbeddingGenerator
+from ...domain.repositories import EmbeddingGenerator
 
 
 class CLAPEmbeddingGenerator(EmbeddingGenerator):
@@ -24,15 +23,11 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
             self,
             model_id: str = "laion/larger_clap_music_and_speech",
             target_sr: int = 48000,
-            chunk_duration_s: int = 10,
-            num_chunks: int = 3,
-            max_load_duration_s: Optional[int] = 120
+            chunk_duration_s: int = 30,
     ):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
-        self.num_chunks = num_chunks
-        self.max_load_duration_s = max_load_duration_s
         self.logger = logging.getLogger(__name__)
 
         self.device = self.get_best_device()
@@ -143,51 +138,32 @@ class CLAPEmbeddingGenerator(EmbeddingGenerator):
 
             chunk_size_samples = self.chunk_duration_s * self.target_sr
 
-            # Load and prepare all audio files
+            # Load and prepare all audio files using sequential windowing
             for filepath in filepaths:
                 try:
                     waveform, _ = librosa.load(
                         str(filepath),
                         sr=self.target_sr,
                         mono=True,
-                        duration=self.max_load_duration_s
                     )
 
                     total_samples = len(waveform)
-                    chunks = []
 
-                    # Calculate how many full, non-overlapping chunks can fit.
-                    num_possible_bins = total_samples // chunk_size_samples
+                    # Partition into consecutive non-overlapping windows
+                    num_windows = total_samples // chunk_size_samples
 
-                    if num_possible_bins == 0:
+                    if num_windows == 0:
                         self.logger.warning(
                             f"File {filepath} is too short ({total_samples / self.target_sr:.1f}s) "
-                            f"for even one chunk of {self.chunk_duration_s:.1f}s.")
+                            f"for even one window of {self.chunk_duration_s}s.")
                         file_chunk_counts.append(0)
                         continue
 
-                    # Determine which bin indices to sample from.
-                    if num_possible_bins < self.num_chunks:
-                        self.logger.warning(
-                            f"File {filepath} only has space for {num_possible_bins} non-overlapping chunks, "
-                            f"less than the requested {self.num_chunks}. Using all available chunks."
-                        )
-                        chosen_bin_indices = range(num_possible_bins)
-                    else:
-                        possible_bin_indices = range(num_possible_bins)
-                        chosen_bin_indices = random.sample(possible_bin_indices, k=self.num_chunks)
-
-                    # Create chunks based on the chosen indices.
-                    for bin_index in chosen_bin_indices:
-                        start_idx = bin_index * chunk_size_samples
+                    chunks = []
+                    for window_idx in range(num_windows):
+                        start_idx = window_idx * chunk_size_samples
                         end_idx = start_idx + chunk_size_samples
-                        chunk = waveform[start_idx:end_idx]
-                        chunks.append(chunk)
-
-                    if not chunks:
-                        self.logger.warning(f"No valid chunks generated for {filepath}.")
-                        file_chunk_counts.append(0)
-                        continue
+                        chunks.append(waveform[start_idx:end_idx])
 
                     all_chunks.extend(chunks)
                     file_chunk_counts.append(len(chunks))

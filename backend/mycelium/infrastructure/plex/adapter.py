@@ -9,8 +9,8 @@ from plexapi.audio import Artist
 from plexapi.server import PlexServer
 from tqdm import tqdm
 
-from ..domain.models import Track, Playlist, MediaServerType
-from ..domain.repositories import MediaServerRepository
+from ...domain.models import Track, Playlist, MediaServerType
+from ...domain.repositories import MediaServerRepository
 
 
 class PlexMusicRepository(MediaServerRepository):

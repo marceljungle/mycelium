@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import List
 
-from ..domain.models import SearchResult, MediaServerType, Track
-from ..domain.repositories import EmbeddingRepository, EmbeddingGenerator
+from ...domain.models import SearchResult, MediaServerType, Track
+from ...domain.repositories import EmbeddingRepository, EmbeddingGenerator
 
 class MusicSearchUseCase:
     """Use case for searching music by similarity."""

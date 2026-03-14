@@ -170,7 +170,7 @@ cd frontend && npm run lint && npm run build
 
 ```
 mycelium/
-├── src/mycelium/           # Python backend (FastAPI + clean architecture)
+├── backend/mycelium/           # Python backend (FastAPI + clean architecture)
 │   ├── domain/             # Core business logic
 │   ├── application/        # Use cases and services  
 │   ├── infrastructure/     # External adapters (Plex, CLAP, ChromaDB)

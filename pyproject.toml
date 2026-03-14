@@ -61,14 +61,14 @@ Issues = "https://github.com/marceljungle/mycelium/issues"
 "mycelium-ai" = "mycelium.main:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["backend"]
 include = ["mycelium*"]
 
 [tool.setuptools.package-data]
 mycelium = ["frontend_dist/**", "client_frontend_dist/**"]
 
 [tool.setuptools.package-dir]
-"" = "src"
+"" = "backend"
 
 [tool.black]
 line-length = 88
@@ -86,7 +86,7 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 # Exclude generated client sources from strict checks
-exclude = "^src/mycelium/api/generated_sources/.*$"
+exclude = "^backend/mycelium/api/generated_sources/.*$"
 
 [tool.setuptools]
 zip-safe = false

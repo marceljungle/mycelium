@@ -4,11 +4,11 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from mycelium.application.embedding_factory import create_embedding_generator
-from mycelium.application.search_use_cases import (
+from mycelium.application.embedding.factory import create_embedding_generator
+from mycelium.application.search.use_cases import (
     MusicSearchUseCase
 )
-from mycelium.application.library_management_use_cases import (
+from mycelium.application.library.use_cases import (
     LibraryScanUseCase,
     EmbeddingProcessingUseCase,
     ProcessingProgressUseCase,
@@ -17,8 +17,8 @@ from mycelium.application.library_management_use_cases import (
 from mycelium.config import MyceliumConfig
 from mycelium.domain.models import Playlist
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
-from mycelium.infrastructure.plex_adapter import PlexMusicRepository
-from mycelium.infrastructure.chroma_adapter import ChromaEmbeddingRepository
+from mycelium.infrastructure.plex.adapter import PlexMusicRepository
+from mycelium.infrastructure.db.chroma import ChromaEmbeddingRepository
 from mycelium.infrastructure import (
     TrackDatabase
 )

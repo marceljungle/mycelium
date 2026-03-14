@@ -1,7 +1,7 @@
 """Application package initialization."""
 
 from .services import MyceliumService
-from .search_use_cases import (
+from .search.use_cases import (
     MusicSearchUseCase
 )
 

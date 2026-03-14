@@ -8,8 +8,8 @@ from typing import List, Optional
 import chromadb
 from tqdm import tqdm
 
-from ..domain.models import Track, TrackEmbedding, SearchResult, MediaServerType
-from ..domain.repositories import EmbeddingRepository
+from ...domain.models import Track, TrackEmbedding, SearchResult, MediaServerType
+from ...domain.repositories import EmbeddingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ class ChromaEmbeddingRepository(EmbeddingRepository):
             # Parse unique_id to get media server info
             media_server_type_str, media_server_rating_key = unique_id.split(':', 1)
 
-            from ..domain.models import MediaServerType
+            from ...domain.models import MediaServerType
             try:
                 media_server_type = MediaServerType(media_server_type_str)
             except ValueError:

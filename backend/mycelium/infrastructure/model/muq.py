@@ -1,7 +1,6 @@
 """MuQ model integration for generating pure acoustic embeddings."""
 
 import logging
-import random
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,7 +8,7 @@ import librosa
 import torch
 from transformers import AutoModel, AutoFeatureExtractor
 
-from ..domain.repositories import EmbeddingGenerator
+from ...domain.repositories import EmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +26,12 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
     def __init__(
             self,
             model_id: str = "OpenMuQ/MuQ-large-v1",
-            target_sr: int = 16000,
-            chunk_duration_s: int = 10,
-            num_chunks: int = 3,
-            max_load_duration_s: Optional[int] = 120
+            target_sr: int = 24000,
+            chunk_duration_s: int = 30,
     ):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
-        self.num_chunks = num_chunks
-        self.max_load_duration_s = max_load_duration_s
 
         self.device = self.get_best_device()
         logger.info(f"MuQ selected device: {self.device}")
@@ -126,38 +121,28 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         return prepared
 
     def _extract_chunks(self, filepath: Path) -> List:
-        """Load audio and extract random non-overlapping chunks."""
+        """Load audio and extract sequential non-overlapping windows."""
         chunk_size_samples = self.chunk_duration_s * self.target_sr
 
         waveform, _ = librosa.load(
             str(filepath),
             sr=self.target_sr,
             mono=True,
-            duration=self.max_load_duration_s
         )
 
         total_samples = len(waveform)
-        num_possible_bins = total_samples // chunk_size_samples
+        num_windows = total_samples // chunk_size_samples
 
-        if num_possible_bins == 0:
+        if num_windows == 0:
             logger.warning(
                 f"File {filepath} is too short ({total_samples / self.target_sr:.1f}s) "
-                f"for even one chunk of {self.chunk_duration_s:.1f}s."
+                f"for even one window of {self.chunk_duration_s}s."
             )
             return []
 
-        if num_possible_bins < self.num_chunks:
-            logger.warning(
-                f"File {filepath} only has space for {num_possible_bins} non-overlapping chunks, "
-                f"less than the requested {self.num_chunks}. Using all available chunks."
-            )
-            chosen_bin_indices = range(num_possible_bins)
-        else:
-            chosen_bin_indices = random.sample(range(num_possible_bins), k=self.num_chunks)
-
         chunks = []
-        for bin_index in chosen_bin_indices:
-            start_idx = bin_index * chunk_size_samples
+        for window_idx in range(num_windows):
+            start_idx = window_idx * chunk_size_samples
             end_idx = start_idx + chunk_size_samples
             chunks.append(waveform[start_idx:end_idx])
 

@@ -239,7 +239,7 @@ frontend/.vercel
 frontend/src/server_api/generated
 frontend/src/worker_api/generated
 
-src/mycelium/frontend_dist/
-src/mycelium/client_frontend_dist/
-src/mycelium/api/generated_sources/
+backend/mycelium/frontend_dist/
+backend/mycelium/client_frontend_dist/
+backend/mycelium/api/generated_sources/
 src/.openapi-generator/
