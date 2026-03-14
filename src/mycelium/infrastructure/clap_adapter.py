@@ -15,6 +15,11 @@ from ..domain.repositories import EmbeddingGenerator
 class CLAPEmbeddingGenerator(EmbeddingGenerator):
     """ Implementation of EmbeddingGenerator using LAION's CLAP model. """
 
+    @property
+    def supports_text_search(self) -> bool:
+        """CLAP supports both text and audio embeddings."""
+        return True
+
     def __init__(
             self,
             model_id: str = "laion/larger_clap_music_and_speech",

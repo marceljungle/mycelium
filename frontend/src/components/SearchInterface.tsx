@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import SearchResults from './SearchResults';
 import { api } from '@/server_api/client';
-import type { SearchResultResponse } from '@/server_api/generated/models';
+import type { SearchResultResponse, CapabilitiesResponse } from '@/server_api/generated/models';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
@@ -11,15 +11,34 @@ export default function SearchInterface() {
   const [loading, setLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchType, setSearchType] = useState<'text' | 'audio'>('text');
+  const [searchType, setSearchType] = useState<'text' | 'audio'>('audio');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [numResults, setNumResults] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Model capabilities
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
+  
   // Worker processing state
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Fetch capabilities on mount
+  useEffect(() => {
+    api.getCapabilities().then((caps) => {
+      setCapabilities(caps);
+      // Default to text search only if supported
+      if (caps.supports_text_search) {
+        setSearchType('text');
+      } else {
+        setSearchType('audio');
+      }
+    }).catch(() => {
+      // Fallback: assume all capabilities
+      setSearchType('text');
+    });
+  }, []);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -293,27 +312,36 @@ export default function SearchInterface() {
       {/* Search Type Toggle */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
-            <button
-              onClick={() => setSearchType('text')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                searchType === 'text'
-                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              📝 Text Search
-            </button>
-            <button
-              onClick={() => setSearchType('audio')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                searchType === 'audio'
-                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              🎧 Audio Search
-            </button>
+          <div className="flex items-center space-x-3">
+            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
+              {capabilities?.supports_text_search !== false && (
+                <button
+                  onClick={() => setSearchType('text')}
+                  className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                    searchType === 'text'
+                      ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  📝 Text Search
+                </button>
+              )}
+              <button
+                onClick={() => setSearchType('audio')}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  searchType === 'audio'
+                    ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                🎧 Audio Search
+              </button>
+            </div>
+            {capabilities && (
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                {capabilities.embedding_model_type?.toUpperCase()}
+              </span>
+            )}
           </div>
           
           {/* Number of Results Control */}

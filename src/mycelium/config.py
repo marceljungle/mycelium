@@ -11,6 +11,12 @@ import yaml
 from mycelium.domain.models import MediaServerType
 
 
+class EmbeddingModelType:
+    """Supported embedding model types."""
+    CLAP = "clap"
+    MUQ = "muq"
+
+
 def get_user_data_dir() -> Path:
     """Get the user data directory for Mycelium (platform-specific)."""
     if os.name == 'nt':  # Windows
@@ -77,6 +83,32 @@ class CLAPConfig:
     num_chunks: int = 3
     max_load_duration_s: Optional[int] = 120
 
+
+@dataclass
+class MuQConfig:
+    """Configuration for MuQ model (pure acoustic embeddings)."""
+    model_id: str = "OpenMuQ/MuQ-large-v1"
+    target_sr: int = 16000
+    chunk_duration_s: int = 10
+    num_chunks: int = 3
+    max_load_duration_s: Optional[int] = 120
+
+
+@dataclass
+class EmbeddingConfig:
+    """Configuration for embedding model selection."""
+    type: str = EmbeddingModelType.CLAP
+
+    def __post_init__(self):
+        """Validate embedding model type."""
+        valid_types = {EmbeddingModelType.CLAP, EmbeddingModelType.MUQ}
+        if self.type not in valid_types:
+            raise ValueError(
+                f"Invalid embedding model type '{self.type}'. "
+                f"Must be one of: {', '.join(sorted(valid_types))}"
+            )
+
+
 @dataclass
 class MediaServerConfig:
     """Configuration for media server."""
@@ -131,11 +163,20 @@ class MyceliumConfig:
     server: ServerConfig
     media_server: MediaServerConfig
     plex: PlexConfig
+    embedding: EmbeddingConfig
     clap: CLAPConfig
+    muq: MuQConfig
     chroma: ChromaConfig
     database: DatabaseConfig
     api: APIConfig
     logging: LoggingConfig
+
+    @property
+    def active_model_id(self) -> str:
+        """Get the model_id for the currently selected embedding model."""
+        if self.embedding.type == EmbeddingModelType.MUQ:
+            return self.muq.model_id
+        return self.clap.model_id
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumConfig":
@@ -160,12 +201,24 @@ class MyceliumConfig:
             gpu_batch_size=config_data.get("server", {}).get("gpu_batch_size", 16)
         )
 
+        embedding_config = EmbeddingConfig(
+            type=config_data.get("embedding", {}).get("type", EmbeddingModelType.CLAP)
+        )
+
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
             chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
             num_chunks=config_data.get("clap", {}).get("num_chunks", 3),
             max_load_duration_s=config_data.get("clap", {}).get("max_load_duration_s", 120)
+        )
+
+        muq_config = MuQConfig(
+            model_id=config_data.get("muq", {}).get("model_id", "OpenMuQ/MuQ-large-v1"),
+            target_sr=config_data.get("muq", {}).get("target_sr", 16000),
+            chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 10),
+            num_chunks=config_data.get("muq", {}).get("num_chunks", 3),
+            max_load_duration_s=config_data.get("muq", {}).get("max_load_duration_s", 120)
         )
 
         chroma_config = ChromaConfig(
@@ -200,7 +253,9 @@ class MyceliumConfig:
         cfg = cls(
             media_server=media_server,
             plex=plex_config,
+            embedding=embedding_config,
             clap=clap_config,
+            muq=muq_config,
             chroma=chroma_config,
             database=database_config,
             api=api_config,
@@ -237,7 +292,9 @@ class MyceliumConfig:
         config_dict = {
             "media_server": asdict(self.media_server, dict_factory=custom_dict_factory),
             "plex": asdict(self.plex),
+            "embedding": asdict(self.embedding),
             "clap": asdict(self.clap),
+            "muq": asdict(self.muq),
             "chroma": asdict(self.chroma),
             "database": asdict(self.database),
             "api": asdict(self.api),
@@ -271,12 +328,22 @@ class MyceliumConfig:
                 "collection_name": self.chroma.collection_name,
                 "batch_size": self.chroma.batch_size
             },
+            "embedding": {
+                "type": self.embedding.type
+            },
             "clap": {
                 "model_id": self.clap.model_id,
                 "target_sr": self.clap.target_sr,
                 "chunk_duration_s": self.clap.chunk_duration_s,
                 "num_chunks": self.clap.num_chunks,
                 "max_load_duration_s": self.clap.max_load_duration_s
+            },
+            "muq": {
+                "model_id": self.muq.model_id,
+                "target_sr": self.muq.target_sr,
+                "chunk_duration_s": self.muq.chunk_duration_s,
+                "num_chunks": self.muq.num_chunks,
+                "max_load_duration_s": self.muq.max_load_duration_s
             },
             "logging": {
                 "level": self.logging.level
@@ -330,10 +397,13 @@ class MyceliumConfig:
 
 # Export all necessary components
 __all__ = [
+    "EmbeddingModelType",
+    "EmbeddingConfig",
     "MediaServerConfig",
     "MyceliumConfig",
     "PlexConfig",
     "CLAPConfig",
+    "MuQConfig",
     "ChromaConfig",
     "DatabaseConfig",
     "APIConfig",

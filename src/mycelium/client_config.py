@@ -9,6 +9,12 @@ from typing import Optional
 import yaml
 
 
+class EmbeddingModelType:
+    """Supported embedding model types."""
+    CLAP = "clap"
+    MUQ = "muq"
+
+
 def get_user_data_dir() -> Path:
     """Get the user data directory for Mycelium (platform-specific)."""
     if os.name == 'nt':  # Windows
@@ -65,6 +71,30 @@ class CLAPConfig:
 
 
 @dataclass
+class MuQConfig:
+    """Configuration for MuQ model (pure acoustic embeddings)."""
+    model_id: str = "OpenMuQ/MuQ-large-v1"
+    target_sr: int = 16000
+    chunk_duration_s: int = 10
+    num_chunks: int = 3
+    max_load_duration_s: Optional[int] = 120
+
+
+@dataclass
+class EmbeddingConfig:
+    """Configuration for embedding model selection."""
+    type: str = EmbeddingModelType.CLAP
+
+    def __post_init__(self):
+        valid_types = {EmbeddingModelType.CLAP, EmbeddingModelType.MUQ}
+        if self.type not in valid_types:
+            raise ValueError(
+                f"Invalid embedding model type '{self.type}'. "
+                f"Must be one of: {', '.join(sorted(valid_types))}"
+            )
+
+
+@dataclass
 class ClientConfig:
     """Configuration for client worker connections."""
     server_host: str = "localhost"
@@ -94,10 +124,19 @@ class LoggingConfig:
 @dataclass
 class MyceliumClientConfig:
     """Client-specific configuration class containing only settings relevant to GPU workers."""
+    embedding: EmbeddingConfig
     clap: CLAPConfig
+    muq: MuQConfig
     client: ClientConfig
     client_api: ClientAPIConfig
     logging: LoggingConfig
+
+    @property
+    def active_model_id(self) -> str:
+        """Get the model_id for the currently selected embedding model."""
+        if self.embedding.type == EmbeddingModelType.MUQ:
+            return self.muq.model_id
+        return self.clap.model_id
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumClientConfig":
@@ -113,12 +152,24 @@ class MyceliumClientConfig:
                 config_data = yaml.safe_load(f) or {}
         
         # Load from YAML only - no environment variable fallbacks
+        embedding_config = EmbeddingConfig(
+            type=config_data.get("embedding", {}).get("type", EmbeddingModelType.CLAP)
+        )
+
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
             chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
             num_chunks=config_data.get("clap", {}).get("num_chunks", 3),
             max_load_duration_s=config_data.get("clap", {}).get("max_load_duration_s", 120)
+        )
+
+        muq_config = MuQConfig(
+            model_id=config_data.get("muq", {}).get("model_id", "OpenMuQ/MuQ-large-v1"),
+            target_sr=config_data.get("muq", {}).get("target_sr", 16000),
+            chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 10),
+            num_chunks=config_data.get("muq", {}).get("num_chunks", 3),
+            max_load_duration_s=config_data.get("muq", {}).get("max_load_duration_s", 120)
         )
         
         client_config = ClientConfig(
@@ -149,7 +200,9 @@ class MyceliumClientConfig:
         )
         
         cfg = cls(
+            embedding=embedding_config,
             clap=clap_config,
+            muq=muq_config,
             client=client_config,
             client_api=client_api_config,
             logging=logging_config
@@ -173,7 +226,9 @@ class MyceliumClientConfig:
             config_path = get_client_config_file_path()
         
         config_dict = {
-            "clap": asdict(self.clap), 
+            "embedding": asdict(self.embedding),
+            "clap": asdict(self.clap),
+            "muq": asdict(self.muq),
             "client": asdict(self.client),
             "client_api": asdict(self.client_api),
             "logging": asdict(self.logging)
@@ -198,12 +253,22 @@ class MyceliumClientConfig:
                 "host": self.client_api.host,
                 "port": self.client_api.port
             },
+            "embedding": {
+                "type": self.embedding.type
+            },
             "clap": {
                 "model_id": self.clap.model_id,
                 "target_sr": self.clap.target_sr,
                 "chunk_duration_s": self.clap.chunk_duration_s,
                 "num_chunks": self.clap.num_chunks,
                 "max_load_duration_s": self.clap.max_load_duration_s
+            },
+            "muq": {
+                "model_id": self.muq.model_id,
+                "target_sr": self.muq.target_sr,
+                "chunk_duration_s": self.muq.chunk_duration_s,
+                "num_chunks": self.muq.num_chunks,
+                "max_load_duration_s": self.muq.max_load_duration_s
             },
             "logging": {
                 "level": self.logging.level

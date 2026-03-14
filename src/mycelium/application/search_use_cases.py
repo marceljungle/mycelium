@@ -51,8 +51,18 @@ class MusicSearchUseCase:
         
         return results
     
+    @property
+    def supports_text_search(self) -> bool:
+        """Whether the underlying embedding generator supports text search."""
+        return self.embedding_generator.supports_text_search
+
     def search_by_text(self, query_text: str, n_results: int = 10) -> List[SearchResult]:
         """Find songs that match a text description."""
+        if not self.supports_text_search:
+            raise NotImplementedError(
+                "The current embedding model does not support text-based search. "
+                "Switch to a model like CLAP that supports text embeddings."
+            )
         self.logger.info(f"Searching for songs matching: '{query_text}'")
         
         # Generate embedding for the text query

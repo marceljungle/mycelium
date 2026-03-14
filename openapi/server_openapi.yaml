@@ -2,10 +2,21 @@ openapi: 3.1.0
 info:
   title: Mycelium API
   version: 0.1.0
-  description: Plex music collection and recommendation system using CLAP embeddings
+  description: Plex music collection and recommendation system using audio embeddings
 servers:
   - url: http://localhost:8000
 paths:
+  /api/capabilities:
+    get:
+      summary: Get embedding model capabilities
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
   /api/library/stats:
     get:
       summary: Get library statistics
@@ -413,6 +424,22 @@ components:
         num_chunks: { type: integer }
         max_load_duration_s: { type: integer, nullable: true }
       required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    MuqSection:
+      type: object
+      properties:
+        model_id: { type: string }
+        target_sr: { type: integer }
+        chunk_duration_s: { type: integer }
+        num_chunks: { type: integer }
+        max_load_duration_s: { type: integer, nullable: true }
+      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    EmbeddingSection:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [clap, muq]
+      required: [type]
     LoggingSection:
       type: object
       properties:
@@ -426,9 +453,11 @@ components:
         server: { $ref: '#/components/schemas/ServerSection' }
         api: { $ref: '#/components/schemas/APISection' }
         chroma: { $ref: '#/components/schemas/ChromaSection' }
+        embedding: { $ref: '#/components/schemas/EmbeddingSection' }
         clap: { $ref: '#/components/schemas/ClapSection' }
+        muq: { $ref: '#/components/schemas/MuqSection' }
         logging: { $ref: '#/components/schemas/LoggingSection' }
-      required: [media_server, plex, server, api, chroma, clap, logging]
+      required: [media_server, plex, server, api, chroma, embedding, clap, muq, logging]
     ScanLibraryResponse:
       type: object
       properties:
@@ -489,8 +518,21 @@ components:
         plex: { type: object, additionalProperties: true }
         api: { type: object, additionalProperties: true }
         chroma: { type: object, additionalProperties: true }
+        embedding: { type: object, additionalProperties: true }
         clap: { type: object, additionalProperties: true }
+        muq: { type: object, additionalProperties: true }
         server: { type: object, additionalProperties: true }
         logging: { type: object, additionalProperties: true }
         database: { type: object, additionalProperties: true, nullable: true }
       required: [media_server, plex, api, chroma, clap, server, logging]
+    CapabilitiesResponse:
+      type: object
+      properties:
+        embedding_model_type:
+          type: string
+          enum: [clap, muq]
+        model_id: { type: string }
+        supports_text_search: { type: boolean }
+        supports_audio_search: { type: boolean }
+        supports_similar_tracks: { type: boolean }
+      required: [embedding_model_type, model_id, supports_text_search, supports_audio_search, supports_similar_tracks]

@@ -15,7 +15,10 @@ from mycelium.api.generated_sources.worker_schemas.models import (
     WorkerConfigResponse,
     SaveConfigResponse,
 )
-from ..client_config import CLAPConfig, ClientConfig, ClientAPIConfig, LoggingConfig, MyceliumClientConfig
+from ..client_config import (
+    CLAPConfig, ClientConfig, ClientAPIConfig, EmbeddingConfig, EmbeddingModelType,
+    LoggingConfig, MuQConfig, MyceliumClientConfig,
+)
 # Setup logger for this module
 logger = logging.getLogger(__name__)
 
@@ -132,13 +135,21 @@ async def save_config(config_request: WorkerConfigRequest):
     """Save client configuration to YAML file and hot-reload the application."""
     try:
         logger.info("Client configuration save request received")
+        embedding_config = EmbeddingConfig(
+            **dict(config_request.embedding)
+        ) if hasattr(config_request, 'embedding') and config_request.embedding else EmbeddingConfig()
         clap_config = CLAPConfig(**dict(config_request.clap))
+        muq_config = MuQConfig(
+            **dict(config_request.muq)
+        ) if hasattr(config_request, 'muq') and config_request.muq else MuQConfig()
         client_config = ClientConfig(**dict(config_request.client))
         client_api_config = ClientAPIConfig(**dict(config_request.client_api))
         logging_config = LoggingConfig(**dict(config_request.logging))
         
         yaml_config = MyceliumClientConfig(
+            embedding=embedding_config,
             clap=clap_config,
+            muq=muq_config,
             client=client_config,
             client_api=client_api_config,
             logging=logging_config

@@ -274,10 +274,36 @@ export default function ClientSettingsPage() {
               </div>
             </div>
 
-            {/* CLAP Configuration */}
+            {/* Embedding Model Selection */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🧠 AI Model (CLAP)
+                🧠 AI Embedding Model
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Model Type
+                  </label>
+                  <select
+                    value={config.embedding?.type ?? 'clap'}
+                    onChange={(e) => updateConfig('embedding', 'type', e.target.value as 'clap' | 'muq')}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="clap">CLAP (Text + Audio Search)</option>
+                    <option value="muq">MuQ (Audio-Only, Higher Quality Embeddings)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Must match the server&apos;s embedding model type.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* CLAP Configuration */}
+            {(config.embedding?.type ?? 'clap') === 'clap' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 CLAP Settings
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
@@ -352,6 +378,87 @@ export default function ClientSettingsPage() {
                 </div>
               </div>
             </div>
+            )}
+
+            {/* MuQ Configuration */}
+            {config.embedding?.type === 'muq' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 MuQ Settings
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Model ID
+                  </label>
+                  <input
+                    type="text"
+                    value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-v1'}
+                    onChange={(e) => updateConfig('muq', 'model_id', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Sample Rate
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.target_sr ?? 16000}
+                    onChange={(e) => updateConfig('muq', 'target_sr', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Chunk Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.chunk_duration_s ?? 10}
+                    onChange={(e) => updateConfig('muq', 'chunk_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="30"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Number of Chunks
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.num_chunks ?? 3}
+                    onChange={(e) => updateConfig('muq', 'num_chunks', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="10"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Number of audio chunks to extract per track
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Max Load Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.max_load_duration_s ?? 120}
+                    onChange={(e) => updateConfig('muq', 'max_load_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="10"
+                    max="600"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Maximum seconds of audio to load per track
+                  </p>
+                </div>
+              </div>
+            </div>
+            )}
 
             {/* Logging Configuration */}
             <div className="space-y-4">

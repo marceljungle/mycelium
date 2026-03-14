@@ -53,8 +53,11 @@ from ..config import (
     CLAPConfig,
     ChromaConfig,
     DatabaseConfig,
+    EmbeddingConfig,
+    EmbeddingModelType,
     LoggingConfig,
     MediaServerConfig,
+    MuQConfig,
     MyceliumConfig,
     PlexConfig,
     ServerConfig,
@@ -187,6 +190,19 @@ async def root():
     """Redirect root to frontend application."""
     return RedirectResponse("/app")
 
+
+@app.get("/api/capabilities")
+async def get_capabilities():
+    """Get the capabilities of the current embedding model configuration."""
+    return {
+        "embedding_model_type": config.embedding.type,
+        "model_id": config.active_model_id,
+        "supports_text_search": service.supports_text_search,
+        "supports_audio_search": True,
+        "supports_similar_tracks": True,
+    }
+
+
 @app.get("/api/library/stats", response_model=LibraryStatsResponse)
 @with_service_lock
 async def get_library_stats():
@@ -206,6 +222,14 @@ async def search_by_text_get(
 ):
     """Search for music tracks by text description (GET endpoint)."""
     logger.info(f"Text search GET request - q: '{q}', n_results: {n_results}")
+
+    # Check if the current model supports text search
+    if not service.supports_text_search:
+        raise HTTPException(
+            status_code=400,
+            detail="Text search is not supported by the current embedding model. "
+                   "Switch to a model like CLAP that supports text embeddings."
+        )
 
     try:
         # Check if there are active workers
@@ -401,7 +425,13 @@ async def save_config(config_request: ConfigRequest):
 
         media_server_config = MediaServerConfig(**config_request.media_server)
         plex_config = PlexConfig(**config_request.plex)
+        embedding_config = EmbeddingConfig(
+            **config_request.embedding
+        ) if hasattr(config_request, 'embedding') and config_request.embedding else EmbeddingConfig()
         clap_config = CLAPConfig(**config_request.clap)
+        muq_config = MuQConfig(
+            **config_request.muq
+        ) if hasattr(config_request, 'muq') and config_request.muq else MuQConfig()
         chroma_config = ChromaConfig(**config_request.chroma)
         database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
@@ -411,7 +441,9 @@ async def save_config(config_request: ConfigRequest):
         yaml_config = MyceliumConfig(
             media_server=media_server_config,
             plex=plex_config,
+            embedding=embedding_config,
             clap=clap_config,
+            muq=muq_config,
             chroma=chroma_config,
             database=database_config,
             api=api_config,
@@ -975,6 +1007,12 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
         if not request.query:
             raise HTTPException(
                 status_code=400, detail="Query is required for text search"
+            )
+
+        if not service.supports_text_search:
+            raise HTTPException(
+                status_code=400,
+                detail="Text search is not supported by the current embedding model."
             )
 
         logger.info(f"Starting server-side text search for query: '{request.query}'")

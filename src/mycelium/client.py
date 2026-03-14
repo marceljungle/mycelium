@@ -14,9 +14,10 @@ from typing import Optional, List
 
 import requests
 
+from mycelium.application.embedding_factory import create_embedding_generator
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
-from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
+from mycelium.domain.repositories import EmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class MyceliumClient:
 
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-        self.device = CLAPEmbeddingGenerator.get_best_device()
+        self.device = EmbeddingGenerator.get_best_device()
 
         self.job_queue: Queue[dict] = Queue(maxsize=self.config.client.job_queue_size)
         self.download_queue: Queue[DownloadedJob] = Queue(maxsize=self.download_queue_size)
@@ -63,11 +64,8 @@ class MyceliumClient:
         self.download_threads: List[threading.Thread] = []
         self.stop_event = threading.Event()
 
-        self.clap_embedding_generator = CLAPEmbeddingGenerator(model_id=self.config.clap.model_id,
-                                                               target_sr=self.config.clap.target_sr,
-                                                               chunk_duration_s=self.config.clap.chunk_duration_s,
-                                                               num_chunks=self.config.clap.num_chunks,
-                                                               max_load_duration_s=self.config.clap.max_load_duration_s)
+        # Create embedding generator based on configured model type
+        self.embedding_generator = create_embedding_generator(self.config)
 
         logging.info("Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
@@ -128,12 +126,23 @@ class MyceliumClient:
             logging.info("Reloading client configuration...")
             new_config = MyceliumClientConfig.load_from_yaml()
 
-            # Check for CLAP model changes
-            clap_changed = (
-                new_config.clap.model_id != self.config.clap.model_id or
-                new_config.clap.target_sr != self.config.clap.target_sr or
-                new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
+            # Check for embedding model changes
+            embedding_changed = (
+                new_config.embedding.type != self.config.embedding.type or
+                new_config.active_model_id != self.config.active_model_id
             )
+            # Also check model-specific params for the active model type
+            if not embedding_changed:
+                if new_config.embedding.type == "clap":
+                    embedding_changed = (
+                        new_config.clap.target_sr != self.config.clap.target_sr or
+                        new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
+                    )
+                elif new_config.embedding.type == "muq":
+                    embedding_changed = (
+                        new_config.muq.target_sr != self.config.muq.target_sr or
+                        new_config.muq.chunk_duration_s != self.config.muq.chunk_duration_s
+                    )
 
             # Check for client configuration changes that require worker restart
             client_changed = (
@@ -144,17 +153,11 @@ class MyceliumClient:
                 new_config.client.job_queue_size != self.config.client.job_queue_size
             )
 
-            if clap_changed:
-                logging.info("CLAP configuration changed, recreating embedding generator...")
-                self.clap_embedding_generator.unload_model()
-                self.clap_embedding_generator = CLAPEmbeddingGenerator(
-                    model_id=new_config.clap.model_id,
-                    target_sr=new_config.clap.target_sr,
-                    chunk_duration_s=new_config.clap.chunk_duration_s,
-                    num_chunks=new_config.clap.num_chunks,
-                    max_load_duration_s=new_config.clap.max_load_duration_s
-                )
-                logging.info("CLAP embedding generator updated.")
+            if embedding_changed:
+                logging.info("Embedding configuration changed, recreating embedding generator...")
+                self.embedding_generator.unload_model()
+                self.embedding_generator = create_embedding_generator(new_config)
+                logging.info("Embedding generator updated.")
 
             if client_changed:
                 logging.warning("Client configuration changed. Some changes require restart:")
@@ -424,7 +427,7 @@ class MyceliumClient:
         
         try:
             # Generate embeddings in batch
-            embeddings = self.clap_embedding_generator.generate_embedding_batch(audio_files)
+            embeddings = self.embedding_generator.generate_embedding_batch(audio_files)
             
             # Submit results
             for job, embedding in zip(job_metadata, embeddings):
@@ -453,6 +456,14 @@ class MyceliumClient:
     
     def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
         """Process a batch of text embedding jobs."""
+        if not self.embedding_generator.supports_text_search:
+            # Model doesn't support text search — reject all jobs
+            for job in text_jobs:
+                self.submit_result(
+                    job.task_id, job.track_id, None,
+                    "Current embedding model does not support text search"
+                )
+            return
         self._process_text_batch_gpu(text_jobs)
 
     
@@ -476,7 +487,7 @@ class MyceliumClient:
         
         try:
             # Generate embeddings in batch
-            embeddings = self.clap_embedding_generator.generate_text_embedding_batch(text_queries)
+            embeddings = self.embedding_generator.generate_text_embedding_batch(text_queries)
             
             # Submit results
             for job, embedding in zip(job_metadata, embeddings):
@@ -544,7 +555,7 @@ class MyceliumClient:
         finally:
             self._log_queue_status("shutdown")
             self._stop_workers()
-            self.clap_embedding_generator.unload_model()
+            self.embedding_generator.unload_model()
             logging.info("Worker stopped")
 
 

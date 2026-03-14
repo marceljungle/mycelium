@@ -66,8 +66,22 @@ class EmbeddingRepository(ABC):
 
 
 class EmbeddingGenerator(ABC):
-    """Interface for generating embeddings from audio files."""
+    """Interface for generating embeddings from audio files.
     
+    Implementations must support audio embedding generation. Text embedding
+    generation is optional — check `supports_text_search` before calling
+    text methods.
+    """
+    
+    @property
+    def supports_text_search(self) -> bool:
+        """Whether this generator supports text-to-embedding conversion.
+        
+        Models like CLAP support both text and audio embeddings.
+        Models like MuQ only support audio embeddings.
+        """
+        return False
+
     @abstractmethod
     def generate_embedding(self, filepath: Path) -> Optional[List[float]]:
         """Generate embedding for an audio file."""
@@ -78,14 +92,33 @@ class EmbeddingGenerator(ABC):
         """Generate embeddings for multiple audio files in a batch."""
         pass
     
-    @abstractmethod
     def generate_text_embedding(self, text: str) -> Optional[List[float]]:
-        """Generate embedding for text description."""
-        pass
+        """Generate embedding for text description.
+        
+        Only available when `supports_text_search` is True.
+        
+        Raises:
+            NotImplementedError: If the model does not support text embeddings.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support text embeddings"
+        )
+
+    def generate_text_embedding_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+        """Generate embeddings for multiple text queries in a batch.
+        
+        Only available when `supports_text_search` is True.
+        
+        Raises:
+            NotImplementedError: If the model does not support text embeddings.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support text embeddings"
+        )
 
     @abstractmethod
-    def generate_text_embedding_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
-        """Generate embeddings for multiple text queries in a batch."""
+    def unload_model(self) -> None:
+        """Unload model to free GPU memory."""
         pass
 
     @staticmethod

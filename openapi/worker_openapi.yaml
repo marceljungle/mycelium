@@ -68,6 +68,22 @@ components:
         num_chunks: { type: integer }
         max_load_duration_s: { type: integer, nullable: true }
       required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    WorkerMuqSection:
+      type: object
+      properties:
+        model_id: { type: string }
+        target_sr: { type: integer }
+        chunk_duration_s: { type: integer }
+        num_chunks: { type: integer }
+        max_load_duration_s: { type: integer, nullable: true }
+      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+    WorkerEmbeddingSection:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [clap, muq]
+      required: [type]
     WorkerLoggingSection:
       type: object
       properties:
@@ -78,15 +94,19 @@ components:
       properties:
         client: { $ref: '#/components/schemas/WorkerClientSection' }
         client_api: { $ref: '#/components/schemas/WorkerClientAPISection' }
+        embedding: { $ref: '#/components/schemas/WorkerEmbeddingSection' }
         clap: { $ref: '#/components/schemas/WorkerClapSection' }
+        muq: { $ref: '#/components/schemas/WorkerMuqSection' }
         logging: { $ref: '#/components/schemas/WorkerLoggingSection' }
-      required: [client, client_api, clap, logging]
+      required: [client, client_api, embedding, clap, muq, logging]
     WorkerConfigRequest:
       type: object
       properties:
         client: { type: object, additionalProperties: true }
         client_api: { type: object, additionalProperties: true }
+        embedding: { type: object, additionalProperties: true }
         clap: { type: object, additionalProperties: true }
+        muq: { type: object, additionalProperties: true }
         logging: { type: object, additionalProperties: true }
       required: [client, client_api, clap, logging]
     SaveConfigResponse:

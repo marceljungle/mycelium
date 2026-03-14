@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
+from mycelium.application.embedding_factory import create_embedding_generator
 from mycelium.application.search_use_cases import (
     MusicSearchUseCase
 )
@@ -17,7 +18,6 @@ from mycelium.config import MyceliumConfig
 from mycelium.domain.models import Playlist
 from mycelium.domain.models import Track, TrackEmbedding, SearchResult
 from mycelium.infrastructure.plex_adapter import PlexMusicRepository
-from mycelium.infrastructure.clap_adapter import CLAPEmbeddingGenerator
 from mycelium.infrastructure.chroma_adapter import ChromaEmbeddingRepository
 from mycelium.infrastructure import (
     TrackDatabase
@@ -42,16 +42,13 @@ class MyceliumService:
             music_library_name=config.plex.music_library_name
         )
 
-        self.embedding_generator = CLAPEmbeddingGenerator(model_id=config.clap.model_id,
-                                                          target_sr=config.clap.target_sr,
-                                                          chunk_duration_s=config.clap.chunk_duration_s,
-                                                          num_chunks=config.clap.num_chunks,
-                                                          max_load_duration_s=config.clap.max_load_duration_s)
+        # Create embedding generator based on configured model type
+        self.embedding_generator = create_embedding_generator(config)
 
         self.embedding_repository = ChromaEmbeddingRepository(
             db_path=config.chroma.get_db_path(),
             collection_name=config.chroma.collection_name,
-            model_id=config.clap.model_id,
+            model_id=config.active_model_id,
             batch_size=config.chroma.batch_size,
             media_server_type=config.media_server.type
         )
@@ -72,13 +69,18 @@ class MyceliumService:
             embedding_generator=self.embedding_generator,
             embedding_repository=self.embedding_repository,
             track_database=self.track_database,
-            model_id=config.clap.model_id,
+            model_id=config.active_model_id,
             gpu_batch_size=config.server.gpu_batch_size
         )
         self.progress_tracker = ProcessingProgressUseCase(track_database=self.track_database)
 
         # Processing state tracking
         self._processing_in_progress = False
+
+    @property
+    def supports_text_search(self) -> bool:
+        """Whether the current embedding model supports text-based search."""
+        return self.embedding_generator.supports_text_search
 
 
 
@@ -228,12 +230,12 @@ class MyceliumService:
             track_embedding = TrackEmbedding(
                 track=track,
                 embedding=embedding,
-                model_id=self._config.clap.model_id
+                model_id=self._config.active_model_id
             )
             self.embedding_repository.save_embedding(track_embedding)
             # Also mark as processed in track database
             self.track_database.mark_track_processed(media_server_rating_key=track_id,
-                                                     model_id=self._config.clap.model_id)
+                                                     model_id=self._config.active_model_id)
 
     def compute_single_embedding(self, audio_filepath: str) -> List[float]:
         """Compute embedding for a single audio file."""
@@ -268,7 +270,7 @@ class MyceliumService:
                 "message": "Worker processing not initialized",
                 "tasks_created": 0
             }
-        return self.worker_processing.create_worker_tasks(max_tracks=max_tracks, model_id=self._config.clap.model_id)
+        return self.worker_processing.create_worker_tasks(max_tracks=max_tracks, model_id=self._config.active_model_id)
 
     def stop_worker_processing(self) -> Dict[str, Any]:
         """Stop worker processing by clearing pending tasks."""
