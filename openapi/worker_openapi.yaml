@@ -65,18 +65,14 @@ components:
         model_id: { type: string }
         target_sr: { type: integer }
         chunk_duration_s: { type: integer }
-        num_chunks: { type: integer }
-        max_load_duration_s: { type: integer, nullable: true }
-      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+      required: [model_id, target_sr, chunk_duration_s]
     WorkerMuqSection:
       type: object
       properties:
         model_id: { type: string }
         target_sr: { type: integer }
         chunk_duration_s: { type: integer }
-        num_chunks: { type: integer }
-        max_load_duration_s: { type: integer, nullable: true }
-      required: [model_id, target_sr, chunk_duration_s, num_chunks]
+      required: [model_id, target_sr, chunk_duration_s]
     WorkerEmbeddingSection:
       type: object
       properties:

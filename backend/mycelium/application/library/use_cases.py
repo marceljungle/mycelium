@@ -3,11 +3,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from .job_queue import JobQueueService
-from ..domain.models import TrackEmbedding
-from ..domain.repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator
-from ..domain.worker import ContextType
-from ..infrastructure.track_database import TrackDatabase
+from ..jobs.queue import JobQueueService
+from ...domain.models import TrackEmbedding
+from ...domain.repositories import MediaServerRepository, EmbeddingRepository, EmbeddingGenerator
+from ...domain.worker import ContextType
+from ...infrastructure.db.tracks import TrackDatabase
 
 logger = logging.getLogger(__name__)
 

@@ -79,19 +79,15 @@ class CLAPConfig:
     """Configuration for CLAP model."""
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
-    chunk_duration_s: int = 10
-    num_chunks: int = 3
-    max_load_duration_s: Optional[int] = 120
+    chunk_duration_s: int = 30
 
 
 @dataclass
 class MuQConfig:
     """Configuration for MuQ model (pure acoustic embeddings)."""
     model_id: str = "OpenMuQ/MuQ-large-v1"
-    target_sr: int = 16000
-    chunk_duration_s: int = 10
-    num_chunks: int = 3
-    max_load_duration_s: Optional[int] = 120
+    target_sr: int = 24000
+    chunk_duration_s: int = 30
 
 
 @dataclass
@@ -208,17 +204,13 @@ class MyceliumConfig:
         clap_config = CLAPConfig(
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 10),
-            num_chunks=config_data.get("clap", {}).get("num_chunks", 3),
-            max_load_duration_s=config_data.get("clap", {}).get("max_load_duration_s", 120)
+            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 30),
         )
 
         muq_config = MuQConfig(
             model_id=config_data.get("muq", {}).get("model_id", "OpenMuQ/MuQ-large-v1"),
-            target_sr=config_data.get("muq", {}).get("target_sr", 16000),
-            chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 10),
-            num_chunks=config_data.get("muq", {}).get("num_chunks", 3),
-            max_load_duration_s=config_data.get("muq", {}).get("max_load_duration_s", 120)
+            target_sr=config_data.get("muq", {}).get("target_sr", 24000),
+            chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 30),
         )
 
         chroma_config = ChromaConfig(
@@ -335,15 +327,11 @@ class MyceliumConfig:
                 "model_id": self.clap.model_id,
                 "target_sr": self.clap.target_sr,
                 "chunk_duration_s": self.clap.chunk_duration_s,
-                "num_chunks": self.clap.num_chunks,
-                "max_load_duration_s": self.clap.max_load_duration_s
             },
             "muq": {
                 "model_id": self.muq.model_id,
                 "target_sr": self.muq.target_sr,
                 "chunk_duration_s": self.muq.chunk_duration_s,
-                "num_chunks": self.muq.num_chunks,
-                "max_load_duration_s": self.muq.max_load_duration_s
             },
             "logging": {
                 "level": self.logging.level

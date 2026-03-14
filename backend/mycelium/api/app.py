@@ -46,7 +46,7 @@ from .worker_models import (
     ComputeSearchOnServerRequest,
 )
 
-from ..application.job_queue import JobQueueService
+from ..application.jobs.queue import JobQueueService
 from ..application.services import MyceliumService
 from ..config import (
     APIConfig,

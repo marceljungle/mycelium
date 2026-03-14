@@ -111,10 +111,10 @@ refactor(database): extract track repository interface
 ### Clean Architecture Implementation
 The project follows clean architecture with clear separation of concerns:
 
-- **Domain Layer** (`src/mycelium/domain/`): Core business logic, no external dependencies
-- **Application Layer** (`src/mycelium/application/`): Use cases and orchestration logic
-- **Infrastructure Layer** (`src/mycelium/infrastructure/`): External service adapters
-- **API Layer** (`src/mycelium/api/`): Web interface and endpoint definitions
+- **Domain Layer** (`backend/mycelium/domain/`): Core business logic, no external dependencies
+- **Application Layer** (`backend/mycelium/application/`): Use cases and orchestration logic
+- **Infrastructure Layer** (`backend/mycelium/infrastructure/`): External service adapters
+- **API Layer** (`backend/mycelium/api/`): Web interface and endpoint definitions
 
 ### OpenAPI-First Development
 **Critical**: The project uses OpenAPI specifications as the single source of truth for APIs.
@@ -123,7 +123,7 @@ The project follows clean architecture with clear separation of concerns:
 1. **Edit OpenAPI spec first**: Modify `openapi/server_openapi.yaml` or `openapi/worker_openapi.yaml`
 2. **Regenerate clients**: Run `bash openapi/generate.sh` to generate:
    - TypeScript clients (`frontend/src/server_api/generated/`, `frontend/src/worker_api/generated/`)
-   - Python Pydantic models (`src/mycelium/api/generated_sources/`)
+   - Python Pydantic models (`backend/mycelium/api/generated_sources/`)
 3. **Update FastAPI endpoints**: Modify `app.py` or `client_app.py` to implement changes
 4. **Verify compliance**: FastAPI apps load external specs for validation
 5. **Update frontend**: Use generated TypeScript types for type safety
@@ -152,13 +152,13 @@ The project has **TWO separate frontend builds** from the same source:
 
 1. **Server Frontend** (port 8000):
    - Built with `API_BASE_URL=/api` (relative URLs)
-   - Served from `src/mycelium/frontend_dist/`
+   - Served from `backend/mycelium/frontend_dist/`
    - Uses server API client (`@/server_api/client`)
    - Shows server configuration and full library management
 
 2. **Client/Worker Frontend** (port 3001 by default, configurable):
    - Built with `API_BASE_URL=http://localhost:3001/api` (absolute URLs)
-   - Served from `src/mycelium/client_frontend_dist/`
+   - Served from `backend/mycelium/client_frontend_dist/`
    - Uses worker API client (`@/worker_api/client`)
    - Shows only worker configuration (lighter interface)
 
@@ -347,10 +347,10 @@ vim openapi/server_openapi.yaml  # or worker_openapi.yaml
 bash openapi/generate.sh
 # This generates:
 # - TypeScript clients: frontend/src/server_api/generated/ and worker_api/generated/
-# - Python models: src/mycelium/api/generated_sources/server_schemas/ and worker_schemas/
+# - Python models: backend/mycelium/api/generated_sources/server_schemas/ and worker_schemas/
 
 # 3. Update FastAPI endpoint implementation
-vim src/mycelium/api/app.py  # or client_app.py
+vim backend/mycelium/api/app.py  # or client_app.py
 
 # 4. Update frontend to use new types
 # Generated TypeScript types are automatically available
@@ -386,21 +386,30 @@ curl http://localhost:8000/api/your/new/endpoint
 ### Directory Organization
 ```
 mycelium/
-├── src/mycelium/           # Python backend (clean architecture)
+├── backend/mycelium/           # Python backend (clean architecture)
 │   ├── domain/             # Core business logic and models (no external deps)
 │   │   ├── models.py       # Domain entities (Track, Playlist, etc.)
 │   │   ├── repositories.py # Repository interfaces  
 │   │   └── worker.py       # Worker domain logic
 │   ├── application/        # Use cases and orchestration
 │   │   ├── services.py     # Main application service
-│   │   ├── search_use_cases.py    # Music search use case implementations
-│   │   ├── library_management_use_cases.py  # Library scanning and processing workflows
-│   │   └── job_queue.py    # Worker coordination and task distribution
+│   │   ├── search/         # Music search use cases
+│   │   │   └── use_cases.py
+│   │   ├── library/        # Library scanning and processing workflows
+│   │   │   └── use_cases.py
+│   │   ├── embedding/      # Embedding generator factory
+│   │   │   └── factory.py
+│   │   └── jobs/           # Worker coordination and task distribution
+│   │       └── queue.py
 │   ├── infrastructure/     # External service adapters
-│   │   ├── plex_adapter.py     # Plex API integration
-│   │   ├── clap_adapter.py     # CLAP model integration
-│   │   ├── chroma_adapter.py   # Vector database operations
-│   │   └── track_database.py   # Track metadata database
+│   │   ├── plex/           # Plex API integration
+│   │   │   └── adapter.py
+│   │   ├── model/          # Embedding model implementations
+│   │   │   ├── clap.py     # CLAP model integration
+│   │   │   └── muq.py      # MuQ model integration
+│   │   └── db/             # Database adapters
+│   │       ├── chroma.py   # ChromaDB vector database operations
+│   │       └── tracks.py   # SQLite track metadata database
 │   ├── api/                # FastAPI web endpoints
 │   │   ├── app.py          # Main server API application and routes
 │   │   ├── client_app.py   # Worker/client API for configuration
@@ -436,8 +445,8 @@ mycelium/
 │   ├── export_schema.py    # Export schemas from FastAPI
 │   └── fix_pydantic_v2.py  # Convert Pydantic v1 to v2 syntax
 ├── build.sh                # Orchestrator: OpenAPI + frontends + optional wheel
-├── build_frontend.sh       # Build server frontend (output: src/mycelium/frontend_dist)
-├── build_client_frontend.sh # Build worker frontend (output: src/mycelium/client_frontend_dist)
+├── build_frontend.sh       # Build server frontend (output: backend/mycelium/frontend_dist)
+├── build_client_frontend.sh # Build worker frontend (output: backend/mycelium/client_frontend_dist)
 ├── build_wheel.sh          # Build Python wheel with both frontends
 ├── config.example.yml      # Server configuration template
 ├── client_config.example.yml # Worker configuration template
@@ -460,13 +469,13 @@ The same React codebase is built **twice** with different API configurations:
 
 1. **Server Frontend Build** (`build_frontend.sh`):
    - Environment: `API_BASE_URL=/api` (relative)
-   - Output: `src/mycelium/frontend_dist/`
+   - Output: `backend/mycelium/frontend_dist/`
    - Used by: `mycelium-ai server` command
    - Shows: Full UI with SettingsPage (server config)
 
 2. **Client Frontend Build** (`build_client_frontend.sh`):
    - Environment: `API_BASE_URL=http://localhost:3001/api` (absolute)
-   - Output: `src/mycelium/client_frontend_dist/`
+   - Output: `backend/mycelium/client_frontend_dist/`
    - Used by: `mycelium-ai client` command
    - Shows: Minimal UI with ClientSettingsPage (worker config)
 
@@ -511,7 +520,7 @@ from pydantic import BaseModel
 
 # 3. Local application imports
 from mycelium.domain.models import Track
-from mycelium.infrastructure.track_database import TrackDatabase
+from mycelium.infrastructure.db.tracks import TrackDatabase
 ```
 
 ```tsx
@@ -549,12 +558,12 @@ The project uses a multi-stage build system with shell scripts:
 
 3. **`build_frontend.sh`** - Server frontend build:
    - Runs `npm run build` in frontend directory
-   - Copies output to `src/mycelium/frontend_dist/`
+   - Copies output to `backend/mycelium/frontend_dist/`
    - Used by server mode (port 8000)
 
 4. **`build_client_frontend.sh`** - Worker frontend build:
    - Runs `npm run build` with different `API_BASE_URL`
-   - Copies output to `src/mycelium/client_frontend_dist/`
+   - Copies output to `backend/mycelium/client_frontend_dist/`
    - Used by client mode (port 3001)
 
 5. **`build_wheel.sh`** - Python packaging:
@@ -563,7 +572,7 @@ The project uses a multi-stage build system with shell scripts:
 
 ### Package Contents
 The Python wheel (`mycelium-ai`) includes:
-- Python source code from `src/mycelium/`
+- Python source code from `backend/mycelium/`
 - Server frontend static files in `mycelium/frontend_dist/`
 - Client frontend static files in `mycelium/client_frontend_dist/`
 - OpenAPI-generated Python models in `mycelium/api/generated_sources/`
@@ -904,8 +913,8 @@ from mycelium.api.generated_sources.worker_schemas.models import (
 
 ### Build and Deployment Issues
 - **Frontend build succeeds but missing in wheel**: Run `./build.sh --with-wheel` not just `python -m build`
-- **Server mode shows 404 for frontend**: Check that `src/mycelium/frontend_dist/` exists after build
-- **Client mode shows 404 for frontend**: Check that `src/mycelium/client_frontend_dist/` exists after build
+- **Server mode shows 404 for frontend**: Check that `backend/mycelium/frontend_dist/` exists after build
+- **Client mode shows 404 for frontend**: Check that `backend/mycelium/client_frontend_dist/` exists after build
 - **API endpoints return 404**: Verify FastAPI app is loading the correct OpenAPI spec
 - **CORS errors in browser**: Check CORS middleware configuration in `app.py` or `client_app.py`
 
