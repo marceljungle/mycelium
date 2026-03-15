@@ -20,6 +20,8 @@ class ClientWorkerStatus:
     last_job_completed_at: Optional[float] = None
     worker_id: Optional[str] = None
     server_url: Optional[str] = None
+    model_type: Optional[str] = None
+    model_id: Optional[str] = None
 
     def update(self, **kwargs: object) -> None:
         """Atomically update one or more status fields."""
@@ -41,6 +43,8 @@ class ClientWorkerStatus:
                 "last_job_completed_at": self.last_job_completed_at,
                 "worker_id": self.worker_id,
                 "server_url": self.server_url,
+                "model_type": self.model_type,
+                "model_id": self.model_id,
             }
 
 

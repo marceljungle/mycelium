@@ -187,9 +187,6 @@ class WorkerConfigResponse(BaseModel):
 
     client: Dict[str, Any]
     client_api: Dict[str, Any]
-    embedding: Dict[str, Any]
-    clap: Dict[str, Any]
-    muq: Dict[str, Any]
     logging: Dict[str, Any]
 
 
@@ -198,9 +195,6 @@ class WorkerConfigRequest(BaseModel):
 
     client: Dict[str, Any]
     client_api: Dict[str, Any]
-    embedding: Optional[Dict[str, Any]] = None
-    clap: Dict[str, Any]
-    muq: Optional[Dict[str, Any]] = None
     logging: Dict[str, Any]
 
 
@@ -220,6 +214,8 @@ class WorkerProcessingStatus(BaseModel):
     last_job_completed_at: Optional[float] = None
     worker_id: Optional[str] = None
     server_url: Optional[str] = None
+    model_type: Optional[str] = None
+    model_id: Optional[str] = None
 
 
 class ClientStatusResponse(BaseModel):

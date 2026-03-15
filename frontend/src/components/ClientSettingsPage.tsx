@@ -191,6 +191,18 @@ export default function ClientSettingsPage() {
                   ✅ {status.worker.total_jobs_processed} done
                 </span>
               </div>
+
+              {/* Model info (assigned by server) */}
+              {status.worker.model_type && (
+                <>
+                  <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <span title="Embedding model assigned by server">
+                      🎵 {status.worker.model_type.toUpperCase()}: {status.worker.model_id}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -364,132 +376,6 @@ export default function ClientSettingsPage() {
                 </div>
               </div>
             </div>
-
-            {/* Embedding Model Selection */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🧠 AI Embedding Model
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model Type
-                  </label>
-                  <select
-                    value={config.embedding?.type ?? 'clap'}
-                    onChange={(e) => updateConfig('embedding', 'type', e.target.value as 'clap' | 'muq')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="clap">CLAP (Text + Audio Search)</option>
-                    <option value="muq">MuQ (Audio-Only, Higher Quality Embeddings)</option>
-                  </select>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Must match the server&apos;s embedding model type.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* CLAP Configuration */}
-            {(config.embedding?.type ?? 'clap') === 'clap' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🎵 CLAP Settings
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model ID
-                  </label>
-                  <select
-                    value={config.clap.model_id}
-                    onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
-                    <option value="laion/larger_clap_music">CLAP Music (If your library is mostly instrumental/electronic)</option>
-                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused (Trained with general sounds, not only music)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sample Rate
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.target_sr}
-                    onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Chunk Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.chunk_duration_s}
-                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="60"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Duration of each sequential audio window
-                  </p>
-                </div>
-              </div>
-            </div>
-            )}
-
-            {/* MuQ Configuration */}
-            {config.embedding?.type === 'muq' && (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🎵 MuQ Settings
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model ID
-                  </label>
-                  <input
-                    type="text"
-                    value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-v1'}
-                    disabled
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sample Rate
-                  </label>
-                  <input
-                    type="number"
-                    value={config.muq?.target_sr ?? 24000}
-                    onChange={(e) => updateConfig('muq', 'target_sr', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Chunk Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.muq?.chunk_duration_s ?? 30}
-                    onChange={(e) => updateConfig('muq', 'chunk_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="60"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Duration of each sequential audio window
-                  </p>
-                </div>
-              </div>
-            </div>
-            )}
 
             {/* Logging Configuration */}
             <div className="space-y-4">

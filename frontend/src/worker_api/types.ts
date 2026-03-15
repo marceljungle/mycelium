@@ -17,22 +17,6 @@ export interface WorkerClientAPISection {
   port: number;
 }
 
-export interface WorkerEmbeddingSection {
-  type: string;
-}
-
-export interface WorkerClapSection {
-  model_id: string;
-  target_sr: number;
-  chunk_duration_s: number;
-}
-
-export interface WorkerMuqSection {
-  model_id: string;
-  target_sr: number;
-  chunk_duration_s: number;
-}
-
 export interface WorkerLoggingSection {
   level: string;
 }
@@ -44,9 +28,6 @@ export interface WorkerLoggingSection {
 export interface WorkerConfigResponse {
   client: WorkerClientSection;
   client_api: WorkerClientAPISection;
-  embedding: WorkerEmbeddingSection;
-  clap: WorkerClapSection;
-  muq: WorkerMuqSection;
   logging: WorkerLoggingSection;
 }
 
@@ -55,9 +36,6 @@ export interface WorkerConfigResponse {
 export interface WorkerConfigRequest {
   client: Record<string, any>;
   client_api: Record<string, any>;
-  embedding?: Record<string, any>;
-  clap: Record<string, any>;
-  muq?: Record<string, any>;
   logging: Record<string, any>;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -83,6 +61,8 @@ export interface WorkerProcessingStatus {
   last_job_completed_at: number | null;
   worker_id: string | null;
   server_url: string | null;
+  model_type: string | null;
+  model_id: string | null;
 }
 
 export interface ClientStatusResponse {

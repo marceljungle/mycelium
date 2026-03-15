@@ -1,6 +1,6 @@
 """API models for worker coordination."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ class WorkerRegistrationResponse(BaseModel):
     worker_id: str
     registration_time: str
     message: str
+    embedding_config: Dict[str, Any]
 
 
 class JobRequest(BaseModel):

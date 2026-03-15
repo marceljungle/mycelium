@@ -14,7 +14,7 @@ from typing import Optional, List
 
 import requests
 
-from mycelium.application.embedding.factory import create_embedding_generator
+from mycelium.application.embedding.registry import create_embedding_generator as create_from_registry
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
 from mycelium.client_status import worker_status
@@ -43,7 +43,6 @@ class MyceliumClient:
         self.server_host = self.config.client.server_host
         self.server_port = self.config.client.server_port
         self.server_url = f"http://{self.server_host}:{self.server_port}"
-        self.model_id = self.config.clap.model_id
         self.poll_interval = self.config.client.poll_interval
         self.download_queue_size = self.config.client.download_queue_size
         self.download_workers = self.config.client.download_workers
@@ -65,8 +64,10 @@ class MyceliumClient:
         self.download_threads: List[threading.Thread] = []
         self.stop_event = threading.Event()
 
-        # Create embedding generator based on configured model type
-        self.embedding_generator = create_embedding_generator(self.config)
+        # Embedding generator is created after registration once the server
+        # tells us which model to use.
+        self.embedding_generator: Optional[EmbeddingGenerator] = None
+        self._server_embedding_config: Optional[dict] = None
 
         # Publish initial status
         worker_status.update(
@@ -140,39 +141,6 @@ class MyceliumClient:
             logging.info("Reloading client configuration...")
             new_config = MyceliumClientConfig.load_from_yaml()
 
-            # Check for embedding model changes
-            embedding_changed = (
-                new_config.embedding.type != self.config.embedding.type or
-                new_config.active_model_id != self.config.active_model_id
-            )
-            # Also check model-specific params for the active model type
-            if not embedding_changed:
-                if new_config.embedding.type == "clap":
-                    embedding_changed = (
-                        new_config.clap.target_sr != self.config.clap.target_sr or
-                        new_config.clap.chunk_duration_s != self.config.clap.chunk_duration_s
-                    )
-                elif new_config.embedding.type == "muq":
-                    embedding_changed = (
-                        new_config.muq.target_sr != self.config.muq.target_sr or
-                        new_config.muq.chunk_duration_s != self.config.muq.chunk_duration_s
-                    )
-
-            # Check for client configuration changes that require worker restart
-            client_changed = (
-                new_config.client.server_host != self.config.client.server_host or
-                new_config.client.server_port != self.config.client.server_port or
-                new_config.client.download_workers != self.config.client.download_workers or
-                new_config.client.download_queue_size != self.config.client.download_queue_size or
-                new_config.client.job_queue_size != self.config.client.job_queue_size
-            )
-
-            if embedding_changed:
-                logging.info("Embedding configuration changed, recreating embedding generator...")
-                self.embedding_generator.unload_model()
-                self.embedding_generator = create_embedding_generator(new_config)
-                logging.info("Embedding generator updated.")
-
             # Apply server connection changes (hot-reloadable)
             if (new_config.client.server_host != self.config.client.server_host or
                     new_config.client.server_port != self.config.client.server_port):
@@ -181,7 +149,6 @@ class MyceliumClient:
                 self.server_port = new_config.client.server_port
                 self.server_url = f"http://{self.server_host}:{self.server_port}"
                 logging.info(f"Server URL updated: {old_url} -> {self.server_url}")
-                from mycelium.client_status import worker_status
                 worker_status.update(server_url=self.server_url)
 
             # Log changes that still require restart
@@ -208,7 +175,12 @@ class MyceliumClient:
 
 
     def register_with_server(self) -> bool:
-        """Register this worker with the server, retrying on failure."""
+        """Register this worker with the server, retrying on failure.
+
+        On success the server returns the embedding model configuration which
+        is used to create (or recreate) the local embedding generator so the
+        client always uses the same model as the server.
+        """
         delay_seconds = 3
         attempt = 1
         print("Attempting to register with server...")
@@ -223,6 +195,12 @@ class MyceliumClient:
                     timeout=10
                 )
                 response.raise_for_status()
+                data = response.json()
+
+                # Apply the server-provided embedding config
+                embedding_cfg = data.get("embedding_config", {})
+                self._apply_server_embedding_config(embedding_cfg)
+
                 print(f"Successfully registered with server at {self.server_url} (attempt {attempt})")
                 return True
             except requests.exceptions.RequestException as e:
@@ -231,6 +209,36 @@ class MyceliumClient:
             time.sleep(delay_seconds)
             attempt += 1
         return False
+
+    def _apply_server_embedding_config(self, embedding_cfg: dict) -> None:
+        """Create or recreate the embedding generator from server-provided config."""
+        model_type = embedding_cfg.pop("type", None)
+        if not model_type:
+            logging.error("Server registration response missing embedding model type")
+            return
+
+        # Only recreate if the config actually changed
+        if embedding_cfg == self._server_embedding_config and self.embedding_generator is not None:
+            logging.info("Server embedding config unchanged, keeping current generator.")
+            return
+
+        logging.info(
+            f"Server assigned model: type={model_type}, config={embedding_cfg}"
+        )
+
+        if self.embedding_generator is not None:
+            self.embedding_generator.unload_model()
+
+        self.embedding_generator = create_from_registry(
+            model_type=model_type,
+            config_overrides=embedding_cfg,
+        )
+        self._server_embedding_config = embedding_cfg
+
+        worker_status.update(
+            model_type=model_type,
+            model_id=embedding_cfg.get("model_id", ""),
+        )
 
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
@@ -586,7 +594,8 @@ class MyceliumClient:
         finally:
             self._log_queue_status("shutdown")
             self._stop_workers()
-            self.embedding_generator.unload_model()
+            if self.embedding_generator is not None:
+                self.embedding_generator.unload_model()
             worker_status.update(is_running=False, is_processing=False)
             logging.info("Worker stopped")
 

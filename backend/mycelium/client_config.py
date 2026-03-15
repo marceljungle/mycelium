@@ -8,11 +8,6 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from mycelium.application.embedding.registry import (
-    get_model_spec,
-    get_valid_model_types,
-)
-
 
 def get_user_data_dir() -> Path:
     """Get the user data directory for Mycelium (platform-specific)."""
@@ -60,36 +55,6 @@ def get_client_config_file_path() -> Path:
 
 
 @dataclass
-class CLAPConfig:
-    """Configuration for CLAP model."""
-    model_id: str = "laion/larger_clap_music_and_speech"
-    target_sr: int = 48000
-    chunk_duration_s: int = 30
-
-
-@dataclass
-class MuQConfig:
-    """Configuration for MuQ model (pure acoustic embeddings)."""
-    model_id: str = "OpenMuQ/MuQ-large-v1"
-    target_sr: int = 24000
-    chunk_duration_s: int = 30
-
-
-@dataclass
-class EmbeddingConfig:
-    """Configuration for embedding model selection."""
-    type: str = "clap"
-
-    def __post_init__(self) -> None:
-        valid = get_valid_model_types()
-        if self.type not in valid:
-            raise ValueError(
-                f"Invalid embedding model type '{self.type}'. "
-                f"Must be one of: {', '.join(valid)}"
-            )
-
-
-@dataclass
 class ClientConfig:
     """Configuration for client worker connections."""
     server_host: str = "localhost"
@@ -118,29 +83,14 @@ class LoggingConfig:
 
 @dataclass
 class MyceliumClientConfig:
-    """Client-specific configuration class containing only settings relevant to GPU workers."""
-    embedding: EmbeddingConfig
-    clap: CLAPConfig
-    muq: MuQConfig
+    """Client-specific configuration class containing only settings relevant to GPU workers.
+
+    Note: Embedding model configuration is obtained from the server at
+    registration time — the client does NOT store model settings locally.
+    """
     client: ClientConfig
     client_api: ClientAPIConfig
     logging: LoggingConfig
-
-    @property
-    def active_model_id(self) -> str:
-        """Get the model_id for the currently selected embedding model."""
-        return self.get_active_model_config().get(
-            "model_id",
-            get_model_spec(self.embedding.type).default_config.get("model_id", ""),
-        )
-
-    def get_active_model_config(self) -> Dict[str, Any]:
-        """Return the config dict for the currently active model type."""
-        model_type = self.embedding.type
-        section = getattr(self, model_type, None)
-        if section is not None:
-            return asdict(section)
-        return get_model_spec(model_type).default_config.copy()
 
     @classmethod
     def load_from_yaml(cls, config_path: Optional[Path] = None) -> "MyceliumClientConfig":
@@ -156,22 +106,6 @@ class MyceliumClientConfig:
                 config_data = yaml.safe_load(f) or {}
         
         # Load from YAML only - no environment variable fallbacks
-        embedding_config = EmbeddingConfig(
-            type=config_data.get("embedding", {}).get("type", "clap")
-        )
-
-        clap_config = CLAPConfig(
-            model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
-            target_sr=config_data.get("clap", {}).get("target_sr", 48000),
-            chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 30),
-        )
-
-        muq_config = MuQConfig(
-            model_id=config_data.get("muq", {}).get("model_id", "OpenMuQ/MuQ-large-v1"),
-            target_sr=config_data.get("muq", {}).get("target_sr", 24000),
-            chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 30),
-        )
-        
         client_config = ClientConfig(
             server_host=config_data.get("client", {}).get("server_host", "localhost"),
             server_port=config_data.get("client", {}).get("server_port", 8000),
@@ -200,9 +134,6 @@ class MyceliumClientConfig:
         )
         
         cfg = cls(
-            embedding=embedding_config,
-            clap=clap_config,
-            muq=muq_config,
             client=client_config,
             client_api=client_api_config,
             logging=logging_config
@@ -226,9 +157,6 @@ class MyceliumClientConfig:
             config_path = get_client_config_file_path()
         
         config_dict = {
-            "embedding": asdict(self.embedding),
-            "clap": asdict(self.clap),
-            "muq": asdict(self.muq),
             "client": asdict(self.client),
             "client_api": asdict(self.client_api),
             "logging": asdict(self.logging)
@@ -252,19 +180,6 @@ class MyceliumClientConfig:
             "client_api": {
                 "host": self.client_api.host,
                 "port": self.client_api.port
-            },
-            "embedding": {
-                "type": self.embedding.type
-            },
-            "clap": {
-                "model_id": self.clap.model_id,
-                "target_sr": self.clap.target_sr,
-                "chunk_duration_s": self.clap.chunk_duration_s,
-            },
-            "muq": {
-                "model_id": self.muq.model_id,
-                "target_sr": self.muq.target_sr,
-                "chunk_duration_s": self.muq.chunk_duration_s,
             },
             "logging": {
                 "level": self.logging.level

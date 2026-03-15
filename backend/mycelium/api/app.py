@@ -632,6 +632,10 @@ async def register_worker(request: WorkerRegistrationRequest):
             worker_id=worker.id,
             registration_time=worker.registration_time.isoformat(),
             message="Worker registered successfully",
+            embedding_config={
+                "type": config.embedding.type,
+                **config.get_active_model_config(),
+            },
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
