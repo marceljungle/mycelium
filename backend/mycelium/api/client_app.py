@@ -1,7 +1,9 @@
 """Minimal FastAPI application for Mycelium client configuration."""
 
+import asyncio
 import functools
 import logging
+import socket
 import threading
 from pathlib import Path
 
@@ -10,10 +12,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from mycelium.api.schemas import (
+    ClientStatusResponse,
     SaveConfigResponse,
     WorkerConfigRequest,
     WorkerConfigResponse,
+    WorkerProcessingStatus,
 )
+from mycelium.client_status import worker_status
 from ..client_config import (
     CLAPConfig, ClientConfig, ClientAPIConfig, EmbeddingConfig,
     LoggingConfig, MuQConfig, MyceliumClientConfig,
@@ -93,6 +98,37 @@ if client_frontend_dist_path.exists():
 async def root():
     """Redirect root to client frontend application."""
     return RedirectResponse("/app")
+
+
+async def _check_server_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
+    """Check if the Mycelium server is reachable via TCP."""
+    def _check() -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except (socket.timeout, socket.error, OSError):
+            return False
+    return await asyncio.to_thread(_check)
+
+
+@app.get("/api/status", response_model=ClientStatusResponse)
+async def get_status():
+    """Return worker processing status and server reachability."""
+    try:
+        with config_lock:
+            host = config.client.server_host
+            port = config.client.server_port
+
+        reachable = await _check_server_reachable(host, port)
+
+        status_dict = worker_status.to_dict()
+        return ClientStatusResponse(
+            server_reachable=reachable,
+            worker=WorkerProcessingStatus(**status_dict),
+        )
+    except Exception as e:
+        logger.error(f"Failed to get client status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/config", response_model=WorkerConfigResponse)

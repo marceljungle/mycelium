@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { workerApi } from '@/worker_api/client';
-import type { WorkerConfigResponse } from '@/worker_api/client';
+import type { WorkerConfigResponse, ClientStatusResponse } from '@/worker_api/client';
 
 export default function ClientSettingsPage() {
   const [config, setConfig] = useState<WorkerConfigResponse | null>(null);
@@ -11,10 +11,27 @@ export default function ClientSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<ClientStatusResponse | null>(null);
+  const statusInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const s = await workerApi.getClientStatus();
+      setStatus(s);
+    } catch {
+      // Silently ignore — status is advisory
+      setStatus(null);
+    }
+  }, []);
 
   useEffect(() => {
     fetchConfig();
-  }, []);
+    fetchStatus();
+    statusInterval.current = setInterval(fetchStatus, 5000);
+    return () => {
+      if (statusInterval.current) clearInterval(statusInterval.current);
+    };
+  }, [fetchStatus]);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -104,6 +121,80 @@ export default function ClientSettingsPage() {
           Configure your Mycelium client worker. Changes are applied immediately with hot-reload.
         </p>
       </div>
+
+      {/* Live Status Panel */}
+      {status && (
+        <div className="px-6 pt-4">
+          <div className="rounded-lg border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-700/50">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              {/* Server reachability */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    status.server_reachable
+                      ? 'bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+                      : 'bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.6)]'
+                  }`}
+                  aria-label={status.server_reachable ? 'Server reachable' : 'Server unreachable'}
+                />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Server{' '}
+                  <span className={status.server_reachable ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
+                    {status.server_reachable ? 'Reachable' : 'Unreachable'}
+                  </span>
+                </span>
+              </div>
+
+              <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+
+              {/* Worker state */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    !status.worker.is_running
+                      ? 'bg-gray-400'
+                      : status.worker.is_processing
+                        ? 'bg-green-500 animate-pulse shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+                        : 'bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.6)]'
+                  }`}
+                  aria-label={
+                    !status.worker.is_running ? 'Worker stopped' : status.worker.is_processing ? 'Processing' : 'Idle'
+                  }
+                />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Worker{' '}
+                  <span
+                    className={
+                      !status.worker.is_running
+                        ? 'text-gray-500 font-medium'
+                        : status.worker.is_processing
+                          ? 'text-green-600 dark:text-green-400 font-medium'
+                          : 'text-yellow-600 dark:text-yellow-400 font-medium'
+                    }
+                  >
+                    {!status.worker.is_running ? 'Stopped' : status.worker.is_processing ? 'Processing' : 'Idle'}
+                  </span>
+                </span>
+              </div>
+
+              <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+
+              {/* Queue stats */}
+              <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
+                <span title="Jobs waiting to be downloaded">
+                  📥 {status.worker.jobs_in_download_queue} queued
+                </span>
+                <span title="Jobs downloaded and ready for GPU">
+                  🧠 {status.worker.jobs_ready_for_gpu} ready
+                </span>
+                <span title="Total jobs processed this session">
+                  ✅ {status.worker.total_jobs_processed} done
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="p-6 space-y-8">
         {error && (

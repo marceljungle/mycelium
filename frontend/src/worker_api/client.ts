@@ -3,6 +3,7 @@ import type {
   WorkerConfigRequest,
   WorkerConfigResponse,
   SaveConfigResponse,
+  ClientStatusResponse,
 } from './types';
 
 // Re-export all types
@@ -45,5 +46,9 @@ export const workerApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params.workerConfigRequest),
     });
+  },
+
+  getClientStatus(): Promise<ClientStatusResponse> {
+    return request('/api/status');
   },
 };

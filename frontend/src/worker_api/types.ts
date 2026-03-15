@@ -68,3 +68,24 @@ export interface SaveConfigResponse {
   reloaded: boolean;
   reload_error?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Client status (GET /api/status)
+// ---------------------------------------------------------------------------
+
+export interface WorkerProcessingStatus {
+  is_running: boolean;
+  is_processing: boolean;
+  jobs_in_download_queue: number;
+  jobs_ready_for_gpu: number;
+  total_jobs_processed: number;
+  current_batch_size: number;
+  last_job_completed_at: number | null;
+  worker_id: string | null;
+  server_url: string | null;
+}
+
+export interface ClientStatusResponse {
+  server_reachable: boolean;
+  worker: WorkerProcessingStatus;
+}

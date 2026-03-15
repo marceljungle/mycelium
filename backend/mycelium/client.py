@@ -17,6 +17,7 @@ import requests
 from mycelium.application.embedding.factory import create_embedding_generator
 from mycelium.client_config import MyceliumClientConfig
 from mycelium.client_config import get_client_config_file_path
+from mycelium.client_status import worker_status
 from mycelium.domain.repositories import EmbeddingGenerator
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,13 @@ class MyceliumClient:
         # Create embedding generator based on configured model type
         self.embedding_generator = create_embedding_generator(self.config)
 
+        # Publish initial status
+        worker_status.update(
+            worker_id=self.worker_id,
+            server_url=self.server_url,
+            is_running=True,
+        )
+
         logging.info("Mycelium Client initialized")
         logging.info(f"Worker ID: {self.worker_id}")
         logging.info(f"Server: {self.server_url}")
@@ -82,6 +90,12 @@ class MyceliumClient:
         dl_q_size = self.download_queue.qsize()
         dl_q_cap = self.download_queue.maxsize
         dl_q_percent = (dl_q_size / dl_q_cap) * 100 if dl_q_cap > 0 else 0
+
+        # Publish queue sizes to shared status
+        worker_status.update(
+            jobs_in_download_queue=job_q_size,
+            jobs_ready_for_gpu=dl_q_size,
+        )
 
         status_msg = (
             f"Queue status ({context}): "
@@ -382,7 +396,8 @@ class MyceliumClient:
         """Process a batch of jobs to improve GPU utilization."""
         if not batch:
             return
-            
+
+        worker_status.update(is_processing=True, current_batch_size=len(batch))
         logging.info(f"Processing batch of {len(batch)} jobs")
         
         # Separate jobs by type for more efficient batching
@@ -403,6 +418,13 @@ class MyceliumClient:
         # Process text jobs in batch  
         if text_jobs:
             self._process_text_batch(text_jobs)
+
+        worker_status.update(
+            is_processing=False,
+            current_batch_size=0,
+            total_jobs_processed=worker_status.total_jobs_processed + len(batch),
+            last_job_completed_at=time.time(),
+        )
     
     def _process_audio_batch(self, audio_jobs: List[DownloadedJob]) -> None:
         """Process a batch of audio embedding jobs."""
@@ -556,6 +578,7 @@ class MyceliumClient:
             self._log_queue_status("shutdown")
             self._stop_workers()
             self.embedding_generator.unload_model()
+            worker_status.update(is_running=False, is_processing=False)
             logging.info("Worker stopped")
 
 

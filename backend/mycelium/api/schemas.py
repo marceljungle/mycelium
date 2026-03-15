@@ -205,6 +205,31 @@ class WorkerConfigRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Client worker status — used by client_app.py GET /api/status
+# ---------------------------------------------------------------------------
+
+class WorkerProcessingStatus(BaseModel):
+    """Live snapshot of the client worker thread."""
+
+    is_running: bool = False
+    is_processing: bool = False
+    jobs_in_download_queue: int = 0
+    jobs_ready_for_gpu: int = 0
+    total_jobs_processed: int = 0
+    current_batch_size: int = 0
+    last_job_completed_at: Optional[float] = None
+    worker_id: Optional[str] = None
+    server_url: Optional[str] = None
+
+
+class ClientStatusResponse(BaseModel):
+    """Aggregated client status (server reachability + worker state)."""
+
+    server_reachable: bool
+    worker: WorkerProcessingStatus
+
+
+# ---------------------------------------------------------------------------
 # Capabilities
 # ---------------------------------------------------------------------------
 
