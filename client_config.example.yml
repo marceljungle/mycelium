@@ -15,7 +15,7 @@ clap:
 # MuQ model configuration (used when embedding.type = muq)
 # MuQ produces pure acoustic embeddings using Mel-RVQ SSL - no text search support
 muq:
-  model_id: OpenMuQ/MuQ-large-v1
+  model_id: OpenMuQ/MuQ-large-msd-iter
   target_sr: 24000
   chunk_duration_s: 30
 

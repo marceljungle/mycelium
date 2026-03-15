@@ -25,7 +25,7 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
 
     def __init__(
             self,
-            model_id: str = "OpenMuQ/MuQ-large-v1",
+            model_id: str = "OpenMuQ/MuQ-large-msd-iter",
             target_sr: int = 24000,
             chunk_duration_s: int = 30,
     ):

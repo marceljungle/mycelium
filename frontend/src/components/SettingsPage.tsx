@@ -371,7 +371,7 @@ export default function SettingsPage() {
                     id="muq-model-id"
                     name="muq-model-id"
                     type="text"
-                    value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-v1'}
+                    value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-msd-iter'}
                     disabled
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
                   />

@@ -62,7 +62,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
         display_name="MuQ (Music Understanding)",
         supports_text_search=False,
         default_config={
-            "model_id": "OpenMuQ/MuQ-large-v1",
+            "model_id": "OpenMuQ/MuQ-large-msd-iter",
             "target_sr": 24000,
             "chunk_duration_s": 30,
         },
