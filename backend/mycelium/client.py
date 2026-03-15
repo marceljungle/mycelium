@@ -173,18 +173,24 @@ class MyceliumClient:
                 self.embedding_generator = create_embedding_generator(new_config)
                 logging.info("Embedding generator updated.")
 
-            if client_changed:
-                logging.warning("Client configuration changed. Some changes require restart:")
-                if new_config.client.server_host != self.config.client.server_host:
-                    logging.warning(f"  - Server host: {self.config.client.server_host} -> {new_config.client.server_host} (requires restart)")
-                if new_config.client.server_port != self.config.client.server_port:
-                    logging.warning(f"  - Server port: {self.config.client.server_port} -> {new_config.client.server_port} (requires restart)")
-                if new_config.client.download_workers != self.config.client.download_workers:
-                    logging.warning(f"  - Download workers: {self.config.client.download_workers} -> {new_config.client.download_workers} (requires restart)")
-                if new_config.client.download_queue_size != self.config.client.download_queue_size:
-                    logging.warning(f"  - Download queue size: {self.config.client.download_queue_size} -> {new_config.client.download_queue_size} (requires restart)")
-                if new_config.client.job_queue_size != self.config.client.job_queue_size:
-                    logging.warning(f"  - Job queue size: {self.config.client.job_queue_size} -> {new_config.client.job_queue_size} (requires restart)")
+            # Apply server connection changes (hot-reloadable)
+            if (new_config.client.server_host != self.config.client.server_host or
+                    new_config.client.server_port != self.config.client.server_port):
+                old_url = self.server_url
+                self.server_host = new_config.client.server_host
+                self.server_port = new_config.client.server_port
+                self.server_url = f"http://{self.server_host}:{self.server_port}"
+                logging.info(f"Server URL updated: {old_url} -> {self.server_url}")
+                from mycelium.client_status import worker_status
+                worker_status.update(server_url=self.server_url)
+
+            # Log changes that still require restart
+            if new_config.client.download_workers != self.config.client.download_workers:
+                logging.warning(f"Download workers changed: {self.config.client.download_workers} -> {new_config.client.download_workers} (requires restart)")
+            if new_config.client.download_queue_size != self.config.client.download_queue_size:
+                logging.warning(f"Download queue size changed: {self.config.client.download_queue_size} -> {new_config.client.download_queue_size} (requires restart)")
+            if new_config.client.job_queue_size != self.config.client.job_queue_size:
+                logging.warning(f"Job queue size changed: {self.config.client.job_queue_size} -> {new_config.client.job_queue_size} (requires restart)")
 
             # Apply hot-reloadable changes
             self.poll_interval = new_config.client.poll_interval
@@ -207,6 +213,9 @@ class MyceliumClient:
         attempt = 1
         print("Attempting to register with server...")
         while not self.stop_event.is_set():
+            # Pick up config changes (e.g. new server host) between retries
+            self._check_config_reload()
+
             try:
                 response = requests.post(
                     f"{self.server_url}/workers/register",
@@ -214,10 +223,10 @@ class MyceliumClient:
                     timeout=10
                 )
                 response.raise_for_status()
-                print(f"Successfully registered with server (attempt {attempt})")
+                print(f"Successfully registered with server at {self.server_url} (attempt {attempt})")
                 return True
             except requests.exceptions.RequestException as e:
-                print(f"Error registering with server (attempt {attempt}): {e}")
+                print(f"Error registering with server at {self.server_url} (attempt {attempt}): {e}")
 
             time.sleep(delay_seconds)
             attempt += 1

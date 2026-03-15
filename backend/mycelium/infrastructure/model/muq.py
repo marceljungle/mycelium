@@ -40,11 +40,10 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         self.model: Optional[AutoModel] = None
         self.feature_extractor: Optional[AutoFeatureExtractor] = None
 
-        self.use_half = self.can_use_half_precision()
-        if self.use_half:
-            logger.info("Half precision (FP16) is supported and will be used.")
-        else:
-            logger.info("Half precision not supported, using full precision (FP32).")
+        # MuQ must always run in FP32 — the authors explicitly warn that
+        # FP16 inference causes NaN outputs.
+        self.use_half = False
+        logger.info("MuQ always uses full precision (FP32) to avoid NaN issues.")
 
     def _load_model_if_needed(self) -> None:
         """Loads the model and feature extractor on the first call that needs them."""
