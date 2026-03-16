@@ -22,6 +22,7 @@ class ClientWorkerStatus:
     server_url: Optional[str] = None
     model_type: Optional[str] = None
     model_id: Optional[str] = None
+    micro_batch_size: Optional[int] = None
 
     def update(self, **kwargs: object) -> None:
         """Atomically update one or more status fields."""
@@ -45,6 +46,7 @@ class ClientWorkerStatus:
                 "server_url": self.server_url,
                 "model_type": self.model_type,
                 "model_id": self.model_id,
+                "micro_batch_size": self.micro_batch_size,
             }
 
 

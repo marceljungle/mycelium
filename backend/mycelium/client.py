@@ -238,6 +238,7 @@ class MyceliumClient:
         worker_status.update(
             model_type=model_type,
             model_id=embedding_cfg.get("model_id", ""),
+            micro_batch_size=embedding_cfg.get("micro_batch_size"),
         )
 
     def get_job(self) -> Optional[dict]:

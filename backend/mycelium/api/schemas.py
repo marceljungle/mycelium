@@ -216,6 +216,7 @@ class WorkerProcessingStatus(BaseModel):
     server_url: Optional[str] = None
     model_type: Optional[str] = None
     model_id: Optional[str] = None
+    micro_batch_size: Optional[int] = None
 
 
 class ClientStatusResponse(BaseModel):

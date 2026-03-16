@@ -200,6 +200,11 @@ export default function ClientSettingsPage() {
                     <span title="Embedding model assigned by server">
                       🎵 {status.worker.model_type.toUpperCase()}: {status.worker.model_id}
                     </span>
+                    {status.worker.micro_batch_size != null && (
+                      <span title="Micro batch size (chunks per GPU forward pass)">
+                        · batch: {status.worker.micro_batch_size}
+                      </span>
+                    )}
                   </div>
                 </>
               )}

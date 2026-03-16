@@ -63,6 +63,7 @@ export interface WorkerProcessingStatus {
   server_url: string | null;
   model_type: string | null;
   model_id: string | null;
+  micro_batch_size: number | null;
 }
 
 export interface ClientStatusResponse {
