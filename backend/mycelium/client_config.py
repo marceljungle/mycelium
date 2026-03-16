@@ -177,7 +177,8 @@ class MyceliumClientConfig:
                 "job_queue_size": self.client.job_queue_size,
                 "poll_interval": self.client.poll_interval,
                 "download_workers": self.client.download_workers,
-                "gpu_batch_size": self.client.gpu_batch_size
+                "gpu_batch_size": self.client.gpu_batch_size,
+                "micro_batch_size": self.client.micro_batch_size
             },
             "client_api": {
                 "host": self.client_api.host,
