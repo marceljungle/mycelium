@@ -11,6 +11,7 @@ That's it — the factory, config validation, and CLI will pick it up automatica
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type, TYPE_CHECKING
@@ -65,6 +66,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             "model_id": "OpenMuQ/MuQ-large-msd-iter",
             "target_sr": 24000,
             "chunk_duration_s": 30,
+            "micro_batch_size": 4,
         },
     ),
 }
@@ -107,9 +109,19 @@ def create_embedding_generator(
     module = importlib.import_module(module_path)
     adapter_class: Type[EmbeddingGenerator] = getattr(module, class_name)
 
+    # Only pass kwargs the constructor actually accepts — protects against
+    # server/client version mismatches where one side knows a config key the
+    # other doesn't.
+    sig = inspect.signature(adapter_class.__init__)
+    valid_params = set(sig.parameters.keys()) - {"self"}
+    filtered_config = {k: v for k, v in final_config.items() if k in valid_params}
+    dropped = set(final_config) - set(filtered_config)
+    if dropped:
+        logger.warning("Dropping unknown config keys for %s: %s", spec.key, dropped)
+
     logger.info(
         "Creating %s embedding generator (model_id=%s)",
         spec.display_name,
-        final_config.get("model_id", "?"),
+        filtered_config.get("model_id", "?"),
     )
-    return adapter_class(**final_config)
+    return adapter_class(**filtered_config)

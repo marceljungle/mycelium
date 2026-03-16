@@ -87,6 +87,7 @@ class MuQConfig:
     model_id: str = "OpenMuQ/MuQ-large-msd-iter"
     target_sr: int = 24000
     chunk_duration_s: int = 30
+    micro_batch_size: int = 4
 
 
 @dataclass
@@ -219,6 +220,7 @@ class MyceliumConfig:
             model_id=config_data.get("muq", {}).get("model_id", "OpenMuQ/MuQ-large-msd-iter"),
             target_sr=config_data.get("muq", {}).get("target_sr", 24000),
             chunk_duration_s=config_data.get("muq", {}).get("chunk_duration_s", 30),
+            micro_batch_size=config_data.get("muq", {}).get("micro_batch_size", 4),
         )
 
         chroma_config = ChromaConfig(

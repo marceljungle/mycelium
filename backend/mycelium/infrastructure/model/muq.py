@@ -35,10 +35,12 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
             model_id: str = "OpenMuQ/MuQ-large-msd-iter",
             target_sr: int = 24000,
             chunk_duration_s: int = 30,
+            micro_batch_size: int = 4,
     ):
         self.model_id = model_id
         self.target_sr = target_sr
         self.chunk_duration_s = chunk_duration_s
+        self.micro_batch_size = micro_batch_size
 
         self.device = self.get_best_device()
         logger.info(f"MuQ selected device: {self.device}")
@@ -128,10 +130,12 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         return results[0] if results else None
 
     def generate_embedding_batch(self, filepaths: List[Path]) -> List[Optional[List[float]]]:
-        """Generate embeddings for multiple audio files in a single GPU batch.
+        """Generate embeddings for multiple audio files using micro-batching.
 
-        MuQ accepts raw waveform tensors of shape ``(batch, time)`` directly —
-        no feature extractor is needed.
+        MuQ accepts raw waveform tensors of shape ``(batch, time)`` directly.
+        To avoid OOM on unified-memory devices (Apple Silicon) and limited-VRAM
+        GPUs, chunks are processed in small micro-batches and results are moved
+        to CPU immediately after each forward pass.
         """
         if not filepaths:
             return []
@@ -157,16 +161,32 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
             if not all_chunks:
                 return [None] * len(filepaths)
 
-            # All chunks are the same length (chunk_duration_s * target_sr)
-            # so we can stack them directly into a batch tensor.
-            waveform_batch = torch.tensor(
-                np.stack(all_chunks), dtype=torch.float32
-            ).to(self.device)
+            # Process chunks in micro-batches to prevent OOM / swap explosion.
+            chunk_embeddings_list: list[torch.Tensor] = []
+            micro_batch_size = self.micro_batch_size
 
             with torch.no_grad():
-                outputs = model(waveform_batch)
-                # Pool over the time dimension to get a single vector per chunk
-                chunk_embeddings = outputs.last_hidden_state.mean(dim=1)
+                for i in range(0, len(all_chunks), micro_batch_size):
+                    batch_chunks = all_chunks[i:i + micro_batch_size]
+
+                    waveform_batch = torch.tensor(
+                        np.stack(batch_chunks), dtype=torch.float32
+                    ).to(self.device)
+
+                    outputs = model(waveform_batch)
+                    pooled = outputs.last_hidden_state.mean(dim=1)
+
+                    # Move to CPU immediately to free device memory.
+                    chunk_embeddings_list.append(pooled.cpu())
+
+                    # Flush residual device memory.
+                    if self.device == "mps":
+                        torch.mps.empty_cache()
+                    elif self.device == "cuda":
+                        torch.cuda.empty_cache()
+
+            # All tensors are on CPU now — concatenate and finish.
+            chunk_embeddings = torch.cat(chunk_embeddings_list, dim=0)
 
             # Split results back to individual files and compute mean embeddings
             results: list[Optional[List[float]]] = []
@@ -178,12 +198,15 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
                 else:
                     file_features = chunk_embeddings[chunk_idx:chunk_idx + chunk_count]
                     mean_embedding = torch.mean(file_features, dim=0)
-                    normalized_embedding = torch.nn.functional.normalize(mean_embedding, p=2, dim=0)
-                    results.append(normalized_embedding.cpu().numpy().tolist())
+                    normalized_embedding = torch.nn.functional.normalize(
+                        mean_embedding, p=2, dim=0
+                    )
+                    results.append(normalized_embedding.numpy().tolist())
                     chunk_idx += chunk_count
 
             logger.info(
-                f"MuQ: processed batch of {len(filepaths)} audio files ({len(all_chunks)} total chunks)"
+                f"MuQ: processed batch of {len(filepaths)} audio files "
+                f"({len(all_chunks)} total chunks, micro_batch_size={micro_batch_size})"
             )
             return results
 

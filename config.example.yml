@@ -39,6 +39,7 @@ muq:
   model_id: OpenMuQ/MuQ-large-msd-iter
   target_sr: 24000
   chunk_duration_s: 30
+  micro_batch_size: 4
 
 # Client configuration for worker connections
 client:

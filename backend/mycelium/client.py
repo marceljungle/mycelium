@@ -9,7 +9,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Queue, Empty
+from queue import Queue, Empty, Full
 from typing import Optional, List
 
 import requests
@@ -272,22 +272,49 @@ class MyceliumClient:
             return None
 
     def _job_fetcher(self):
-        """
-        A single thread that requests jobs from the server and puts them in the job_queue.
+        """Thread that requests jobs from the server and puts them in the job_queue.
+
+        Every call to ``get_job()`` also acts as a heartbeat — the server
+        marks the worker as active on each request.  If this thread stops
+        calling ``get_job()`` the server will eventually expire the worker,
+        so we must *always* call it, even when the local queue is full.
         """
         logging.info("Job fetcher thread started")
+        held_job: Optional[dict] = None  # Job waiting for queue space
         while not self.stop_event.is_set():
             try:
-                if not self.job_queue.full():
+                # Pick up config changes (e.g. new server host) promptly
+                self._check_config_reload()
+
+                # If we're holding a job from a previous iteration, try
+                # to enqueue it before requesting more work.
+                if held_job is not None:
+                    try:
+                        self.job_queue.put(held_job, block=False)
+                        logging.info(f"Job fetcher: Enqueued held job {held_job['task_id']}")
+                        held_job = None
+                    except Full:
+                        pass  # Still full — will heartbeat below and retry next loop
+
+                # Always call get_job so the server receives a heartbeat.
+                # Only request new work if we have capacity.
+                if held_job is None:
                     job = self.get_job()
                     if job:
-                        logging.info(f"Job fetcher: Got job {job['task_id']}, adding to download queue.")
-                        self.job_queue.put(job)
+                        try:
+                            self.job_queue.put_nowait(job)
+                            logging.info(f"Job fetcher: Got job {job['task_id']}, added to queue.")
+                        except Full:
+                            held_job = job
+                            logging.info(f"Job fetcher: Queue full, holding job {job['task_id']}")
                     else:
                         time.sleep(self.poll_interval)
                 else:
-                    logging.info("Job fetcher: Job queue is full, pausing.")
-                    time.sleep(5)
+                    # We're holding a job and can't take more. Still
+                    # heartbeat the server by calling get_job, but
+                    # discard the result (the server will re-queue it).
+                    self.get_job()
+                    time.sleep(min(self.poll_interval, 3))
             except Exception as e:
                 logging.error(f"Job fetcher error: {e}")
                 time.sleep(self.poll_interval)

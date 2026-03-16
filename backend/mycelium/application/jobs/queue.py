@@ -56,7 +56,7 @@ class JobQueueService:
         """Get list of active workers."""
         with self._lock:
             # Clean up inactive workers
-            cutoff_time = datetime.now() - timedelta(seconds=10)
+            cutoff_time = datetime.now() - timedelta(seconds=60)
             for worker in self._workers.values():
                 if worker.last_heartbeat < cutoff_time:
                     worker.is_active = False
@@ -168,6 +168,11 @@ class JobQueueService:
 
             task = self._tasks[result.task_id]
             task.status = result.status
+
+            # Update the worker heartbeat so result submissions also
+            # keep the worker alive (not only get_job calls).
+            if task.assigned_worker_id and task.assigned_worker_id in self._workers:
+                self._workers[task.assigned_worker_id].last_heartbeat = datetime.now()
             task.completed_at = datetime.now()
 
             if result.error_message:
