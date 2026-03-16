@@ -229,6 +229,10 @@ class MyceliumClient:
         if self.embedding_generator is not None:
             self.embedding_generator.unload_model()
 
+        # Client-local micro_batch_size overrides the server value
+        client_micro_batch = self.config.client.micro_batch_size
+        embedding_cfg["micro_batch_size"] = client_micro_batch
+
         self.embedding_generator = create_from_registry(
             model_type=model_type,
             config_overrides=embedding_cfg,

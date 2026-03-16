@@ -10,6 +10,7 @@ export interface WorkerClientSection {
   poll_interval: number;
   download_workers: number;
   gpu_batch_size: number;
+  micro_batch_size: number;
 }
 
 export interface WorkerClientAPISection {

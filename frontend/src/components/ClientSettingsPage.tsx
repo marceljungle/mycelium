@@ -233,7 +233,7 @@ export default function ClientSettingsPage() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 🖥️ Client Worker
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Server Host
@@ -341,6 +341,23 @@ export default function ClientSettingsPage() {
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     GPU processing batch size
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Micro Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.micro_batch_size}
+                    onChange={(e) => updateConfig('client', 'micro_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="4"
+                    min="1"
+                    max="32"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chunks per GPU forward pass (lower = less memory)
                   </p>
                 </div>
               </div>

@@ -64,6 +64,7 @@ class ClientConfig:
     poll_interval: int = 5
     download_workers: int = 10
     gpu_batch_size: int = 4
+    micro_batch_size: int = 4
 
 
 @dataclass
@@ -114,6 +115,7 @@ class MyceliumClientConfig:
             poll_interval=config_data.get("client", {}).get("poll_interval", 5),
             download_workers=config_data.get("client", {}).get("download_workers", 10),
             gpu_batch_size=config_data.get("client", {}).get("gpu_batch_size", 4),
+            micro_batch_size=config_data.get("client", {}).get("micro_batch_size", 4),
         )
         
         client_api_config = ClientAPIConfig(
