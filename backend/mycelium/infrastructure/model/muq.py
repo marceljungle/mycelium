@@ -48,23 +48,49 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         # Lazy loading
         self.model: Optional[Any] = None
 
-        # MuQ must always run in FP32 — the authors explicitly warn that
-        # FP16 inference causes NaN outputs.
-        self.use_half = False
-        logger.info("MuQ always uses full precision (FP32) to avoid NaN issues.")
+        # Determine optimal dtype: bfloat16 has the same dynamic range as
+        # float32 (avoiding NaN that float16 causes) but uses half the memory.
+        self.model_dtype = self._select_dtype()
+        logger.info(f"MuQ inference dtype: {self.model_dtype}")
+
+    def _select_dtype(self) -> torch.dtype:
+        """Pick bfloat16 if the device supports it, otherwise float32.
+
+        float16 is intentionally excluded — MuQ-Large produces NaN outputs
+        with standard half-precision due to overflow in the attention layers.
+        """
+        if self.device == "cuda":
+            if torch.cuda.is_bf16_supported():
+                return torch.bfloat16
+            return torch.float32
+
+        if self.device == "mps":
+            try:
+                # MPS bfloat16 support was added in later PyTorch versions.
+                t = torch.tensor([1.0], dtype=torch.bfloat16, device="mps")
+                _ = t + t  # verify compute works, not just allocation
+                return torch.bfloat16
+            except (RuntimeError, TypeError):
+                return torch.float32
+
+        return torch.float32
 
     def _load_model_if_needed(self) -> None:
         """Loads the MuQ model on the first call that needs it."""
         if self.model is None:
-            logger.info(f"Loading MuQ model '{self.model_id}' to device '{self.device}'...")
+            logger.info(
+                f"Loading MuQ model '{self.model_id}' to device '{self.device}' "
+                f"with dtype {self.model_dtype}..."
+            )
 
             self.model = MuQ.from_pretrained(self.model_id)
-            self.model.to(self.device)
+            self.model.to(device=self.device, dtype=self.model_dtype)
             self.model.eval()
 
             logger.info("MuQ model loaded successfully.")
             try:
-                logger.info(f"Model dtype after load: {next(self.model.parameters()).dtype}")
+                param_dtype = next(self.model.parameters()).dtype
+                logger.info(f"Model parameter dtype: {param_dtype}")
             except StopIteration:
                 logger.debug("Could not determine model dtype (no parameters found).")
 
@@ -78,17 +104,8 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         return "cpu"
 
     def can_use_half_precision(self) -> bool:
-        """Checks once if the device supports half precision."""
-        if self.device == "cuda":
-            return True
-        if self.device == "mps":
-            try:
-                torch.tensor([1.0], dtype=torch.half).to(self.device)
-                return True
-            except RuntimeError:
-                logger.warning("MPS device does not support half precision, falling back to FP32.")
-                return False
-        return False
+        """Whether the model is running in a reduced-precision mode."""
+        return self.model_dtype != torch.float32
 
     def _get_model(self) -> Any:
         """Return a ready-to-use model."""
@@ -170,14 +187,15 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
                     batch_chunks = all_chunks[i:i + micro_batch_size]
 
                     waveform_batch = torch.tensor(
-                        np.stack(batch_chunks), dtype=torch.float32
+                        np.stack(batch_chunks), dtype=self.model_dtype
                     ).to(self.device)
 
                     outputs = model(waveform_batch)
                     pooled = outputs.last_hidden_state.mean(dim=1)
 
-                    # Move to CPU immediately to free device memory.
-                    chunk_embeddings_list.append(pooled.cpu())
+                    # Move to CPU immediately and cast to float32 for
+                    # stable normalization downstream.
+                    chunk_embeddings_list.append(pooled.cpu().float())
 
                     # Flush residual device memory.
                     if self.device == "mps":
