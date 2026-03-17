@@ -54,24 +54,17 @@ class MuQEmbeddingGenerator(EmbeddingGenerator):
         logger.info(f"MuQ inference dtype: {self.model_dtype}")
 
     def _select_dtype(self) -> torch.dtype:
-        """Pick bfloat16 if the device supports it, otherwise float32.
+        """Pick bfloat16 if the device fully supports it, otherwise float32.
 
         float16 is intentionally excluded — MuQ-Large produces NaN outputs
         with standard half-precision due to overflow in the attention layers.
-        """
-        if self.device == "cuda":
-            if torch.cuda.is_bf16_supported():
-                return torch.bfloat16
-            return torch.float32
 
-        if self.device == "mps":
-            try:
-                # MPS bfloat16 support was added in later PyTorch versions.
-                t = torch.tensor([1.0], dtype=torch.bfloat16, device="mps")
-                _ = t + t  # verify compute works, not just allocation
-                return torch.bfloat16
-            except (RuntimeError, TypeError):
-                return torch.float32
+        bfloat16 is only used on CUDA.  On MPS, the internal mel-spectrogram
+        extraction (nnAudio) produces float16 intermediates that clash with
+        bfloat16 model weights, causing dtype-mismatch errors in conv layers.
+        """
+        if self.device == "cuda" and torch.cuda.is_bf16_supported():
+            return torch.bfloat16
 
         return torch.float32
 
