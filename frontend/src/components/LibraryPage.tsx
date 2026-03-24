@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/server_api/client';
 import type { TrackResponse, SearchResultResponse } from '@/server_api/client';
 import PlaylistCreationModal from './PlaylistCreationModal';
+import { useTaskPolling } from '@/hooks/useTaskPolling';
 
 type Track = TrackResponse & { processed?: boolean };
 type LibrarySearchResult = SearchResultResponse;
@@ -24,7 +25,6 @@ export default function LibraryPage() {
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
   const [currentTask, setCurrentTask] = useState<ProcessingTask | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Advanced search state
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
@@ -37,24 +37,69 @@ export default function LibraryPage() {
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const fetchTracks = useCallback(async (searchTerm?: string) => {
+  // Track ref for retry after polling completes
+  const pendingTrackRef = useCallback(() => selectedTrack, [selectedTrack]);
+
+  const { startPolling, stopPolling } = useTaskPolling(
+    // onSuccess
+    useCallback((_taskId: string, searchResults: SearchResultResponse[]) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      if (searchResults.length > 0) {
+        setRecommendations(searchResults);
+      } else {
+        // Embedding saved but no results attached — re-fetch
+        const track = pendingTrackRef();
+        if (track) {
+          setTimeout(() => getRecommendations(track, true), 500);
+        }
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingTrackRef]),
+    // onError
+    useCallback((_taskId: string, message: string) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      setError(message);
+    }, []),
+    // onTimeout
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    useCallback((_taskId: string) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      setError('Processing took too long. Please try clicking the track again.');
+    }, []),
+  );
+
+  const mapTracks = (tracks: TrackResponse[]): Track[] =>
+    tracks.map((track) => ({
+      artist: track.artist,
+      album: track.album,
+      title: track.title,
+      filepath: track.filepath,
+      media_server_rating_key: track.media_server_rating_key,
+      media_server_type: track.media_server_type,
+      processed: false,
+    }));
+
+  const fetchTracks = useCallback(async (params: {
+    search?: string;
+    artist?: string;
+    album?: string;
+    title?: string;
+  } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getLibraryTracks({ page: 1, limit: 100, search: searchTerm?.trim() || undefined });
-      
-      // Convert API response to Track objects
-      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        artist: track.artist,
-        album: track.album,
-        title: track.title,
-        filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
-        processed: false // We'll determine this based on embeddings
-      }));
-      
-      setFilteredTracks(tracksData);
+      const data = await api.getLibraryTracks({
+        page: 1,
+        limit: 100,
+        search: params.search?.trim() || undefined,
+        artist: params.artist?.trim() || undefined,
+        album: params.album?.trim() || undefined,
+        title: params.title?.trim() || undefined,
+      });
+      setFilteredTracks(mapTracks(data.tracks));
     } catch (err) {
       console.error('Error fetching tracks:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
@@ -63,145 +108,15 @@ export default function LibraryPage() {
     }
   }, []);
 
-  const fetchTracksAdvanced = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.getLibraryTracks({
-        page: 1,
-        limit: 100,
-        artist: artistSearch.trim() || undefined,
-        album: albumSearch.trim() || undefined,
-        title: titleSearch.trim() || undefined,
-      });
-      
-      // Convert API response to Track objects
-      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        artist: track.artist,
-        album: track.album,
-        title: track.title,
-        filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
-        processed: false // We'll determine this based on embeddings
-      }));
-      
-      setFilteredTracks(tracksData);
-    } catch (err) {
-      console.error('Error fetching tracks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
-    } finally {
-      setLoading(false);
-    }
-  }, [artistSearch, albumSearch, titleSearch]);
-
   useEffect(() => {
-    // Only setup cleanup for polling on unmount, don't auto-fetch tracks
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
-  }, [pollInterval]);
-
-  useEffect(() => {
-    // Trigger search when any search field changes
     if (showAdvancedSearch && (artistSearch.trim() || albumSearch.trim() || titleSearch.trim())) {
-      // Use advanced search when enabled AND at least one field has content
-      fetchTracksAdvanced();
+      fetchTracks({ artist: artistSearch, album: albumSearch, title: titleSearch });
     } else if (!showAdvancedSearch && searchQuery.trim()) {
-      // Use simple search when enabled AND search query has content
-      fetchTracks(searchQuery);
+      fetchTracks({ search: searchQuery });
     } else {
-      // No active search - clear the tracks to show empty state
       setFilteredTracks([]);
     }
-    // Note: No auto-fetch when no search is active - show empty state instead
-  }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
-
-  const pollTaskStatus = async (taskId: string): Promise<SearchResultResponse[] | null> => {
-    try {
-      console.log(`Polling task status for task_id: ${taskId}`);
-      const taskStatus = await api.getTaskStatus({ taskId });
-      if (taskStatus) {
-        console.log(`Task status response:`, taskStatus);
-        
-        if (taskStatus.status === 'success') {
-          console.log(`Task ${taskId} completed successfully`);
-          // Return search results if the server already computed them
-          return taskStatus.search_results ?? [];
-        } else if (taskStatus.status === 'failed') {
-          console.error(`Task ${taskId} failed:`, taskStatus.error_message);
-          setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
-          return null;
-        }
-        console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
-        // Still in progress, continue polling
-        return null;
-      } else {
-        // Task not found or error - assume it completed
-        return [];
-      }
-    } catch (err) {
-      console.error('Error polling task status:', err);
-      // On error, assume completed and try to get recommendations
-      return [];
-    }
-  };
-
-  const startTaskPolling = async (taskId: string, trackId: string, track: Track) => {
-    console.log(`Starting task polling for task_id: ${taskId}, track_id: ${trackId}`);
-    
-    // Clear any existing polling
-    if (pollInterval) {
-      clearInterval(pollInterval);
-    }
-
-    const task: ProcessingTask = {
-      taskId,
-      trackId,
-      startTime: Date.now()
-    };
-    setCurrentTask(task);
-    setProcessingState('worker');
-
-    const interval = setInterval(async () => {
-      const results = await pollTaskStatus(taskId);
-      
-      if (results !== null) {
-        console.log(`Task ${taskId} completed, clearing polling`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setCurrentTask(null);
-        setProcessingState('none');
-
-        if (results.length > 0) {
-          // Server already computed similar tracks — use them directly
-          console.log(`Using ${results.length} search results from task`);
-          setRecommendations(results);
-        } else {
-          // No results attached — re-fetch recommendations (embedding is saved)
-          setTimeout(() => {
-            console.log(`Retrying recommendations for track after task completion`);
-            getRecommendations(track, true);
-          }, 500);
-        }
-      } else {
-        // Stop polling after 5 minutes to prevent infinite polling
-        const elapsed = Date.now() - task.startTime;
-        if (elapsed > 300000) {
-          console.warn(`Task ${taskId} polling timeout after ${elapsed}ms`);
-          clearInterval(interval);
-          setPollInterval(null);
-          setCurrentTask(null);
-          setProcessingState('none');
-          setError('Processing took too long. Please try clicking the track again.');
-        }
-      }
-    }, 2000); // Poll every 2 seconds
-    
-    setPollInterval(interval);
-  };
+  }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks]);
 
   const getRecommendations = async (track: Track, isRetry: boolean = false) => {
     if (!isRetry) {
@@ -247,9 +162,10 @@ export default function LibraryPage() {
           // Handle worker processing case - start polling immediately
           if (data.task_id) {
             console.log('Starting worker processing with task_id:', data.task_id);
-            // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
-            startTaskPolling(data.task_id, track.media_server_rating_key, track);
+            setCurrentTask({ taskId: data.task_id, trackId: track.media_server_rating_key, startTime: Date.now() });
+            setProcessingState('worker');
+            startPolling(data.task_id);
           } else {
             console.error('Worker processing response missing taskId:', data);
             setError('Worker processing started but missing task ID. Please try again.');
@@ -273,12 +189,7 @@ export default function LibraryPage() {
   };
 
   const handleTrackSelect = (track: Track) => {
-    // Clear any existing polling when selecting a new track
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
-    }
-    
+    stopPolling();
     setSelectedTrack(track);
     setCurrentTask(null);
     setProcessingState('none');

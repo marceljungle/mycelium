@@ -323,11 +323,13 @@ class MyceliumService:
             raise
 
     def cleanup(self) -> None:
-        """Clean up resources, including unloading the CLAP model."""
+        """Clean up resources: embedding model and worker processing."""
         try:
             self.logger.info("Cleaning up MyceliumService resources...")
             if hasattr(self, 'embedding_generator') and self.embedding_generator:
                 self.embedding_generator.unload_model()
+            if hasattr(self, 'worker_processing') and self.worker_processing:
+                self.worker_processing.job_queue.clear_pending_tasks()
             self.logger.info("MyceliumService cleanup completed successfully")
         except Exception as e:
             self.logger.error(f"Error during MyceliumService cleanup: {e}", exc_info=True)

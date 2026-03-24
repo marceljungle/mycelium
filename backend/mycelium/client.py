@@ -477,100 +477,87 @@ class MyceliumClient:
     
     def _process_audio_batch(self, audio_jobs: List[DownloadedJob]) -> None:
         """Process a batch of audio embedding jobs."""
-        self._process_audio_batch_gpu(audio_jobs)
-    
-    def _process_audio_batch_gpu(self, audio_jobs: List[DownloadedJob]) -> None:
-        """Process audio jobs using GPU batch processing."""
-        # Prepare batch data
-        audio_files = []
-        job_metadata = []
-        
+        # Prepare: filter valid jobs, extract file paths
+        inputs = []
+        valid_jobs = []
         for job in audio_jobs:
             if job.audio_file and job.audio_file.exists():
-                audio_files.append(job.audio_file)
-                job_metadata.append(job)
+                inputs.append(job.audio_file)
+                valid_jobs.append(job)
             else:
-                # Handle jobs with missing files individually
                 self.submit_result(job.task_id, job.track_id, None, "Audio file not available")
-        
-        if not audio_files:
+
+        if not inputs:
             return
-        
-        try:
-            # Generate embeddings in batch
-            embeddings = self.embedding_generator.generate_embedding_batch(audio_files)
-            
-            # Submit results
-            for job, embedding in zip(job_metadata, embeddings):
-                success = self.submit_result(job.task_id, job.track_id, embedding, 
-                                           None if embedding else "Failed to compute audio embedding")
-                if success:
-                    logging.debug(f"Successfully submitted batch job {job.task_id}")
-                else:
-                    logging.warning(f"Failed to submit batch job {job.task_id}")
-                    
-        except Exception as e:
-            logging.error(f"Batch processing failed: {e}", exc_info=True)
-        finally:
-            # Clean up audio files
-            for job in audio_jobs:
-                if job.audio_file:
-                    try:
-                        os.unlink(job.audio_file)
-                    except OSError as e:
-                        logging.error(f"Error deleting temp file {job.audio_file}: {e}")
-            
-            # Force garbage collection after batch processing
-            collected = gc.collect()
-            if collected > 0:
-                logging.debug(f"Post-batch cleanup: collected {collected} objects")
+
+        self._generate_and_submit(
+            inputs,
+            valid_jobs,
+            self.embedding_generator.generate_embedding_batch,
+            error_label="audio",
+        )
+
+        # Clean up downloaded audio files
+        for job in audio_jobs:
+            if job.audio_file:
+                try:
+                    os.unlink(job.audio_file)
+                except OSError as e:
+                    logging.error(f"Error deleting temp file {job.audio_file}: {e}")
+
+        collected = gc.collect()
+        if collected > 0:
+            logging.debug(f"Post-batch cleanup: collected {collected} objects")
     
     def _process_text_batch(self, text_jobs: List[DownloadedJob]) -> None:
         """Process a batch of text embedding jobs."""
         if not self.embedding_generator.supports_text_search:
-            # Model doesn't support text search — reject all jobs
             for job in text_jobs:
                 self.submit_result(
                     job.task_id, job.track_id, None,
                     "Current embedding model does not support text search"
                 )
             return
-        self._process_text_batch_gpu(text_jobs)
 
-    
-    def _process_text_batch_gpu(self, text_jobs: List[DownloadedJob]) -> None:
-        """Process text jobs using GPU batch processing."""
-        # Prepare batch data
-        text_queries = []
-        job_metadata = []
-        
+        inputs = []
+        valid_jobs = []
         for job in text_jobs:
             text_query = job.original_job.get("text_query")
             if text_query:
-                text_queries.append(text_query)
-                job_metadata.append(job)
+                inputs.append(text_query)
+                valid_jobs.append(job)
             else:
-                # Handle jobs with missing text individually
                 self.submit_result(job.task_id, job.track_id, None, "Missing text query")
-        
-        if not text_queries:
+
+        if not inputs:
             return
-        
+
+        self._generate_and_submit(
+            inputs,
+            valid_jobs,
+            self.embedding_generator.generate_text_embedding_batch,
+            error_label="text",
+        )
+
+    def _generate_and_submit(
+        self,
+        inputs: list,
+        jobs: List[DownloadedJob],
+        generate_fn,
+        error_label: str,
+    ) -> None:
+        """Generate embeddings in batch and submit each result to the server."""
         try:
-            # Generate embeddings in batch
-            embeddings = self.embedding_generator.generate_text_embedding_batch(text_queries)
-            
-            # Submit results
-            for job, embedding in zip(job_metadata, embeddings):
-                success = self.submit_result(job.task_id, job.track_id, embedding,
-                                           None if embedding else "Failed to compute text embedding")
+            embeddings = generate_fn(inputs)
+            for job, embedding in zip(jobs, embeddings):
+                msg = None if embedding else f"Failed to compute {error_label} embedding"
+                success = self.submit_result(job.task_id, job.track_id, embedding, msg)
                 if success:
-                    logging.debug(f"Successfully submitted batch text job {job.task_id}")
+                    logging.debug(f"Submitted {error_label} job {job.task_id}")
                 else:
-                    logging.warning(f"Failed to submit batch text job {job.task_id}")
-                    
+                    logging.warning(f"Failed to submit {error_label} job {job.task_id}")
         except Exception as e:
-            logging.error(f"Text batch processing failed: {e}", exc_info=True)
+            logging.error(f"{error_label.title()} batch processing failed: {e}", exc_info=True)
 
     def run(self):
         """Main worker loop with batch processing for better GPU utilization."""

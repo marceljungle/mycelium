@@ -7,7 +7,6 @@ import logging
 import os
 import tempfile
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -37,7 +36,6 @@ from mycelium.api.schemas import (
     TracksListResponse,
 )
 from mycelium.application.embedding.registry import get_model_spec
-from mycelium.domain import SearchResult
 
 # Worker API request/response models
 from .worker_models import (
@@ -63,7 +61,7 @@ from ..config import (
     PlexConfig,
     ServerConfig,
 )
-from ..domain.worker import ContextType, TaskResult, TaskStatus, TaskType
+from ..domain.worker import ContextType, TaskResult, TaskType
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -251,7 +249,7 @@ async def search_by_text_get(
                 f"Found {len(active_workers)} active workers, creating text search task"
             )
             # Create task for worker processing
-            task = job_queue.create_text_search_task(
+            task = job_queue.create_task(
                 text_query=q, n_results=n_results, prioritize=True
             )
 
@@ -679,7 +677,8 @@ async def submit_result(request: TaskResultRequest):
     """Submit the result of a completed task."""
     try:
         logger.info(
-            f"Worker result submission for task {request.task_id}, track {request.track_id}, status: {request.status}"
+            f"Worker result submission for task {request.task_id}, "
+            f"track {request.track_id}, status: {request.status}"
         )
 
         task_result = TaskResult(
@@ -694,162 +693,15 @@ async def submit_result(request: TaskResultRequest):
         success = job_queue.submit_result(task_result)
         logger.info(f"Task result submission: success={success}")
 
-        # Handle different task types
         if success and request.embedding:
-            # Get the task to check its type
             task = job_queue.get_task_status(request.task_id)
-
-            if task and task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
-                # Track embedding task
-                logger.info(
-                    f"Saving worker-generated embedding for track {request.track_id}, size: {len(request.embedding)}"
-                )
-                if (request.track_id is not None) and (request.track_id.strip() != ""):
-                    service.save_embedding(request.track_id, request.embedding)
-                    logger.info(
-                        f"Successfully saved worker-generated embedding for track {request.track_id}"
-                    )
-
-                if task.context_type == ContextType.AUDIO_SEARCH:
-                    # Audio search task - perform search on server
-                    context_info = (
-                        f"track '{request.track_id}'" if task.track_id else f"file '{task.audio_filename}'"
-                    )
-                    logger.info(
-                        f"Performing audio search for task {request.task_id} with {context_info}"
-                    )
-                    try:
-                        # Use the embedding to search directly
-                        search_results = service.embedding_repository.search_by_embedding(
-                            request.embedding, task.n_results or 10
-                        )
-
-                        # Convert search results to API response models
-                        results_responses = [
-                            map_search_result_to_response(result)
-                            for result in search_results
-                        ]
-
-                        # Convert to dict format for storage in task
-                        results_dict = [result.model_dump() for result in results_responses]
-
-                        # Update task with search results - ensure task status is set to success
-                        with job_queue._lock:
-                            task.search_results = results_dict
-                            if task.status != TaskStatus.SUCCESS:
-                                logger.info(
-                                    f"Setting task {request.task_id} status to SUCCESS"
-                                )
-                                task.status = TaskStatus.SUCCESS
-                                task.completed_at = datetime.now()
-
-                        logger.info(
-                            f"Audio search completed for task {request.task_id}, found {len(results_dict)} results"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error performing audio search for task {request.task_id}: {e}",
-                            exc_info=True,
-                        )
-                        # Set task status to failed
-                        with job_queue._lock:
-                            task.status = TaskStatus.FAILED
-                            task.error_message = str(e)
-                            task.completed_at = datetime.now()
-
-                    # Clean up temporary audio file for audio search tasks
-                    job_queue.cleanup_task_files(request.task_id)
-
-                elif task.context_type == ContextType.SIMILAR_TRACKS:
-                    # Similar-tracks task — run the similarity search now
-                    # so the frontend can fetch results immediately.
-                    logger.info(
-                        f"Performing similarity search for task {request.task_id}, track {request.track_id}"
-                    )
-                    try:
-                        search_results = service.embedding_repository.search_by_embedding(
-                            request.embedding, task.n_results or 10
-                        )
-                        results_responses = [
-                            map_search_result_to_response(result)
-                            for result in search_results
-                        ]
-                        results_dict = [result.model_dump() for result in results_responses]
-
-                        with job_queue._lock:
-                            task.search_results = results_dict
-                            if task.status != TaskStatus.SUCCESS:
-                                task.status = TaskStatus.SUCCESS
-                                task.completed_at = datetime.now()
-
-                        logger.info(
-                            f"Similar-tracks search completed for task {request.task_id}, "
-                            f"found {len(results_dict)} results"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error performing similar-tracks search for task {request.task_id}: {e}",
-                            exc_info=True,
-                        )
-                        with job_queue._lock:
-                            task.status = TaskStatus.FAILED
-                            task.error_message = str(e)
-                            task.completed_at = datetime.now()
-
-            elif task and task.task_type == TaskType.COMPUTE_TEXT_EMBEDDING:
-                # Text search task
-                logger.info(
-                    f"Performing text search for task {request.task_id} with query '{task.text_query}'"
-                )
-                try:
-                    # Use the embedding to search directly
-                    search_results = service.embedding_repository.search_by_embedding(
-                        request.embedding, task.n_results or 10
-                    )
-
-                    # Convert search results to API response models
-                    results_responses = [
-                        map_search_result_to_response(result)
-                        for result in search_results
-                    ]
-                    results_dict = [result.model_dump() for result in results_responses]
-
-                    # Update task with search results - ensure task status is set to success
-                    with job_queue._lock:
-                        task.search_results = results_dict
-                        if task.status != TaskStatus.SUCCESS:
-                            logger.info(
-                                f"Setting task {request.task_id} status to SUCCESS"
-                            )
-                            task.status = TaskStatus.SUCCESS
-                            task.completed_at = datetime.now()
-
-                    logger.info(
-                        f"Text search completed for task {request.task_id}, found {len(results_dict)} results"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error performing text search for task {request.task_id}: {e}",
-                        exc_info=True,
-                    )
-                    # Set task status to failed
-                    with job_queue._lock:
-                        task.status = TaskStatus.FAILED
-                        task.error_message = str(e)
-                        task.completed_at = datetime.now()
-
-                # Clean up any temporary files (for consistency)
-                job_queue.cleanup_task_files(request.task_id)
+            if task:
+                _handle_embedding_result(request, task)
         elif request.error_message:
             logger.error(
                 f"Worker task failed for track {request.track_id}: {request.error_message}"
             )
-            # Clean up temporary files for failed tasks
             job_queue.cleanup_task_files(request.task_id)
-        else:
-            logger.warning(
-                f"Task {request.task_id} completed but no embedding provided"
-            )
 
         return TaskResultResponse(
             success=success,
@@ -861,6 +713,43 @@ async def submit_result(request: TaskResultRequest):
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _handle_embedding_result(request: TaskResultRequest, task: "Task") -> None:
+    """Process an embedding result: save it, then run post-embed search if needed."""
+    # Save embedding for track-based tasks
+    if task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
+        if request.track_id and request.track_id.strip():
+            service.save_embedding(request.track_id, request.embedding)
+            logger.info(f"Saved embedding for track {request.track_id}")
+
+    # Determine whether a post-embed similarity search is required
+    needs_search = (
+        task.context_type in (ContextType.AUDIO_SEARCH, ContextType.SIMILAR_TRACKS)
+        or task.task_type == TaskType.COMPUTE_TEXT_EMBEDDING
+    )
+    if needs_search:
+        _run_post_embed_search(task, request.embedding)
+
+    # Clean up temp files for search tasks
+    if task.context_type in (ContextType.AUDIO_SEARCH, ContextType.TEXT_SEARCH):
+        job_queue.cleanup_task_files(request.task_id)
+
+
+def _run_post_embed_search(task: "Task", embedding: list) -> None:
+    """Delegate the post-embed similarity search to the job queue."""
+    def _search_fn(emb: list, n: int):
+        return service.embedding_repository.search_by_embedding(emb, n)
+
+    def _map_fn(result):
+        return map_search_result_to_response(result).model_dump()
+
+    job_queue.complete_task_with_search(
+        task_id=task.task_id,
+        embedding=embedding,
+        search_fn=_search_fn,
+        map_fn=_map_fn,
+    )
 
 
 # File Server for Audio Downloads
@@ -1049,10 +938,7 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
     """Compute text search on server CPU after user confirmation."""
     try:
         if not request.query:
-            raise HTTPException(
-                status_code=400, detail="Query is required for text search"
-            )
-
+            raise HTTPException(status_code=400, detail="Query is required for text search")
         if not service.supports_text_search:
             raise HTTPException(
                 status_code=400,
@@ -1060,24 +946,13 @@ async def compute_text_search_on_server(request: ComputeSearchOnServerRequest):
             )
 
         logger.info(f"Starting server-side text search for query: '{request.query}'")
-
-        # Perform text search directly on server
         results = service.search_similar_by_text(request.query, request.n_results)
-
-        logger.info(
-            f"Text search completed successfully - found {len(results)} results"
-        )
-
-        return [map_search_result_to_response(r) for r in results]
+        return _map_results(results, f"text search for '{request.query}'")
 
     except HTTPException:
-        # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
-        logger.error(
-            f"Error computing text search on server for query '{request.query}': {e}",
-            exc_info=True,
-        )
+        logger.error(f"Server text search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Server text search failed: {str(e)}")
 
 
@@ -1088,50 +963,32 @@ async def compute_audio_search_on_server(
 ):
     """Compute audio search on server CPU after user confirmation."""
     try:
-        # Validate file type
         if not audio.content_type or not any(
             audio.content_type.startswith(mime)
             for mime in ["audio/", "application/octet-stream"]
         ):
-            logger.warning(f"Invalid file type: {audio.content_type}")
-            raise HTTPException(
-                status_code=400, detail="Invalid file type. Please upload an audio file."
-            )
+            raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
 
-        # Read audio content
         content = await audio.read()
         if not content:
-            raise HTTPException(
-                status_code=400, detail="Audio data is required for audio search"
-            )
+            raise HTTPException(status_code=400, detail="Audio data is required for audio search")
 
-        logger.info(
-            f"Starting server-side audio search for file: '{audio.filename}', size: {len(content)} bytes"
-        )
+        logger.info(f"Starting server-side audio search for file: '{audio.filename}', size: {len(content)} bytes")
 
-        # Create temporary file for the audio data
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as temp_file:
-            temp_file.write(content)
-            temp_file_path = temp_file.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
 
         try:
-            # Perform audio search directly on server
-            results = service.search_similar_by_audio(Path(temp_file_path), n_results)
-
-            logger.info(
-                f"Audio search completed successfully - found {len(results)} results"
-            )
-
-            return [map_search_result_to_response(r) for r in results]
+            results = service.search_similar_by_audio(Path(tmp_path), n_results)
+            return _map_results(results, f"audio search for '{audio.filename}'")
         finally:
-            # Clean up temporary file
             try:
-                os.unlink(temp_file_path)
+                os.unlink(tmp_path)
             except OSError:
                 pass
 
     except HTTPException:
-        # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
         logger.error(f"Audio search on server failed: {e}", exc_info=True)
@@ -1144,18 +1001,25 @@ async def get_task_status(task_id: str):
     try:
         task = job_queue.get_task_status(task_id)
         if task:
-            # Build typed response; coerce search_results if present
+            # Build typed response; search_results may be stored as dicts
+            # (from complete_task_with_search) or domain objects.
             search_results_typed: Optional[List[SearchResultResponse]] = None
             if task.search_results:
                 try:
-                    search_results_typed = [
-                        map_search_result_to_response(sr) for sr in task.search_results
-                    ]
+                    first = task.search_results[0]
+                    if isinstance(first, dict):
+                        search_results_typed = [
+                            SearchResultResponse(**sr) for sr in task.search_results
+                        ]
+                    else:
+                        search_results_typed = [
+                            map_search_result_to_response(sr) for sr in task.search_results
+                        ]
                 except Exception:
-                    # Fallback to None if coercion fails
                     search_results_typed = None
                 logger.debug(
-                    f"Task {task_id} status: {task.status.value}, has search_results: {len(task.search_results)} results"
+                    f"Task {task_id} status: {task.status.value}, "
+                    f"has search_results: {len(task.search_results)} results"
                 )
             else:
                 logger.debug(
@@ -1195,13 +1059,21 @@ def _track_to_response(track: "Track") -> TrackResponse:
     )
 
 
-def map_search_result_to_response(result: SearchResult) -> SearchResultResponse:
-    """Convert a domain SearchResult to an API SearchResultResponse."""
+def map_search_result_to_response(result) -> SearchResultResponse:
+    """Convert a domain SearchResult (or dict) to an API SearchResultResponse."""
+    if isinstance(result, dict):
+        return SearchResultResponse(**result)
     return SearchResultResponse(
         track=_track_to_response(result.track),
         similarity_score=result.similarity_score,
         distance=result.distance,
     )
+
+
+def _map_results(results: list, label: str) -> List[SearchResultResponse]:
+    """Map a list of domain SearchResults to API responses and log."""
+    logger.info(f"{label}: found {len(results)} results")
+    return [map_search_result_to_response(r) for r in results]
 
 
 if __name__ == "__main__":

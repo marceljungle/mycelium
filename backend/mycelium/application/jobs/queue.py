@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import List, Optional, Dict
+from typing import Callable, List, Optional, Dict
 
 from ...domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
@@ -65,73 +65,56 @@ class JobQueueService:
 
     def create_task(self, track_id: str = "", download_url: str = "",
                     audio_data: bytes = None, audio_filename: str = "",
+                    text_query: str = "",
                     n_results: int = 10, prioritize: bool = True,
                     context_type: ContextType = None) -> Task:
         """Create a new task and add it to the queue.
         
-        Can create either:
-        - Traditional embedding task: provide track_id and download_url
+        Handles all task variants:
+        - Audio embedding task: provide track_id and download_url
         - Audio search task: provide audio_data and audio_filename
+        - Text search task: provide text_query
         """
         with self._lock:
             task_id = str(uuid.uuid4())
 
-            # Determine task type based on provided parameters
-            if audio_data is not None:
+            if text_query:
+                # Text search task
+                task = Task(
+                    task_id=task_id,
+                    task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
+                    context_type=context_type or ContextType.TEXT_SEARCH,
+                    track_id="",
+                    download_url="",
+                    text_query=text_query,
+                    n_results=n_results,
+                )
+            elif audio_data is not None:
                 # Audio search task - create temporary file and internal URL
-                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
-
-                # Create temporary file for audio data to avoid base64 encoding overhead
                 temp_file = self._temp_dir / f"audio_task_{task_id}.tmp"
                 temp_file.write_bytes(audio_data)
                 self._temp_files[task_id] = temp_file
 
-                # Create download URL for the worker (internal URL)
-                download_url = f"/download_audio/{task_id}"
-                track_id = ""  # Not needed for audio search
-
                 task = Task(
                     task_id=task_id,
-                    task_type=task_type,
-                    track_id=track_id,
-                    download_url=download_url,
+                    task_type=TaskType.COMPUTE_AUDIO_EMBEDDING,
+                    context_type=context_type,
+                    track_id="",
+                    download_url=f"/download_audio/{task_id}",
                     audio_filename=audio_filename,
                     n_results=n_results,
-                    context_type=context_type
                 )
             else:
                 # Traditional embedding task
-                task_type = TaskType.COMPUTE_AUDIO_EMBEDDING
-
                 task = Task(
                     task_id=task_id,
-                    task_type=task_type,
+                    task_type=TaskType.COMPUTE_AUDIO_EMBEDDING,
+                    context_type=context_type,
                     track_id=track_id,
                     download_url=download_url,
                     n_results=n_results,
-                    context_type=context_type
                 )
 
-            self._tasks[task_id] = task
-            if prioritize:
-                self._pending_tasks.insert(0, task_id)
-            else:
-                self._pending_tasks.append(task_id)
-            return task
-
-    def create_text_search_task(self, text_query: str, n_results: int = 10, prioritize: bool = True) -> Task:
-        """Create a new text search task and add it to the queue."""
-        with self._lock:
-            task_id = str(uuid.uuid4())
-            task = Task(
-                task_id=task_id,
-                task_type=TaskType.COMPUTE_TEXT_EMBEDDING,
-                context_type=ContextType.TEXT_SEARCH,
-                track_id="",  # Not needed for text search
-                download_url="",  # Not needed for text search
-                text_query=text_query,
-                n_results=n_results
-            )
             self._tasks[task_id] = task
             if prioritize:
                 self._pending_tasks.insert(0, task_id)
@@ -201,6 +184,74 @@ class JobQueueService:
 
             return True
 
+    def complete_task_with_search(
+        self,
+        task_id: str,
+        embedding: list,
+        search_fn: Callable[[list, int], list],
+        map_fn: Callable,
+    ) -> None:
+        """Run a similarity search using *embedding* and store results on the task.
+
+        This is the single place where post-embed search logic lives.
+        Called from the API layer after save_embedding, it keeps lock
+        management inside the queue and removes the need for external
+        code to touch ``_lock`` directly.
+
+        Args:
+            task_id: The task whose results we want to update.
+            embedding: The embedding vector to search with.
+            search_fn: ``(embedding, n_results) -> List[SearchResult]``.
+            map_fn: Converts a single SearchResult → serialisable dict.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+
+            n_results = task.n_results or 10
+
+        # Run the (potentially slow) search outside the lock.
+        try:
+            search_results = search_fn(embedding, n_results)
+            results_dicts = [map_fn(r) for r in search_results]
+
+            with self._lock:
+                task.search_results = results_dicts
+                if task.status != TaskStatus.SUCCESS:
+                    task.status = TaskStatus.SUCCESS
+                    task.completed_at = datetime.now()
+
+            logger.info(
+                f"Post-embed search completed for task {task_id}, "
+                f"found {len(results_dicts)} results"
+            )
+        except Exception as e:
+            logger.error(
+                f"Post-embed search failed for task {task_id}: {e}",
+                exc_info=True,
+            )
+            with self._lock:
+                task.status = TaskStatus.FAILED
+                task.error_message = str(e)
+                task.completed_at = datetime.now()
+
+    def update_task_status(
+        self,
+        task_id: str,
+        status: TaskStatus,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Safely update a task's status from outside the queue."""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return
+            task.status = status
+            if error_message:
+                task.error_message = error_message
+            task.completed_at = datetime.now()
+
     def get_task_status(self, task_id: str) -> Optional[Task]:
         """Get the status of a specific task."""
         with self._lock:
@@ -254,45 +305,37 @@ class JobQueueService:
 
             # When stopping, clean up ALL in-progress tasks, not just from inactive workers
             # This ensures processing state is properly cleared even if workers are still active
-            in_progress_cleaned = self._cleanup_all_in_progress_tasks()
+            in_progress_cleaned = self._cleanup_tasks(lambda t: t.status == TaskStatus.IN_PROGRESS,
+                                                      "Processing stopped by user request")
 
             return cleared_count + in_progress_cleaned
 
-    def _cleanup_stale_tasks(self) -> int:
-        """Clean up tasks assigned to inactive workers. Returns number of tasks cleaned up."""
-        active_worker_ids = {w.id for w in self._workers.values() if w.is_active}
-        cleaned_count = 0
+    def _cleanup_tasks(self, predicate: Callable[[Task], bool], error_message: str) -> int:
+        """Mark tasks matching *predicate* as FAILED. Returns count of cleaned tasks.
 
+        Must be called while ``_lock`` is held.
+        """
+        cleaned_count = 0
         for task in self._tasks.values():
-            # Mark IN_PROGRESS tasks from inactive workers as failed
-            if (task.status == TaskStatus.IN_PROGRESS and
-                    task.assigned_worker_id and
-                    task.assigned_worker_id not in active_worker_ids):
+            if predicate(task):
                 task.status = TaskStatus.FAILED
-                task.error_message = "Worker became inactive during processing"
+                task.error_message = error_message
                 task.completed_at = datetime.now()
                 cleaned_count += 1
-
-        return cleaned_count
-
-    def _cleanup_all_in_progress_tasks(self) -> int:
-        """Clean up ALL in-progress tasks when stopping processing. Returns number of tasks cleaned up."""
-        cleaned_count = 0
-
-        for task in self._tasks.values():
-            # Mark ALL IN_PROGRESS tasks as failed when explicitly stopping
-            if task.status == TaskStatus.IN_PROGRESS:
-                task.status = TaskStatus.FAILED
-                task.error_message = "Processing stopped by user request"
-                task.completed_at = datetime.now()
-                cleaned_count += 1
-
         return cleaned_count
 
     def cleanup_stale_tasks(self) -> int:
         """Public method to clean up stale tasks. Returns number of tasks cleaned up."""
         with self._lock:
-            return self._cleanup_stale_tasks()
+            active_worker_ids = {w.id for w in self._workers.values() if w.is_active}
+            return self._cleanup_tasks(
+                lambda t: (
+                    t.status == TaskStatus.IN_PROGRESS
+                    and t.assigned_worker_id is not None
+                    and t.assigned_worker_id not in active_worker_ids
+                ),
+                "Worker became inactive during processing",
+            )
 
     def has_active_processing(self) -> bool:
         """Check if there are any library processing tasks currently being processed or pending.
@@ -302,7 +345,15 @@ class JobQueueService:
         """
         with self._lock:
             # Clean up stale in-progress tasks from inactive workers first
-            self._cleanup_stale_tasks()
+            active_worker_ids = {w.id for w in self._workers.values() if w.is_active}
+            self._cleanup_tasks(
+                lambda t: (
+                    t.status == TaskStatus.IN_PROGRESS
+                    and t.assigned_worker_id is not None
+                    and t.assigned_worker_id not in active_worker_ids
+                ),
+                "Worker became inactive during processing",
+            )
 
             # Only count library processing tasks, not search tasks
             library_pending_tasks = [
