@@ -4,8 +4,6 @@ To add a new embedding model:
 1. Create an adapter in ``infrastructure/model/<name>.py`` implementing ``EmbeddingGenerator``.
 2. Add a ``ModelSpec`` entry to ``MODEL_REGISTRY`` below.
 3. (Optional) add a default config section to ``config.example.yml``.
-
-That's it — the factory, config validation, and CLI will pick it up automatically.
 """
 
 from __future__ import annotations

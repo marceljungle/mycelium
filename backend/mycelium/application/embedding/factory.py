@@ -1,8 +1,4 @@
-"""Factory for creating embedding generators based on configuration.
-
-Delegates to :func:`registry.create_embedding_generator` so that adding
-a new model only requires a registry entry — no changes here.
-"""
+"""Factory for creating embedding generators based on configuration."""
 
 from __future__ import annotations
 
