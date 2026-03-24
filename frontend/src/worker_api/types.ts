@@ -52,9 +52,15 @@ export interface SaveConfigResponse {
 // Client status (GET /api/status)
 // ---------------------------------------------------------------------------
 
+export interface StopClientResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface WorkerProcessingStatus {
   is_running: boolean;
   is_processing: boolean;
+  is_stopping: boolean;
   jobs_in_download_queue: number;
   jobs_ready_for_gpu: number;
   total_jobs_processed: number;

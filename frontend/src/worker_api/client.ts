@@ -4,6 +4,7 @@ import type {
   WorkerConfigResponse,
   SaveConfigResponse,
   ClientStatusResponse,
+  StopClientResponse,
 } from './types';
 
 // Re-export all types
@@ -50,5 +51,9 @@ export const workerApi = {
 
   getClientStatus(): Promise<ClientStatusResponse> {
     return request('/api/status');
+  },
+
+  stopProcessing(): Promise<StopClientResponse> {
+    return request('/api/stop', { method: 'POST' });
   },
 };

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from mycelium.api.schemas import (
     ClientStatusResponse,
     SaveConfigResponse,
+    StopClientResponse,
     WorkerConfigRequest,
     WorkerConfigResponse,
     WorkerProcessingStatus,
@@ -184,3 +185,28 @@ async def save_config(config_request: WorkerConfigRequest):
     except Exception as e:
         logger.error(f"Failed to save client configuration: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save configuration: {str(e)}")
+
+
+@app.post("/api/stop", response_model=StopClientResponse)
+async def stop_processing():
+    """Request a graceful stop of the worker.
+
+    The worker stops fetching new jobs immediately and finishes
+    processing whatever is already in its local queue, then exits.
+    """
+    try:
+        from mycelium.client import stop_client
+
+        stopped = stop_client()
+        if stopped:
+            return StopClientResponse(
+                success=True,
+                message="Graceful stop requested. The worker will finish its current queue and then stop.",
+            )
+        return StopClientResponse(
+            success=False,
+            message="No active worker to stop.",
+        )
+    except Exception as e:
+        logger.error(f"Failed to stop worker: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

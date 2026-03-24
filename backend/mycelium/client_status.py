@@ -13,6 +13,7 @@ class ClientWorkerStatus:
 
     is_running: bool = False
     is_processing: bool = False
+    is_stopping: bool = False
     jobs_in_download_queue: int = 0
     jobs_ready_for_gpu: int = 0
     total_jobs_processed: int = 0
@@ -37,6 +38,7 @@ class ClientWorkerStatus:
             return {
                 "is_running": self.is_running,
                 "is_processing": self.is_processing,
+                "is_stopping": self.is_stopping,
                 "jobs_in_download_queue": self.jobs_in_download_queue,
                 "jobs_ready_for_gpu": self.jobs_ready_for_gpu,
                 "total_jobs_processed": self.total_jobs_processed,

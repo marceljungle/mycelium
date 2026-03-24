@@ -207,6 +207,7 @@ class WorkerProcessingStatus(BaseModel):
 
     is_running: bool = False
     is_processing: bool = False
+    is_stopping: bool = False
     jobs_in_download_queue: int = 0
     jobs_ready_for_gpu: int = 0
     total_jobs_processed: int = 0
@@ -224,6 +225,13 @@ class ClientStatusResponse(BaseModel):
 
     server_reachable: bool
     worker: WorkerProcessingStatus
+
+
+class StopClientResponse(BaseModel):
+    """Response after requesting a graceful worker stop."""
+
+    success: bool
+    message: str
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,9 @@ from mycelium.domain.repositories import EmbeddingGenerator
 
 logger = logging.getLogger(__name__)
 
+# Module-level reference so the client API can request a graceful stop.
+_active_client: Optional["MyceliumClient"] = None
+
 
 @dataclass
 class DownloadedJob:
@@ -418,6 +421,19 @@ class MyceliumClient:
                 break
         logging.info("All worker threads stopped.")
 
+    def request_graceful_stop(self) -> None:
+        """Signal the worker to stop after finishing its current queue.
+
+        The job fetcher stops requesting new work immediately.
+        The main loop drains remaining items from the download queue,
+        processes them, and then exits.
+        """
+        if self.stop_event.is_set():
+            logging.info("Graceful stop already requested.")
+            return
+        logging.info("Graceful stop requested — finishing queued work…")
+        self.stop_event.set()
+        worker_status.update(is_stopping=True)
 
     def submit_result(self, task_id: str, track_id: str, embedding: Optional[List[float]],
                       error_message: Optional[str] = None) -> bool:
@@ -628,11 +644,27 @@ class MyceliumClient:
             self._stop_workers()
             if self.embedding_generator is not None:
                 self.embedding_generator.unload_model()
-            worker_status.update(is_running=False, is_processing=False)
+            worker_status.update(is_running=False, is_processing=False, is_stopping=False)
             logging.info("Worker stopped")
+
+
+def stop_client() -> bool:
+    """Request a graceful stop of the active client (if any).
+
+    Returns True if a running client was told to stop.
+    """
+    if _active_client is not None:
+        _active_client.request_graceful_stop()
+        return True
+    return False
 
 
 def run_client():
     """Run the Mycelium client."""
+    global _active_client
     client = MyceliumClient()
-    client.run()
+    _active_client = client
+    try:
+        client.run()
+    finally:
+        _active_client = None

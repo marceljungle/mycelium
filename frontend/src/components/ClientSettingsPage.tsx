@@ -79,6 +79,20 @@ export default function ClientSettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
+  const handleStopProcessing = async () => {
+    try {
+      const result = await workerApi.stopProcessing();
+      if (result.success) {
+        setSuccessMessage(result.message);
+      } else {
+        setError(result.message);
+      }
+      await fetchStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop processing');
+    }
+  };
+
   const updateConfig = <K extends keyof WorkerConfigResponse, P extends keyof WorkerConfigResponse[K]>(
     section: K,
     key: P,
@@ -153,12 +167,14 @@ export default function ClientSettingsPage() {
                   className={`inline-block h-2.5 w-2.5 rounded-full ${
                     !status.worker.is_running
                       ? 'bg-gray-400'
-                      : status.worker.is_processing
-                        ? 'bg-green-500 animate-pulse shadow-[0_0_4px_rgba(34,197,94,0.6)]'
-                        : 'bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.6)]'
+                      : status.worker.is_stopping
+                        ? 'bg-amber-500 animate-pulse shadow-[0_0_4px_rgba(245,158,11,0.6)]'
+                        : status.worker.is_processing
+                          ? 'bg-green-500 animate-pulse shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+                          : 'bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.6)]'
                   }`}
                   aria-label={
-                    !status.worker.is_running ? 'Worker stopped' : status.worker.is_processing ? 'Processing' : 'Idle'
+                    !status.worker.is_running ? 'Worker stopped' : status.worker.is_stopping ? 'Stopping' : status.worker.is_processing ? 'Processing' : 'Idle'
                   }
                 />
                 <span className="text-gray-700 dark:text-gray-300">
@@ -167,12 +183,14 @@ export default function ClientSettingsPage() {
                     className={
                       !status.worker.is_running
                         ? 'text-gray-500 font-medium'
-                        : status.worker.is_processing
-                          ? 'text-green-600 dark:text-green-400 font-medium'
-                          : 'text-yellow-600 dark:text-yellow-400 font-medium'
+                        : status.worker.is_stopping
+                          ? 'text-amber-600 dark:text-amber-400 font-medium'
+                          : status.worker.is_processing
+                            ? 'text-green-600 dark:text-green-400 font-medium'
+                            : 'text-yellow-600 dark:text-yellow-400 font-medium'
                     }
                   >
-                    {!status.worker.is_running ? 'Stopped' : status.worker.is_processing ? 'Processing' : 'Idle'}
+                    {!status.worker.is_running ? 'Stopped' : status.worker.is_stopping ? 'Stopping…' : status.worker.is_processing ? 'Processing' : 'Idle'}
                   </span>
                 </span>
               </div>
@@ -209,6 +227,29 @@ export default function ClientSettingsPage() {
                 </>
               )}
             </div>
+
+            {/* Stop Processing Button */}
+            {status.worker.is_running && (status.worker.is_processing || status.worker.is_stopping) && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                <button
+                  onClick={handleStopProcessing}
+                  disabled={status.worker.is_stopping}
+                  className="px-4 py-2 text-sm bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {status.worker.is_stopping ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Stopping… finishing queued jobs
+                    </span>
+                  ) : (
+                    '🛑 Stop Processing'
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
