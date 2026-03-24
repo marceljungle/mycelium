@@ -111,7 +111,7 @@ export interface ServerSection { gpu_batch_size: number }
 export interface APISection { host: string; port: number; reload: boolean }
 export interface ChromaSection { collection_name: string; batch_size: number }
 export interface EmbeddingSection { type: string }
-export interface ClapSection { model_id: string; target_sr: number; chunk_duration_s: number }
+export interface ClapSection { model_id: string; target_sr: number; chunk_duration_s: number; micro_batch_size: number }
 export interface MuqSection { model_id: string; target_sr: number; chunk_duration_s: number; micro_batch_size: number }
 export interface LoggingSection { level: string }
 

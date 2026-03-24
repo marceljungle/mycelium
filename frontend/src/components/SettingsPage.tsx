@@ -352,6 +352,22 @@ export default function SettingsPage() {
                     Duration of each sequential audio window
                   </p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Micro Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.clap?.micro_batch_size ?? 4}
+                    onChange={(e) => updateConfig('clap', 'micro_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="64"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chunks per GPU forward pass (lower = less memory)
+                  </p>
+                </div>
               </div>
             </div>
             )}

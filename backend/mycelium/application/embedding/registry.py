@@ -55,6 +55,7 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             "model_id": "laion/larger_clap_music_and_speech",
             "target_sr": 48000,
             "chunk_duration_s": 30,
+            "micro_batch_size": 4,
         },
     ),
     "muq": ModelSpec(

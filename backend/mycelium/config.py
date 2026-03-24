@@ -79,6 +79,7 @@ class CLAPConfig:
     model_id: str = "laion/larger_clap_music_and_speech"
     target_sr: int = 48000
     chunk_duration_s: int = 30
+    micro_batch_size: int = 4
 
 
 @dataclass
@@ -214,6 +215,7 @@ class MyceliumConfig:
             model_id=config_data.get("clap", {}).get("model_id", "laion/larger_clap_music_and_speech"),
             target_sr=config_data.get("clap", {}).get("target_sr", 48000),
             chunk_duration_s=config_data.get("clap", {}).get("chunk_duration_s", 30),
+            micro_batch_size=config_data.get("clap", {}).get("micro_batch_size", 4),
         )
 
         muq_config = MuQConfig(
