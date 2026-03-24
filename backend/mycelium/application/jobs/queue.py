@@ -108,6 +108,7 @@ class JobQueueService:
                     task_type=task_type,
                     track_id=track_id,
                     download_url=download_url,
+                    n_results=n_results,
                     context_type=context_type
                 )
 
@@ -137,6 +138,22 @@ class JobQueueService:
             else:
                 self._pending_tasks.append(task_id)
             return task
+
+    def find_active_task_for_track(self, track_id: str) -> Optional[Task]:
+        """Return an existing PENDING or IN_PROGRESS task for *track_id*, if any.
+
+        Useful to avoid creating duplicate tasks when the user requests
+        processing for a track that is already queued (e.g. via bulk
+        processing).
+        """
+        with self._lock:
+            for task in self._tasks.values():
+                if (
+                    task.track_id == track_id
+                    and task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+                ):
+                    return task
+            return None
 
     def get_next_job(self, worker_id: str, ip_address: str) -> Optional[Task]:
         """Get the next job for a worker."""

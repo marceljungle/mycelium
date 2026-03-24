@@ -119,7 +119,7 @@ export default function LibraryPage() {
     // Note: No auto-fetch when no search is active - show empty state instead
   }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
 
-  const pollTaskStatus = async (taskId: string): Promise<boolean> => {
+  const pollTaskStatus = async (taskId: string): Promise<SearchResultResponse[] | null> => {
     try {
       console.log(`Polling task status for task_id: ${taskId}`);
       const taskStatus = await api.getTaskStatus({ taskId });
@@ -128,23 +128,24 @@ export default function LibraryPage() {
         
         if (taskStatus.status === 'success') {
           console.log(`Task ${taskId} completed successfully`);
-          return true; // Task completed successfully
+          // Return search results if the server already computed them
+          return taskStatus.search_results ?? [];
         } else if (taskStatus.status === 'failed') {
           console.error(`Task ${taskId} failed:`, taskStatus.error_message);
           setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
-          return false;
+          return null;
         }
         console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
         // Still in progress, continue polling
-        return false;
+        return null;
       } else {
         // Task not found or error - assume it completed
-        return true;
+        return [];
       }
     } catch (err) {
       console.error('Error polling task status:', err);
       // On error, assume completed and try to get recommendations
-      return true;
+      return [];
     }
   };
 
@@ -165,32 +166,37 @@ export default function LibraryPage() {
     setProcessingState('worker');
 
     const interval = setInterval(async () => {
-      const completed = await pollTaskStatus(taskId);
+      const results = await pollTaskStatus(taskId);
       
-      if (completed) {
-        console.log(`Task ${taskId} completed, clearing polling and retrying recommendations`);
+      if (results !== null) {
+        console.log(`Task ${taskId} completed, clearing polling`);
         clearInterval(interval);
         setPollInterval(null);
         setCurrentTask(null);
         setProcessingState('none');
-        
-        // Wait a moment for the embedding to be fully saved
-        setTimeout(() => {
-          console.log(`Retrying recommendations for track after task completion`);
-          // Automatically retry getting recommendations
-          getRecommendations(track, true);
-        }, 1000);
-      }
-      
-      // Stop polling after 5 minutes to prevent infinite polling
-      const elapsed = Date.now() - task.startTime;
-      if (elapsed > 300000) {
-        console.warn(`Task ${taskId} polling timeout after ${elapsed}ms`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setCurrentTask(null);
-        setProcessingState('none');
-        setError('Processing took too long. Please try clicking the track again.');
+
+        if (results.length > 0) {
+          // Server already computed similar tracks — use them directly
+          console.log(`Using ${results.length} search results from task`);
+          setRecommendations(results);
+        } else {
+          // No results attached — re-fetch recommendations (embedding is saved)
+          setTimeout(() => {
+            console.log(`Retrying recommendations for track after task completion`);
+            getRecommendations(track, true);
+          }, 500);
+        }
+      } else {
+        // Stop polling after 5 minutes to prevent infinite polling
+        const elapsed = Date.now() - task.startTime;
+        if (elapsed > 300000) {
+          console.warn(`Task ${taskId} polling timeout after ${elapsed}ms`);
+          clearInterval(interval);
+          setPollInterval(null);
+          setCurrentTask(null);
+          setProcessingState('none');
+          setError('Processing took too long. Please try clicking the track again.');
+        }
       }
     }, 2000); // Poll every 2 seconds
     
@@ -239,12 +245,12 @@ export default function LibraryPage() {
           }
         } else if (data.status === 'processing') {
           // Handle worker processing case - start polling immediately
-          if (!isRetry && data.task_id) {
+          if (data.task_id) {
             console.log('Starting worker processing with task_id:', data.task_id);
             // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
             startTaskPolling(data.task_id, track.media_server_rating_key, track);
-          } else if (!data.task_id) {
+          } else {
             console.error('Worker processing response missing taskId:', data);
             setError('Worker processing started but missing task ID. Please try again.');
             setRecommendationsLoading(false);

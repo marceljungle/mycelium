@@ -760,6 +760,42 @@ async def submit_result(request: TaskResultRequest):
                     # Clean up temporary audio file for audio search tasks
                     job_queue.cleanup_task_files(request.task_id)
 
+                elif task.context_type == ContextType.SIMILAR_TRACKS:
+                    # Similar-tracks task — run the similarity search now
+                    # so the frontend can fetch results immediately.
+                    logger.info(
+                        f"Performing similarity search for task {request.task_id}, track {request.track_id}"
+                    )
+                    try:
+                        search_results = service.embedding_repository.search_by_embedding(
+                            request.embedding, task.n_results or 10
+                        )
+                        results_responses = [
+                            map_search_result_to_response(result)
+                            for result in search_results
+                        ]
+                        results_dict = [result.model_dump() for result in results_responses]
+
+                        with job_queue._lock:
+                            task.search_results = results_dict
+                            if task.status != TaskStatus.SUCCESS:
+                                task.status = TaskStatus.SUCCESS
+                                task.completed_at = datetime.now()
+
+                        logger.info(
+                            f"Similar-tracks search completed for task {request.task_id}, "
+                            f"found {len(results_dict)} results"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error performing similar-tracks search for task {request.task_id}: {e}",
+                            exc_info=True,
+                        )
+                        with job_queue._lock:
+                            task.status = TaskStatus.FAILED
+                            task.error_message = str(e)
+                            task.completed_at = datetime.now()
+
             elif task and task.task_type == TaskType.COMPUTE_TEXT_EMBEDDING:
                 # Text search task
                 logger.info(
@@ -771,9 +807,16 @@ async def submit_result(request: TaskResultRequest):
                         request.embedding, task.n_results or 10
                     )
 
+                    # Convert search results to API response models
+                    results_responses = [
+                        map_search_result_to_response(result)
+                        for result in search_results
+                    ]
+                    results_dict = [result.model_dump() for result in results_responses]
+
                     # Update task with search results - ensure task status is set to success
                     with job_queue._lock:
-                        task.search_results = search_results
+                        task.search_results = results_dict
                         if task.status != TaskStatus.SUCCESS:
                             logger.info(
                                 f"Setting task {request.task_id} status to SUCCESS"
@@ -782,7 +825,7 @@ async def submit_result(request: TaskResultRequest):
                             task.completed_at = datetime.now()
 
                     logger.info(
-                        f"Text search completed for task {request.task_id}, found {len(search_results)} results"
+                        f"Text search completed for task {request.task_id}, found {len(results_dict)} results"
                     )
                 except Exception as e:
                     logger.error(
@@ -897,15 +940,32 @@ async def get_similar_tracks(
         # Check if there are active workers
         active_workers = job_queue.get_active_workers()
         if active_workers:
-            logger.info(f"Found {len(active_workers)} active workers, creating task")
-            # Create task for worker processing
-            download_url = f"/download_track/{track_id}"
-            task = job_queue.create_task(
-                track_id=track_id,
-                download_url=download_url,
-                prioritize=True,
-                context_type=ContextType.SIMILAR_TRACKS,
-            )
+            # Reuse an existing pending/in-progress task for this track
+            # (e.g. one created by bulk library processing) instead of
+            # creating a duplicate.
+            existing_task = job_queue.find_active_task_for_track(track_id)
+            if existing_task:
+                logger.info(
+                    f"Reusing existing task {existing_task.task_id} "
+                    f"(status={existing_task.status.value}) for track {track_id}"
+                )
+                # Upgrade context so submit_result runs the similarity
+                # search when the embedding comes back.
+                if existing_task.context_type != ContextType.SIMILAR_TRACKS:
+                    existing_task.context_type = ContextType.SIMILAR_TRACKS
+                    existing_task.n_results = n_results
+                task = existing_task
+            else:
+                logger.info(f"Found {len(active_workers)} active workers, creating task")
+                # Create task for worker processing
+                download_url = f"/download_track/{track_id}"
+                task = job_queue.create_task(
+                    track_id=track_id,
+                    download_url=download_url,
+                    prioritize=True,
+                    context_type=ContextType.SIMILAR_TRACKS,
+                    n_results=n_results,
+                )
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
             # Return processing response instead of blocking

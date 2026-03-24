@@ -589,14 +589,27 @@ class MyceliumClient:
 
         try:
             while True:
-                # Collect a batch of jobs for processing
+                # Collect a batch of jobs for processing.
+                # Use a short timeout so partial batches are processed
+                # promptly (e.g. a single prioritised task isn't stuck
+                # waiting for the batch to fill).
                 batch = []
+                batch_wait_deadline = time.time() + 2.0  # max 2s to fill
                 while len(batch) < gpu_batch_size:
+                    remaining = batch_wait_deadline - time.time()
+                    if remaining <= 0:
+                        break  # Don't wait forever — process what we have
                     try:
-                        downloaded_job = self.download_queue.get(timeout=0.5)
+                        downloaded_job = self.download_queue.get(
+                            timeout=min(remaining, 0.5)
+                        )
                         batch.append(downloaded_job)
                     except Empty:
                         if self.stop_event.is_set():
+                            break
+                        # If we already have items, stop waiting and
+                        # process the partial batch immediately.
+                        if batch:
                             break
                         continue
                 
