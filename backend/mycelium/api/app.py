@@ -663,6 +663,11 @@ async def get_job(
     """Get the next job for a worker."""
     logger.debug(f"Worker job request received for worker ID {worker_id}")
     try:
+        # Periodically clean up tasks assigned to workers that went offline
+        cleaned = job_queue.cleanup_stale_tasks()
+        if cleaned:
+            logger.info(f"Cleaned up {cleaned} stale tasks from inactive workers")
+
         task = job_queue.get_next_job(worker_id=worker_id, ip_address=ip_address)
         if task is None:
             # No job available - return 204 No Content

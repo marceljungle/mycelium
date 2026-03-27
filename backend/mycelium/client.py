@@ -360,6 +360,7 @@ class MyceliumClient:
                 download_url = job.get("download_url")
                 if not download_url:
                     logging.error(f"Job {task_id} is missing download_url.")
+                    self.submit_result(task_id, job.get("track_id", ""), None, "Job missing download URL")
                     self.job_queue.task_done()
                     continue
 
@@ -377,7 +378,8 @@ class MyceliumClient:
                     self.download_queue.put(downloaded_job)
                     logging.info(f"Queued audio job {task_id} for processing.")
                 else:
-                    logging.error(f"Failed to download audio for job {task_id}. Job discarded.")
+                    logging.error(f"Failed to download audio for job {task_id}.")
+                    self.submit_result(task_id, job.get("track_id", ""), None, "Failed to download audio file")
 
                 self.job_queue.task_done()
 
@@ -574,6 +576,8 @@ class MyceliumClient:
                     logging.warning(f"Failed to submit {error_label} job {job.task_id}")
         except Exception as e:
             logging.error(f"{error_label.title()} batch processing failed: {e}", exc_info=True)
+            for job in jobs:
+                self.submit_result(job.task_id, job.track_id, None, f"{error_label.title()} batch failed: {e}")
 
     def run(self):
         """Main worker loop with batch processing for better GPU utilization."""
