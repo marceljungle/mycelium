@@ -9,6 +9,8 @@ export interface TrackResponse {
   filepath: string;
   media_server_rating_key: string;
   media_server_type: string;
+  processed?: boolean;
+  thumb_url?: string;
 }
 
 export interface SearchResultResponse {
@@ -173,4 +175,61 @@ export interface ComputeOnServerRequest {
 export interface ComputeTextSearchRequest {
   query: string;
   n_results?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Processing queue dashboard
+// ---------------------------------------------------------------------------
+
+export interface QueueTaskResponse {
+  task_id: string;
+  task_type: string;
+  context_type: string;
+  status: string;
+  track_id?: string;
+  track_artist?: string;
+  track_title?: string;
+  track_album?: string;
+  assigned_worker_id?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  text_query?: string;
+}
+
+export interface QueueWorkerResponse {
+  id: string;
+  ip_address: string;
+  registration_time: string;
+  last_heartbeat: string;
+  is_active: boolean;
+  current_task?: QueueTaskResponse;
+}
+
+export interface QueueStatsResponse {
+  active_workers: number;
+  pending_tasks: number;
+  in_progress_tasks: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  total_tasks: number;
+}
+
+export interface QueueOverviewResponse {
+  workers: QueueWorkerResponse[];
+  stats: QueueStatsResponse;
+  in_progress_tasks: QueueTaskResponse[];
+}
+
+export interface QueueTasksListResponse {
+  tasks: QueueTaskResponse[];
+  total_count: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CancelTaskResponse {
+  success: boolean;
+  message: string;
 }

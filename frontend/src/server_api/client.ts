@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '@/config/api';
 import type {
+  CancelTaskResponse,
   CapabilitiesResponse,
   ComputeOnServerRequest,
   ComputeTextSearchRequest,
@@ -9,6 +10,8 @@ import type {
   LibraryStatsResponse,
   PlaylistResponse,
   ProcessingResponse,
+  QueueOverviewResponse,
+  QueueTasksListResponse,
   SaveConfigResponse,
   ScanLibraryResponse,
   SearchResultResponse,
@@ -176,5 +179,23 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params.createPlaylistRequest),
     });
+  },
+
+  // --- Queue dashboard ---
+  getQueueOverview(): Promise<QueueOverviewResponse> {
+    return request('/api/queue/overview');
+  },
+
+  getQueueTasks(params: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<QueueTasksListResponse> {
+    return request(`/api/queue/tasks${qs(params)}`);
+  },
+
+  cancelTask(params: { taskId: string }): Promise<CancelTaskResponse> {
+    const taskId = encodeURIComponent(params.taskId);
+    return request(`/api/queue/tasks/${taskId}/cancel`, { method: 'POST' });
   },
 };

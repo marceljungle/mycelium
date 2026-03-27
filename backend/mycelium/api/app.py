@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 import uvicorn
+import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from mycelium.api.schemas import (
+    CancelTaskResponse,
     CapabilitiesResponse,
     ConfigRequest,
     ConfigResponse,
@@ -26,6 +28,11 @@ from mycelium.api.schemas import (
     LibraryStatsResponse,
     PlaylistResponse,
     ProcessingResponse,
+    QueueOverviewResponse,
+    QueueStatsResponse,
+    QueueTaskResponse,
+    QueueTasksListResponse,
+    QueueWorkerResponse,
     SaveConfigResponse,
     ScanLibraryResponse,
     SearchResultResponse,
@@ -61,7 +68,7 @@ from ..config import (
     PlexConfig,
     ServerConfig,
 )
-from ..domain.worker import ContextType, TaskResult, TaskType
+from ..domain.worker import ContextType, TaskResult, TaskStatus, TaskType
 
 # Setup logger for this module
 logger = logging.getLogger(__name__)
@@ -360,38 +367,47 @@ async def get_library_tracks(
     )
 
     try:
+        model_id = config.active_model_id
+
         # Determine search type and execute appropriate query
         if artist or album or title:
-            # Use advanced search with AND logic
             logger.info(
                 f"Performing advanced library search - artist: {artist}, album: {album}, title: {title}"
             )
-            tracks = service.search_tracks_advanced(
-                artist=artist, album=album, title=title, limit=limit, offset=(page - 1) * limit
+            tracks_with_processed = service.search_tracks_advanced_with_processed(
+                model_id=model_id, artist=artist, album=album, title=title,
+                limit=limit, offset=(page - 1) * limit,
             )
             total_count = service.count_tracks_advanced(
                 artist=artist, album=album, title=title
             )
         elif search and search.strip():
-            # Simple search query
             logger.info(f"Performing simple library search for: '{search.strip()}'")
-            tracks = service.search_tracks_in_database(
-                search.strip(), limit=limit, offset=(page - 1) * limit
+            tracks_with_processed = service.search_tracks_with_processed(
+                search.strip(), model_id=model_id, limit=limit, offset=(page - 1) * limit,
             )
             total_count = service.count_tracks_in_database(search.strip())
         else:
-            # Regular pagination with no search
             offset = (page - 1) * limit
-            tracks = service.get_all_tracks(limit=limit, offset=offset)
-
-            # Get total count for pagination info
+            tracks_with_processed = service.get_all_tracks_with_processed(
+                model_id=model_id, limit=limit, offset=offset,
+            )
             stats = service.get_database_stats()
             total_count = stats.get("track_database_stats", {}).get("total_tracks", 0)
 
-        logger.info(f"Retrieved {len(tracks)} tracks from database")
+        logger.info(f"Retrieved {len(tracks_with_processed)} tracks from database")
+
+        # Build responses with processed status and thumbnail proxy URLs
+        track_responses = []
+        for track, processed in tracks_with_processed:
+            resp = _track_to_response(track)
+            resp.processed = processed
+            if track.media_server_rating_key:
+                resp.thumb_url = f"/api/library/tracks/{track.media_server_rating_key}/thumb"
+            track_responses.append(resp)
 
         return TracksListResponse(
-            tracks=[_track_to_response(track) for track in tracks],
+            tracks=track_responses,
             total_count=total_count,
             page=page,
             limit=limit,
@@ -753,6 +769,58 @@ def _run_post_embed_search(task: "Task", embedding: list) -> None:
 
 
 # File Server for Audio Downloads
+@app.get("/api/library/tracks/{rating_key}/thumb")
+async def get_track_thumb(
+    rating_key: str,
+    width: int = Query(80, ge=10, le=1000),
+    height: int = Query(80, ge=10, le=1000),
+):
+    """Proxy album art thumbnail from Plex without exposing the token."""
+    with shared_resources_lock:
+        plex_url = config.plex.url
+        plex_token = config.plex.token
+
+    if not plex_url or not plex_token:
+        raise HTTPException(status_code=404, detail="Plex not configured")
+
+    try:
+        # Fetch track metadata to get the correct thumb path
+        # (tracks often inherit album art, so the thumb path differs from the track's own rating key)
+        meta_url = f"{plex_url}/library/metadata/{rating_key}?X-Plex-Token={plex_token}"
+        meta_resp = http_requests.get(
+            meta_url, timeout=10, headers={"Accept": "application/json"}
+        )
+        if meta_resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Track not found in Plex")
+
+        metadata = meta_resp.json().get("MediaContainer", {}).get("Metadata", [{}])[0]
+        thumb_path = (
+            metadata.get("thumb")
+            or metadata.get("parentThumb")
+            or metadata.get("grandparentThumb")
+        )
+        if not thumb_path:
+            raise HTTPException(status_code=404, detail="No artwork available")
+
+        transcode_url = (
+            f"{plex_url}/photo/:/transcode"
+            f"?width={width}&height={height}&minSize=1&upscale=1"
+            f"&url={thumb_path}"
+            f"&X-Plex-Token={plex_token}"
+        )
+        resp = http_requests.get(transcode_url, timeout=10)
+        if resp.status_code != 200 or not resp.content:
+            raise HTTPException(status_code=404, detail="Thumbnail not available")
+        content_type = resp.headers.get("Content-Type", "image/jpeg")
+        return Response(
+            content=resp.content,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except http_requests.RequestException:
+        raise HTTPException(status_code=502, detail="Failed to fetch thumbnail from Plex")
+
+
 @app.get("/download_track/{track_id}")
 async def download_track(track_id: str):
     """Download an audio file for processing."""
@@ -848,12 +916,17 @@ async def get_similar_tracks(
                 logger.info(f"Found {len(active_workers)} active workers, creating task")
                 # Create task for worker processing
                 download_url = f"/download_track/{track_id}"
+                # Look up track metadata for queue display
+                track_info = service.get_track_by_id(track_id)
                 task = job_queue.create_task(
                     track_id=track_id,
                     download_url=download_url,
                     prioritize=True,
                     context_type=ContextType.SIMILAR_TRACKS,
                     n_results=n_results,
+                    track_artist=track_info.artist if track_info else "",
+                    track_title=track_info.title if track_info else "",
+                    track_album=track_info.album if track_info else "",
                 )
 
             logger.info(f"Created worker task {task.task_id} for track {track_id}")
@@ -1041,6 +1114,113 @@ async def get_task_status(task_id: str):
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Queue dashboard endpoints
+# ---------------------------------------------------------------------------
+
+def _task_to_queue_response(task) -> QueueTaskResponse:
+    """Convert a domain Task to a QueueTaskResponse DTO."""
+    return QueueTaskResponse(
+        task_id=task.task_id,
+        task_type=task.task_type.value,
+        context_type=task.context_type.value if task.context_type else "",
+        status=task.status.value,
+        track_id=task.track_id or None,
+        track_artist=task.track_artist,
+        track_title=task.track_title,
+        track_album=task.track_album,
+        assigned_worker_id=task.assigned_worker_id,
+        created_at=task.created_at.isoformat() if task.created_at else None,
+        started_at=task.started_at.isoformat() if task.started_at else None,
+        completed_at=task.completed_at.isoformat() if task.completed_at else None,
+        error_message=task.error_message,
+        text_query=task.text_query,
+    )
+
+
+@app.get("/api/queue/overview", response_model=QueueOverviewResponse)
+async def get_queue_overview():
+    """Return workers, aggregate stats, and in-progress tasks."""
+    try:
+        # Workers paired with their current task
+        workers_with_tasks = job_queue.get_workers_with_current_task()
+        worker_responses = []
+        for worker, current_task in workers_with_tasks:
+            worker_responses.append(QueueWorkerResponse(
+                id=worker.id,
+                ip_address=worker.ip_address,
+                registration_time=worker.registration_time.isoformat(),
+                last_heartbeat=worker.last_heartbeat.isoformat(),
+                is_active=worker.is_active,
+                current_task=_task_to_queue_response(current_task) if current_task else None,
+            ))
+
+        # Stats
+        raw_stats = job_queue.get_queue_stats()
+        stats = QueueStatsResponse(**raw_stats)
+
+        # In-progress tasks
+        in_progress, _ = job_queue.get_tasks_by_status(TaskStatus.IN_PROGRESS, limit=100)
+        in_progress_responses = [_task_to_queue_response(t) for t in in_progress]
+
+        return QueueOverviewResponse(
+            workers=worker_responses,
+            stats=stats,
+            in_progress_tasks=in_progress_responses,
+        )
+    except Exception as e:
+        logger.error(f"Error getting queue overview: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/queue/tasks", response_model=QueueTasksListResponse)
+async def get_queue_tasks(
+    status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, success, failed"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Paginated list of tasks, optionally filtered by status."""
+    try:
+        task_status = None
+        if status:
+            try:
+                task_status = TaskStatus(status)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status: {status}. Must be one of: pending, in_progress, success, failed",
+                )
+
+        tasks, total = job_queue.get_tasks_by_status(task_status, limit=limit, offset=offset)
+        return QueueTasksListResponse(
+            tasks=[_task_to_queue_response(t) for t in tasks],
+            total_count=total,
+            limit=limit,
+            offset=offset,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing queue tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/queue/tasks/{task_id}/cancel", response_model=CancelTaskResponse)
+async def cancel_queue_task(task_id: str):
+    """Cancel a pending task."""
+    try:
+        success = job_queue.cancel_task(task_id)
+        if success:
+            return CancelTaskResponse(success=True, message="Task cancelled successfully")
+        return CancelTaskResponse(
+            success=False,
+            message="Task not found or not in pending state",
+        )
+    except Exception as e:
+        logger.error(f"Error cancelling task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------------------------------

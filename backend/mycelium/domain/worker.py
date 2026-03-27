@@ -57,6 +57,10 @@ class Task:
     text_query: Optional[str] = None  # For text search tasks
     audio_filename: Optional[str] = None  # For audio search tasks
     n_results: Optional[int] = None  # For search tasks - number of results to return
+    # Track metadata (denormalised at creation time to avoid N+1 lookups)
+    track_artist: Optional[str] = None
+    track_title: Optional[str] = None
+    track_album: Optional[str] = None
     # Results storage for search tasks
     search_results: Optional[List[SearchResult]] = None
 

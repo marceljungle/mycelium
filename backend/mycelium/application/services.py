@@ -177,6 +177,13 @@ class MyceliumService:
         stored_tracks = self.track_database.get_all_tracks(limit=limit, offset=offset)
         return [stored_track.to_track() for stored_track in stored_tracks]
 
+    def get_all_tracks_with_processed(self, model_id: str, limit: Optional[int] = None, offset: int = 0):
+        """Get all tracks with processed status for a model."""
+        return [
+            (st.to_track(), processed)
+            for st, processed in self.track_database.get_all_tracks_with_processed(model_id, limit=limit, offset=offset)
+        ]
+
     def search_tracks_in_database(self, search_query: str, limit: Optional[int] = None, offset: int = 0) -> List[Track]:
         """Search tracks in the database by artist, album, or title."""
         stored_tracks = self.track_database.search_tracks(search_query, limit=limit, offset=offset)
@@ -185,6 +192,13 @@ class MyceliumService:
     def count_tracks_in_database(self, search_query: str) -> int:
         """Count tracks matching search query in the database."""
         return self.track_database.count_search_tracks(search_query)
+
+    def search_tracks_with_processed(self, search_query: str, model_id: str, limit: Optional[int] = None, offset: int = 0):
+        """Search tracks with processed status."""
+        return [
+            (st.to_track(), processed)
+            for st, processed in self.track_database.search_tracks_with_processed(search_query, model_id, limit=limit, offset=offset)
+        ]
 
     def search_tracks_advanced(
             self,
@@ -199,6 +213,23 @@ class MyceliumService:
             artist=artist, album=album, title=title, limit=limit, offset=offset
         )
         return [stored_track.to_track() for stored_track in stored_tracks]
+
+    def search_tracks_advanced_with_processed(
+            self,
+            model_id: str,
+            artist: Optional[str] = None,
+            album: Optional[str] = None,
+            title: Optional[str] = None,
+            limit: Optional[int] = None,
+            offset: int = 0,
+    ):
+        """Advanced search with processed status."""
+        return [
+            (st.to_track(), processed)
+            for st, processed in self.track_database.search_tracks_advanced_with_processed(
+                model_id, artist=artist, album=album, title=title, limit=limit, offset=offset
+            )
+        ]
 
     def count_tracks_advanced(
             self,

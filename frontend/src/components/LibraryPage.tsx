@@ -6,8 +6,10 @@ import type { TrackResponse, SearchResultResponse } from '@/server_api/client';
 import PlaylistCreationModal from './PlaylistCreationModal';
 import { useTaskPolling } from '@/hooks/useTaskPolling';
 
-type Track = TrackResponse & { processed?: boolean };
 type LibrarySearchResult = SearchResultResponse;
+
+// Processed filter options
+type ProcessedFilter = 'all' | 'processed' | 'unprocessed';
 
 interface ProcessingTask {
   taskId: string;
@@ -17,8 +19,8 @@ interface ProcessingTask {
 
 export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredTracks, setFilteredTracks] = useState<Track[]>([]);
-  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [filteredTracks, setFilteredTracks] = useState<TrackResponse[]>([]);
+  const [selectedTrack, setSelectedTrack] = useState<TrackResponse | null>(null);
   const [recommendations, setRecommendations] = useState<LibrarySearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
@@ -32,6 +34,9 @@ export default function LibraryPage() {
   const [albumSearch, setAlbumSearch] = useState('');
   const [titleSearch, setTitleSearch] = useState('');
   const [numResults, setNumResults] = useState(10);
+  
+  // Processed filter state
+  const [processedFilter, setProcessedFilter] = useState<ProcessedFilter>('all');
   
   // Playlist creation state
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
@@ -71,16 +76,7 @@ export default function LibraryPage() {
     }, []),
   );
 
-  const mapTracks = (tracks: TrackResponse[]): Track[] =>
-    tracks.map((track) => ({
-      artist: track.artist,
-      album: track.album,
-      title: track.title,
-      filepath: track.filepath,
-      media_server_rating_key: track.media_server_rating_key,
-      media_server_type: track.media_server_type,
-      processed: false,
-    }));
+  const mapTracks = (tracks: TrackResponse[]): TrackResponse[] => tracks;
 
   const fetchTracks = useCallback(async (params: {
     search?: string;
@@ -118,7 +114,7 @@ export default function LibraryPage() {
     }
   }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks]);
 
-  const getRecommendations = async (track: Track, isRetry: boolean = false) => {
+  const getRecommendations = async (track: TrackResponse, isRetry: boolean = false) => {
     if (!isRetry) {
       setRecommendationsLoading(true);
       setRecommendations([]);
@@ -188,7 +184,7 @@ export default function LibraryPage() {
     }
   };
 
-  const handleTrackSelect = (track: Track) => {
+  const handleTrackSelect = (track: TrackResponse) => {
     stopPolling();
     setSelectedTrack(track);
     setCurrentTask(null);
@@ -327,9 +323,28 @@ export default function LibraryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
         {/* Track List */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Your Tracks
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Your Tracks
+            </h3>
+            {filteredTracks.length > 0 && (
+              <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                {(['all', 'processed', 'unprocessed'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setProcessedFilter(filter)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      processedFilter === filter
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {filter === 'all' ? 'All' : filter === 'processed' ? 'Processed' : 'Unprocessed'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           
           {loading ? (
             <div className="space-y-3">
@@ -361,22 +376,68 @@ export default function LibraryPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {filteredTracks.map((track) => (
+            <div className="space-y-2 max-h-[32rem] overflow-y-auto">
+              {filteredTracks
+                .filter((track) => {
+                  if (processedFilter === 'processed') return track.processed === true;
+                  if (processedFilter === 'unprocessed') return track.processed === false;
+                  return true;
+                })
+                .map((track) => (
                 <button
-                  key={`${track.media_server_rating_key}`}
+                  key={track.media_server_rating_key}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
+                    selectedTrack?.media_server_rating_key === track.media_server_rating_key
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
                 >
-                  <div className="font-medium text-gray-900 dark:text-white">
-                    {track.title}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {track.artist} • {track.album}
+                  <div className="flex items-center gap-3">
+                    {/* Album Art Thumbnail */}
+                    {track.thumb_url ? (
+                      <img
+                        src={track.thumb_url}
+                        alt={`${track.album} cover`}
+                        className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-gray-200 dark:bg-gray-700"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <div className={`w-12 h-12 rounded-md bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 ${track.thumb_url ? 'hidden' : ''}`}>
+                      <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                    </div>
+
+                    {/* Track Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
+                        {track.title}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {track.artist} &bull; {track.album}
+                      </div>
+                    </div>
+
+                    {/* Processed Badge */}
+                    {track.processed != null && (
+                      <div className="flex-shrink-0" title={track.processed ? 'Processed' : 'Not processed'}>
+                        {track.processed ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500"></span>
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}
@@ -494,22 +555,38 @@ export default function LibraryPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 max-h-[32rem] overflow-y-auto">
               {recommendations.map((result) => (
                 <div
-                  key={`${result.track.media_server_rating_key}`}
+                  key={result.track.media_server_rating_key}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-white">
+                  <div className="flex items-center gap-3">
+                    {/* Album Art */}
+                    {result.track.thumb_url ? (
+                      <img
+                        src={result.track.thumb_url}
+                        alt={`${result.track.album} cover`}
+                        className="w-10 h-10 rounded-md object-cover flex-shrink-0 bg-gray-200 dark:bg-gray-700"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <div className={`w-10 h-10 rounded-md bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 ${result.track.thumb_url ? 'hidden' : ''}`}>
+                      <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
                         {result.track.title}
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-300">
-                        {result.track.artist} • {result.track.album}
+                      <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {result.track.artist} &bull; {result.track.album}
                       </div>
                     </div>
-                    <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+                    <div className="text-sm text-purple-600 dark:text-purple-400 font-medium flex-shrink-0">
                       {(result.similarity_score * 100).toFixed(1)}%
                     </div>
                   </div>

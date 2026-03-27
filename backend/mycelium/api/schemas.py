@@ -20,6 +20,8 @@ class TrackResponse(BaseModel):
     filepath: str
     media_server_rating_key: str
     media_server_type: str
+    processed: Optional[bool] = None
+    thumb_url: Optional[str] = None
 
 
 class SearchResultResponse(BaseModel):
@@ -134,6 +136,75 @@ class TaskStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
     search_results: Optional[List[SearchResultResponse]] = None
+
+
+# ---------------------------------------------------------------------------
+# Processing queue dashboard
+# ---------------------------------------------------------------------------
+
+class QueueTaskResponse(BaseModel):
+    """Detailed view of a single task in the processing queue."""
+
+    task_id: str
+    task_type: str
+    context_type: str
+    status: str
+    track_id: Optional[str] = None
+    track_artist: Optional[str] = None
+    track_title: Optional[str] = None
+    track_album: Optional[str] = None
+    assigned_worker_id: Optional[str] = None
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+    text_query: Optional[str] = None
+
+
+class QueueWorkerResponse(BaseModel):
+    """Worker information for the queue dashboard."""
+
+    id: str
+    ip_address: str
+    registration_time: str
+    last_heartbeat: str
+    is_active: bool
+    current_task: Optional[QueueTaskResponse] = None
+
+
+class QueueStatsResponse(BaseModel):
+    """Aggregate counts for the queue dashboard."""
+
+    active_workers: int = 0
+    pending_tasks: int = 0
+    in_progress_tasks: int = 0
+    completed_tasks: int = 0
+    failed_tasks: int = 0
+    total_tasks: int = 0
+
+
+class QueueOverviewResponse(BaseModel):
+    """Top-level overview: workers + stats + in-progress tasks."""
+
+    workers: List[QueueWorkerResponse]
+    stats: QueueStatsResponse
+    in_progress_tasks: List[QueueTaskResponse]
+
+
+class QueueTasksListResponse(BaseModel):
+    """Paginated list of tasks for a given status filter."""
+
+    tasks: List[QueueTaskResponse]
+    total_count: int
+    limit: int
+    offset: int
+
+
+class CancelTaskResponse(BaseModel):
+    """Response after attempting to cancel a task."""
+
+    success: bool
+    message: str
 
 
 # ---------------------------------------------------------------------------

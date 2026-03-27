@@ -466,3 +466,133 @@ class TrackDatabase(TrackRepository):
         with sqlite3.connect(self.db_path) as conn:
             result = conn.execute("SELECT COUNT(*) as count FROM tracks").fetchone()
             return result[0]
+
+    # ------------------------------------------------------------------
+    # Queries that include processed status for the active model
+    # ------------------------------------------------------------------
+
+    def _rows_to_stored_tracks_with_processed(self, rows) -> list:
+        """Convert DB rows (with is_processed column) to (StoredTrack, bool) tuples."""
+        return [
+            (
+                StoredTrack(
+                    media_server_rating_key=row["media_server_rating_key"],
+                    media_server_type=row["media_server_type"],
+                    artist=row["artist"],
+                    album=row["album"],
+                    title=row["title"],
+                    filepath=row["filepath"],
+                    added_at=datetime.fromisoformat(row["added_at"]),
+                    last_scanned=datetime.fromisoformat(row["last_scanned"]),
+                ),
+                bool(row["is_processed"]),
+            )
+            for row in rows
+        ]
+
+    def search_tracks_with_processed(
+        self,
+        search_query: str,
+        model_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[tuple]:
+        """Search tracks including processed status for model_id."""
+        query = """
+            SELECT t.media_server_rating_key, t.media_server_type,
+                   t.artist, t.album, t.title, t.filepath,
+                   t.added_at, t.last_scanned,
+                   CASE WHEN te.id IS NOT NULL THEN 1 ELSE 0 END AS is_processed
+            FROM tracks t
+            LEFT JOIN track_embeddings te ON (
+                t.media_server_rating_key = te.media_server_rating_key
+                AND t.media_server_type = te.media_server_type
+                AND te.model_id = ?
+            )
+            WHERE t.artist LIKE ? OR t.album LIKE ? OR t.title LIKE ?
+            ORDER BY t.artist, t.album, t.title
+        """
+        search_pattern = f"%{search_query}%"
+        params: list = [model_id, search_pattern, search_pattern, search_pattern]
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            return self._rows_to_stored_tracks_with_processed(rows)
+
+    def search_tracks_advanced_with_processed(
+        self,
+        model_id: str,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        title: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[tuple]:
+        """Advanced AND-search including processed status."""
+        conditions = []
+        params: list = [model_id]
+
+        if artist and artist.strip():
+            conditions.append("t.artist LIKE ?")
+            params.append(f"%{artist.strip()}%")
+        if album and album.strip():
+            conditions.append("t.album LIKE ?")
+            params.append(f"%{album.strip()}%")
+        if title and title.strip():
+            conditions.append("t.title LIKE ?")
+            params.append(f"%{title.strip()}%")
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f"""
+            SELECT t.media_server_rating_key, t.media_server_type,
+                   t.artist, t.album, t.title, t.filepath,
+                   t.added_at, t.last_scanned,
+                   CASE WHEN te.id IS NOT NULL THEN 1 ELSE 0 END AS is_processed
+            FROM tracks t
+            LEFT JOIN track_embeddings te ON (
+                t.media_server_rating_key = te.media_server_rating_key
+                AND t.media_server_type = te.media_server_type
+                AND te.model_id = ?
+            )
+            {where_clause}
+            ORDER BY t.artist, t.album, t.title
+        """
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            return self._rows_to_stored_tracks_with_processed(rows)
+
+    def get_all_tracks_with_processed(
+        self,
+        model_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[tuple]:
+        """Get all tracks including processed status."""
+        query = """
+            SELECT t.media_server_rating_key, t.media_server_type,
+                   t.artist, t.album, t.title, t.filepath,
+                   t.added_at, t.last_scanned,
+                   CASE WHEN te.id IS NOT NULL THEN 1 ELSE 0 END AS is_processed
+            FROM tracks t
+            LEFT JOIN track_embeddings te ON (
+                t.media_server_rating_key = te.media_server_rating_key
+                AND t.media_server_type = te.media_server_type
+                AND te.model_id = ?
+            )
+            ORDER BY t.artist, t.album, t.title
+        """
+        params: list = [model_id]
+        if limit:
+            query += f" LIMIT {limit} OFFSET {offset}"
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, params).fetchall()
+            return self._rows_to_stored_tracks_with_processed(rows)

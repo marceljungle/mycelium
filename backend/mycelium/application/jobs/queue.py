@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Callable, List, Optional, Dict
+from typing import Callable, List, Optional, Dict, Tuple
 
 from ...domain.worker import Worker, Task, TaskResult, TaskType, TaskStatus, ContextType
 
@@ -67,7 +67,10 @@ class JobQueueService:
                     audio_data: bytes = None, audio_filename: str = "",
                     text_query: str = "",
                     n_results: int = 10, prioritize: bool = True,
-                    context_type: ContextType = None) -> Task:
+                    context_type: ContextType = None,
+                    track_artist: str = "",
+                    track_title: str = "",
+                    track_album: str = "") -> Task:
         """Create a new task and add it to the queue.
         
         Handles all task variants:
@@ -88,6 +91,9 @@ class JobQueueService:
                     download_url="",
                     text_query=text_query,
                     n_results=n_results,
+                    track_artist=track_artist or None,
+                    track_title=track_title or None,
+                    track_album=track_album or None,
                 )
             elif audio_data is not None:
                 # Audio search task - create temporary file and internal URL
@@ -103,6 +109,9 @@ class JobQueueService:
                     download_url=f"/download_audio/{task_id}",
                     audio_filename=audio_filename,
                     n_results=n_results,
+                    track_artist=track_artist or None,
+                    track_title=track_title or None,
+                    track_album=track_album or None,
                 )
             else:
                 # Traditional embedding task
@@ -113,6 +122,9 @@ class JobQueueService:
                     track_id=track_id,
                     download_url=download_url,
                     n_results=n_results,
+                    track_artist=track_artist or None,
+                    track_title=track_title or None,
+                    track_album=track_album or None,
                 )
 
             self._tasks[task_id] = task
@@ -384,6 +396,89 @@ class JobQueueService:
                 except OSError:
                     pass  # Ignore cleanup errors
                 del self._temp_files[task_id]
+
+    # ------------------------------------------------------------------
+    # Queue browsing & management (for the Processing Queue dashboard)
+    # ------------------------------------------------------------------
+
+    def get_tasks_by_status(
+        self,
+        status: Optional[TaskStatus] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Tuple[List[Task], int]:
+        """Return tasks filtered by *status*, newest-first.
+
+        Args:
+            status: Filter to a single status, or ``None`` for all.
+            limit: Maximum tasks to return.
+            offset: Number of tasks to skip (for pagination).
+
+        Returns:
+            ``(tasks, total_count)`` where *total_count* is the full
+            number of matching tasks (before limit/offset).
+        """
+        with self._lock:
+            if status is not None:
+                matching = [
+                    t for t in self._tasks.values() if t.status == status
+                ]
+            else:
+                matching = list(self._tasks.values())
+
+            # Sort newest-first by created_at
+            matching.sort(key=lambda t: t.created_at or datetime.min, reverse=True)
+            total = len(matching)
+            page = matching[offset : offset + limit]
+            return page, total
+
+    def get_workers_with_current_task(self) -> List[Tuple[Worker, Optional[Task]]]:
+        """Return all known workers paired with their current in-progress task.
+
+        Workers that are not currently processing any task will have
+        ``None`` as the task element.
+        """
+        with self._lock:
+            # Build a map: worker_id → in-progress task (if any)
+            worker_task_map: Dict[str, Task] = {}
+            for task in self._tasks.values():
+                if (
+                    task.status == TaskStatus.IN_PROGRESS
+                    and task.assigned_worker_id
+                ):
+                    worker_task_map[task.assigned_worker_id] = task
+
+            return [
+                (worker, worker_task_map.get(worker.id))
+                for worker in self._workers.values()
+            ]
+
+    def cancel_task(self, task_id: str) -> bool:
+        """Cancel a PENDING task.
+
+        Only tasks that have not been picked up by a worker can be
+        cancelled.  The task is marked as FAILED with a user-friendly
+        error message.
+
+        Returns:
+            ``True`` if the task was cancelled, ``False`` otherwise.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status != TaskStatus.PENDING:
+                return False
+
+            task.status = TaskStatus.FAILED
+            task.error_message = "Cancelled by user"
+            task.completed_at = datetime.now()
+
+            # Remove from the pending list
+            try:
+                self._pending_tasks.remove(task_id)
+            except ValueError:
+                pass  # Already removed
+
+            return True
 
     def _cleanup_orphan_files(self):
         """ Clean up any orphaned temporary files in the temp directory on startup. """

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import SearchInterface from '@/components/SearchInterface';
 import LibraryPage from '@/components/LibraryPage';
 import SettingsPage from '@/components/SettingsPage';
+import ProcessingQueuePage from '@/components/ProcessingQueuePage';
 import ClientPage from '@/components/ClientPage';
 import LibraryStats from '@/components/LibraryStats';
 import Header from '@/components/Header';
@@ -20,16 +21,22 @@ export default function Home() {
   }
 
   const renderContent = () => {
-    switch (activeSection) {
-      case 'search':
-        return <SearchInterface />;
-      case 'library':
-        return <LibraryPage />;
-      case 'settings':
-        return <SettingsPage />;
-      default:
-        return <SearchInterface />;
-    }
+    return (
+      <>
+        <div style={{ display: activeSection === 'search' ? 'block' : 'none' }}>
+          <SearchInterface />
+        </div>
+        <div style={{ display: activeSection === 'library' ? 'block' : 'none' }}>
+          <LibraryPage />
+        </div>
+        <div style={{ display: activeSection === 'queue' ? 'block' : 'none' }}>
+          <ProcessingQueuePage />
+        </div>
+        <div style={{ display: activeSection === 'settings' ? 'block' : 'none' }}>
+          <SettingsPage />
+        </div>
+      </>
+    );
   };
 
   const showSidebar = activeSection === 'search';

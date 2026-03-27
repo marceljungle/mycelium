@@ -275,8 +275,15 @@ class WorkerBasedProcessingUseCase:
         for stored_track in unprocessed_tracks:
             try:
                 download_url = f"/download_track/{stored_track.media_server_rating_key}"
-                self.job_queue.create_task(stored_track.media_server_rating_key, download_url, prioritize=False,
-                                           context_type=ContextType.AUDIO_PROCESSING)
+                self.job_queue.create_task(
+                    stored_track.media_server_rating_key,
+                    download_url,
+                    prioritize=False,
+                    context_type=ContextType.AUDIO_PROCESSING,
+                    track_artist=stored_track.artist,
+                    track_title=stored_track.title,
+                    track_album=stored_track.album,
+                )
                 tasks_created += 1
             except Exception as e:
                 logger.error(f"Failed to create task for track {stored_track.media_server_rating_key}: {e}")
