@@ -188,6 +188,7 @@ export const api = {
 
   getQueueTasks(params: {
     status?: string;
+    worker_id?: string;
     limit?: number;
     offset?: number;
   } = {}): Promise<QueueTasksListResponse> {

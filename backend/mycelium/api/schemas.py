@@ -169,6 +169,7 @@ class QueueWorkerResponse(BaseModel):
     registration_time: str
     last_heartbeat: str
     is_active: bool
+    gpu_name: Optional[str] = None
     current_task: Optional[QueueTaskResponse] = None
 
 

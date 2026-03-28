@@ -88,6 +88,7 @@ export default function ProcessingQueuePage() {
 
   // Task list with pagination
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const [workerFilter, setWorkerFilter] = useState<string>('all');
   const [taskPage, setTaskPage] = useState<QueueTasksListResponse | null>(null);
   const [offset, setOffset] = useState(0);
 
@@ -106,10 +107,11 @@ export default function ProcessingQueuePage() {
     }
   }, []);
 
-  const fetchTasks = useCallback(async (status: StatusFilter, off: number) => {
+  const fetchTasks = useCallback(async (status: StatusFilter, off: number, workerId: string) => {
     try {
       const data = await api.getQueueTasks({
         status: status === 'all' ? undefined : status,
+        worker_id: workerId === 'all' ? undefined : workerId,
         limit: PAGE_SIZE,
         offset: off,
       });
@@ -120,9 +122,9 @@ export default function ProcessingQueuePage() {
   }, []);
 
   const refresh = useCallback(async () => {
-    await Promise.all([fetchOverview(), fetchTasks(filter, offset)]);
+    await Promise.all([fetchOverview(), fetchTasks(filter, offset, workerFilter)]);
     setLoading(false);
-  }, [fetchOverview, fetchTasks, filter, offset]);
+  }, [fetchOverview, fetchTasks, filter, offset, workerFilter]);
 
   // Initial load + auto-refresh every 3s
   useEffect(() => {
@@ -136,6 +138,11 @@ export default function ProcessingQueuePage() {
   // When filter changes, reset offset
   const changeFilter = (f: StatusFilter) => {
     setFilter(f);
+    setOffset(0);
+  };
+
+  const changeWorkerFilter = (w: string) => {
+    setWorkerFilter(w);
     setOffset(0);
   };
 
@@ -206,6 +213,11 @@ export default function ProcessingQueuePage() {
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
                   <p>IP: {w.ip_address}</p>
+                  {w.gpu_name && (
+                    <p title={w.gpu_name}>
+                      <span className="text-purple-600 dark:text-purple-400">⚡</span> {w.gpu_name}
+                    </p>
+                  )}
                   <p>Last seen: {relativeTime(w.last_heartbeat)}</p>
                 </div>
                 {w.current_task ? (
@@ -252,36 +264,52 @@ export default function ProcessingQueuePage() {
 
       {/* ---- Task List ---- */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        {/* Status filter tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-600 px-4 pt-4 gap-1 overflow-x-auto">
-          {([
-            { id: 'all' as StatusFilter, label: 'All' },
-            { id: 'in_progress' as StatusFilter, label: 'Processing' },
-            { id: 'pending' as StatusFilter, label: 'Pending' },
-            { id: 'success' as StatusFilter, label: 'Completed' },
-            { id: 'failed' as StatusFilter, label: 'Failed' },
-          ]).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => changeFilter(tab.id)}
-              className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
-                filter === tab.id
-                  ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+        {/* Status filter tabs + worker filter */}
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-600 px-4 pt-4">
+          <div className="flex gap-1 overflow-x-auto">
+            {([
+              { id: 'all' as StatusFilter, label: 'All' },
+              { id: 'in_progress' as StatusFilter, label: 'Processing' },
+              { id: 'pending' as StatusFilter, label: 'Pending' },
+              { id: 'success' as StatusFilter, label: 'Completed' },
+              { id: 'failed' as StatusFilter, label: 'Failed' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => changeFilter(tab.id)}
+                className={`px-3 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${
+                  filter === tab.id
+                    ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                {tab.label}
+                {stats && (
+                  <span className="ml-1.5 text-xs opacity-60">
+                    {tab.id === 'all' ? stats.total_tasks
+                      : tab.id === 'in_progress' ? stats.in_progress_tasks
+                      : tab.id === 'pending' ? stats.pending_tasks
+                      : tab.id === 'success' ? stats.completed_tasks
+                      : stats.failed_tasks}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {workers.length > 0 && (
+            <select
+              value={workerFilter}
+              onChange={(e) => changeWorkerFilter(e.target.value)}
+              className="ml-4 mb-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              aria-label="Filter by worker"
             >
-              {tab.label}
-              {stats && (
-                <span className="ml-1.5 text-xs opacity-60">
-                  {tab.id === 'all' ? stats.total_tasks
-                    : tab.id === 'in_progress' ? stats.in_progress_tasks
-                    : tab.id === 'pending' ? stats.pending_tasks
-                    : tab.id === 'success' ? stats.completed_tasks
-                    : stats.failed_tasks}
-                </span>
-              )}
-            </button>
-          ))}
+              <option value="all">All Workers</option>
+              {workers.map((w) => (
+                <option key={w.id} value={w.id}>{w.id}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Task table */}

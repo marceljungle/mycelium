@@ -26,7 +26,9 @@ class JobQueueService:
         self._cleanup_orphan_files()
         self._temp_files: Dict[str, Path] = {}  # task_id -> temp_file_path
 
-    def _register_worker_internal(self, worker_id: str, ip_address: str) -> Worker:
+    def _register_worker_internal(
+        self, worker_id: str, ip_address: str, gpu_name: Optional[str] = None,
+    ) -> Worker:
         """Internal worker registration without lock (assumes lock is already held)."""
         now = datetime.now()
         if worker_id in self._workers:
@@ -34,6 +36,8 @@ class JobQueueService:
             worker = self._workers[worker_id]
             worker.last_heartbeat = now
             worker.is_active = True
+            if gpu_name is not None:
+                worker.gpu_name = gpu_name
         else:
             # Create new worker
             worker = Worker(
@@ -41,16 +45,19 @@ class JobQueueService:
                 ip_address=ip_address,
                 registration_time=now,
                 last_heartbeat=now,
-                is_active=True
+                is_active=True,
+                gpu_name=gpu_name,
             )
             self._workers[worker_id] = worker
 
         return worker
 
-    def register_worker(self, worker_id: str, ip_address: str) -> Worker:
+    def register_worker(
+        self, worker_id: str, ip_address: str, gpu_name: Optional[str] = None,
+    ) -> Worker:
         """Register a new worker or update existing one."""
         with self._lock:
-            return self._register_worker_internal(worker_id, ip_address)
+            return self._register_worker_internal(worker_id, ip_address, gpu_name)
 
     def get_active_workers(self) -> List[Worker]:
         """Get list of active workers."""
@@ -406,13 +413,15 @@ class JobQueueService:
         status: Optional[TaskStatus] = None,
         limit: int = 50,
         offset: int = 0,
+        worker_id: Optional[str] = None,
     ) -> Tuple[List[Task], int]:
-        """Return tasks filtered by *status*, newest-first.
+        """Return tasks filtered by *status* and/or *worker_id*, newest-first.
 
         Args:
             status: Filter to a single status, or ``None`` for all.
             limit: Maximum tasks to return.
             offset: Number of tasks to skip (for pagination).
+            worker_id: Filter to tasks assigned to this worker, or ``None`` for all.
 
         Returns:
             ``(tasks, total_count)`` where *total_count* is the full
@@ -425,6 +434,11 @@ class JobQueueService:
                 ]
             else:
                 matching = list(self._tasks.values())
+
+            if worker_id is not None:
+                matching = [
+                    t for t in matching if t.assigned_worker_id == worker_id
+                ]
 
             # Sort newest-first by created_at
             matching.sort(key=lambda t: t.created_at or datetime.min, reverse=True)

@@ -37,6 +37,7 @@ class Worker:
     registration_time: datetime
     last_heartbeat: datetime
     is_active: bool = True
+    gpu_name: Optional[str] = None
 
 
 @dataclass

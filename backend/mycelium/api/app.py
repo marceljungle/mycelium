@@ -641,7 +641,7 @@ async def register_worker(request: WorkerRegistrationRequest):
     """Register a worker with the server."""
     logger.info(f"Worker registration request received for worker ID {request.worker_id}")
     try:
-        worker = job_queue.register_worker(request.worker_id, request.ip_address)
+        worker = job_queue.register_worker(request.worker_id, request.ip_address, request.gpu_name)
         return WorkerRegistrationResponse(
             worker_id=worker.id,
             registration_time=worker.registration_time.isoformat(),
@@ -1159,6 +1159,7 @@ async def get_queue_overview():
                 registration_time=worker.registration_time.isoformat(),
                 last_heartbeat=worker.last_heartbeat.isoformat(),
                 is_active=worker.is_active,
+                gpu_name=worker.gpu_name,
                 current_task=_task_to_queue_response(current_task) if current_task else None,
             ))
 
@@ -1183,6 +1184,7 @@ async def get_queue_overview():
 @app.get("/api/queue/tasks", response_model=QueueTasksListResponse)
 async def get_queue_tasks(
     status: Optional[str] = Query(None, description="Filter by status: pending, in_progress, success, failed"),
+    worker_id: Optional[str] = Query(None, description="Filter by worker ID"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -1198,7 +1200,9 @@ async def get_queue_tasks(
                     detail=f"Invalid status: {status}. Must be one of: pending, in_progress, success, failed",
                 )
 
-        tasks, total = job_queue.get_tasks_by_status(task_status, limit=limit, offset=offset)
+        tasks, total = job_queue.get_tasks_by_status(
+            task_status, limit=limit, offset=offset, worker_id=worker_id,
+        )
         return QueueTasksListResponse(
             tasks=[_task_to_queue_response(t) for t in tasks],
             total_count=total,

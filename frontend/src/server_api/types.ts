@@ -204,6 +204,7 @@ export interface QueueWorkerResponse {
   registration_time: string;
   last_heartbeat: string;
   is_active: boolean;
+  gpu_name?: string;
   current_task?: QueueTaskResponse;
 }
 

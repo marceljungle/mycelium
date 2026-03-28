@@ -11,6 +11,7 @@ class WorkerRegistrationRequest(BaseModel):
     """Request model for worker registration."""
     worker_id: str
     ip_address: str
+    gpu_name: Optional[str] = None
 
 
 class WorkerRegistrationResponse(BaseModel):

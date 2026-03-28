@@ -2,7 +2,9 @@
 import gc
 import logging
 import os
+import platform
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -87,6 +89,30 @@ class MyceliumClient:
         logging.info(f"Job queue size: {self.config.client.job_queue_size}")
         logging.info(f"Poll interval: {self.poll_interval}s")
         logging.info(f"Parallel download workers: {self.download_workers}")
+
+        self.gpu_name = self._detect_gpu_name()
+        logging.info(f"GPU: {self.gpu_name}")
+
+    @staticmethod
+    def _detect_gpu_name() -> str:
+        """Detect the GPU/accelerator name for this worker."""
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.get_device_name(0)
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                # Apple Silicon — get chip name from sysctl
+                try:
+                    chip = subprocess.check_output(
+                        ["sysctl", "-n", "machdep.cpu.brand_string"],
+                        text=True, timeout=5,
+                    ).strip()
+                    return chip or "Apple Silicon"
+                except Exception:
+                    return "Apple Silicon"
+        except ImportError:
+            pass
+        return "CPU"
 
     def _log_queue_status(self, context: str = ""):
         """Log current queue status with context."""
@@ -194,7 +220,11 @@ class MyceliumClient:
             try:
                 response = requests.post(
                     f"{self.server_url}/workers/register",
-                    json={"worker_id": self.worker_id, "ip_address": self.ip_address},
+                    json={
+                        "worker_id": self.worker_id,
+                        "ip_address": self.ip_address,
+                        "gpu_name": self.gpu_name,
+                    },
                     timeout=10
                 )
                 response.raise_for_status()
