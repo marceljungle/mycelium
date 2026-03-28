@@ -295,8 +295,13 @@ class MyceliumClient:
             return None
 
     @staticmethod
-    def download_audio_file(download_url: str) -> Optional[Path]:
-        """Download audio file from server."""
+    def download_audio_file(download_url: str) -> tuple[Optional[Path], Optional[str]]:
+        """Download audio file from server.
+
+        Returns:
+            Tuple of (file_path, error_message). On success error_message
+            is ``None``; on failure file_path is ``None``.
+        """
         try:
             response = requests.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
@@ -304,10 +309,27 @@ class MyceliumClient:
             for chunk in response.iter_content(chunk_size=8192):
                 temp_file.write(chunk)
             temp_file.close()
-            return Path(temp_file.name)
+            return Path(temp_file.name), None
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "unknown"
+            detail = ""
+            if e.response is not None:
+                try:
+                    detail = e.response.json().get("detail", "")
+                except Exception:
+                    detail = e.response.text[:200] if e.response.text else ""
+            msg = f"HTTP {status}: {detail}" if detail else f"HTTP {status}"
+            logging.error(f"Download failed for {download_url}: {msg}")
+            return None, msg
+        except requests.exceptions.Timeout:
+            logging.error(f"Timeout downloading {download_url}")
+            return None, "Download timeout"
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Connection error downloading {download_url}: {e}")
+            return None, "Connection error"
         except requests.exceptions.RequestException as e:
             logging.error(f"Error downloading file from {download_url}: {e}")
-            return None
+            return None, f"Download error: {e}"
 
     def _job_fetcher(self):
         """Thread that requests jobs from the server and puts them in the job_queue.
@@ -396,7 +418,7 @@ class MyceliumClient:
 
                 full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
                 logging.info(f"Downloading audio for job {task_id} from {full_url}")
-                audio_file = self.download_audio_file(full_url)
+                audio_file, dl_error = self.download_audio_file(full_url)
 
                 if audio_file:
                     downloaded_job = DownloadedJob(
@@ -408,8 +430,8 @@ class MyceliumClient:
                     self.download_queue.put(downloaded_job)
                     logging.info(f"Queued audio job {task_id} for processing.")
                 else:
-                    logging.error(f"Failed to download audio for job {task_id}.")
-                    self.submit_result(task_id, job.get("track_id", ""), None, "Failed to download audio file")
+                    logging.error(f"Failed to download audio for job {task_id}: {dl_error}")
+                    self.submit_result(task_id, job.get("track_id", ""), None, dl_error or "Failed to download audio file")
 
                 self.job_queue.task_done()
 

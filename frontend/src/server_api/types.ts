@@ -234,3 +234,26 @@ export interface CancelTaskResponse {
   success: boolean;
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// Error log viewer
+// ---------------------------------------------------------------------------
+
+export interface ErrorLogEntry {
+  id: string;
+  timestamp: string;
+  category: string;
+  message: string;
+  track_id?: string;
+  track_artist?: string;
+  track_title?: string;
+  track_album?: string;
+  worker_id?: string;
+  task_id?: string;
+}
+
+export interface ErrorLogResponse {
+  entries: ErrorLogEntry[];
+  total_count: number;
+  categories: Record<string, number>;
+}

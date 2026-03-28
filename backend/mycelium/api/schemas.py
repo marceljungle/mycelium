@@ -335,3 +335,30 @@ class ComputeSearchOnServerRequest(BaseModel):
 
     query: Optional[str] = None
     n_results: int = 10
+
+
+# ---------------------------------------------------------------------------
+# Error log viewer
+# ---------------------------------------------------------------------------
+
+class ErrorLogEntryResponse(BaseModel):
+    """A single structured error event."""
+
+    id: str
+    timestamp: str
+    category: str
+    message: str
+    track_id: Optional[str] = None
+    track_artist: Optional[str] = None
+    track_title: Optional[str] = None
+    track_album: Optional[str] = None
+    worker_id: Optional[str] = None
+    task_id: Optional[str] = None
+
+
+class ErrorLogResponse(BaseModel):
+    """Paginated list of error log entries."""
+
+    entries: List[ErrorLogEntryResponse]
+    total_count: int
+    categories: Dict[str, int]

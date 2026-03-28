@@ -25,6 +25,8 @@ from mycelium.api.schemas import (
     ComputeOnServerRequest,
     ComputeSearchOnServerRequest,
     CreatePlaylistRequest,
+    ErrorLogEntryResponse,
+    ErrorLogResponse,
     LibraryStatsResponse,
     PlaylistResponse,
     ProcessingResponse,
@@ -54,6 +56,7 @@ from .worker_models import (
 )
 
 from ..application.jobs.queue import JobQueueService
+from ..application.error_log import error_log
 from ..application.services import MyceliumService
 from ..config import (
     APIConfig,
@@ -714,13 +717,39 @@ async def submit_result(request: TaskResultRequest):
         success = job_queue.submit_result(task_result)
         logger.info(f"Task result submission: success={success}")
 
+        task = job_queue.get_task_status(request.task_id) if success else None
+
         if success and request.embedding:
-            task = job_queue.get_task_status(request.task_id)
             if task:
                 _handle_embedding_result(request, task)
         elif request.error_message:
             logger.error(
                 f"Worker task failed for track {request.track_id}: {request.error_message}"
+            )
+            # Categorise the error for the structured log
+            msg = request.error_message
+            if "HTTP 404" in msg:
+                category = "download_404"
+            elif "HTTP 5" in msg:
+                category = "download_500"
+            elif "timeout" in msg.lower():
+                category = "download_timeout"
+            elif "connection" in msg.lower():
+                category = "download_connection"
+            elif "download" in msg.lower():
+                category = "download_error"
+            else:
+                category = "processing"
+
+            error_log.add(
+                category=category,
+                message=msg,
+                track_id=request.track_id or None,
+                track_artist=task.track_artist if task else None,
+                track_title=task.track_title if task else None,
+                track_album=task.track_album if task else None,
+                worker_id=task.assigned_worker_id if task else None,
+                task_id=request.task_id,
             )
             job_queue.cleanup_task_files(request.task_id)
 
@@ -847,6 +876,8 @@ async def download_track(track_id: str):
             media_type="application/octet-stream",
             filename=file_path.name,
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1230,6 +1261,53 @@ async def cancel_queue_task(task_id: str):
     except Exception as e:
         logger.error(f"Error cancelling task {task_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Error log
+# ---------------------------------------------------------------------------
+
+@app.get("/api/errors", response_model=ErrorLogResponse)
+async def get_error_log(
+    category: Optional[str] = Query(None, description="Filter by error category"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """Return recent structured error entries, newest-first."""
+    try:
+        entries, total = error_log.get_entries(
+            category=category, limit=limit, offset=offset,
+        )
+        categories = error_log.get_categories()
+        return ErrorLogResponse(
+            entries=[
+                ErrorLogEntryResponse(
+                    id=e.id,
+                    timestamp=e.timestamp.isoformat(),
+                    category=e.category,
+                    message=e.message,
+                    track_id=e.track_id,
+                    track_artist=e.track_artist,
+                    track_title=e.track_title,
+                    track_album=e.track_album,
+                    worker_id=e.worker_id,
+                    task_id=e.task_id,
+                )
+                for e in entries
+            ],
+            total_count=total,
+            categories=categories,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching error log: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/errors")
+async def clear_error_log():
+    """Clear all error log entries."""
+    n = error_log.clear()
+    return {"cleared": n}
 
 
 # ---------------------------------------------------------------------------

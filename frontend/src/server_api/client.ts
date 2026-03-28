@@ -7,6 +7,7 @@ import type {
   ConfigRequest,
   ConfigResponse,
   CreatePlaylistRequest,
+  ErrorLogResponse,
   LibraryStatsResponse,
   PlaylistResponse,
   ProcessingResponse,
@@ -198,5 +199,18 @@ export const api = {
   cancelTask(params: { taskId: string }): Promise<CancelTaskResponse> {
     const taskId = encodeURIComponent(params.taskId);
     return request(`/api/queue/tasks/${taskId}/cancel`, { method: 'POST' });
+  },
+
+  // --- Error log ---
+  getErrorLog(params: {
+    category?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<ErrorLogResponse> {
+    return request(`/api/errors${qs(params)}`);
+  },
+
+  clearErrorLog(): Promise<{ cleared: number }> {
+    return request('/api/errors', { method: 'DELETE' });
   },
 };

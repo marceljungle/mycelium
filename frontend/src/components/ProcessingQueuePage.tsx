@@ -7,6 +7,7 @@ import type {
   QueueTaskResponse,
   QueueTasksListResponse,
 } from '@/server_api/client';
+import ErrorLogViewer from '@/components/ErrorLogViewer';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -405,6 +406,9 @@ export default function ProcessingQueuePage() {
           </div>
         )}
       </div>
+
+      {/* ---- Error Log ---- */}
+      <ErrorLogViewer />
     </div>
   );
 }
