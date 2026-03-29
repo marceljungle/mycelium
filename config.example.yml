@@ -23,9 +23,10 @@ server:
   gpu_batch_size: 16    # For distributed GPU workers
 
 # Embedding model selection
-# type: "clap" for text + audio search, "muq" for audio-only (pure acoustic)
+# type: "clap" for text + audio search, "muq" for audio-only (pure acoustic),
+#       "muq_mulan" for text + audio search with MuQ-MuLan
 embedding:
-  type: clap    # Options: clap, muq
+  type: clap    # Options: clap, muq, muq_mulan
 
 # CLAP model configuration (used when embedding.type = clap)
 clap:
@@ -40,6 +41,14 @@ muq:
   model_id: OpenMuQ/MuQ-large-msd-iter
   target_sr: 24000
   chunk_duration_s: 30
+  micro_batch_size: 4
+
+# MuQ-MuLan model configuration (used when embedding.type = muq_mulan)
+# MuQ-MuLan extends MuQ with a MuLan text tower for text + audio search
+muq_mulan:
+  model_id: OpenMuQ/MuQ-MuLan-large
+  target_sr: 24000
+  chunk_duration_s: 10
   micro_batch_size: 4
 
 # Client configuration for worker connections

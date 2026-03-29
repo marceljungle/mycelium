@@ -115,6 +115,7 @@ export interface ChromaSection { collection_name: string; batch_size: number }
 export interface EmbeddingSection { type: string }
 export interface ClapSection { model_id: string; target_sr: number; chunk_duration_s: number; micro_batch_size: number }
 export interface MuqSection { model_id: string; target_sr: number; chunk_duration_s: number; micro_batch_size: number }
+export interface MuqMulanSection { model_id: string; target_sr: number; chunk_duration_s: number; micro_batch_size: number }
 export interface LoggingSection { level: string }
 
 export interface ConfigResponse {
@@ -126,6 +127,7 @@ export interface ConfigResponse {
   embedding: EmbeddingSection;
   clap: ClapSection;
   muq: MuqSection;
+  muq_mulan: MuqMulanSection;
   logging: LoggingSection;
 }
 
@@ -139,6 +141,7 @@ export interface ConfigRequest {
   embedding?: Record<string, any>;
   clap: Record<string, any>;
   muq?: Record<string, any>;
+  muq_mulan?: Record<string, any>;
   server: Record<string, any>;
   logging: Record<string, any>;
   database?: Record<string, any>;

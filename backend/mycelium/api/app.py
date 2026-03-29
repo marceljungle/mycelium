@@ -67,6 +67,7 @@ from ..config import (
     LoggingConfig,
     MediaServerConfig,
     MuQConfig,
+    MuQMuLanConfig,
     MyceliumConfig,
     PlexConfig,
     ServerConfig,
@@ -451,6 +452,9 @@ async def save_config(config_request: ConfigRequest):
         muq_config = MuQConfig(
             **config_request.muq
         ) if hasattr(config_request, 'muq') and config_request.muq else MuQConfig()
+        muq_mulan_config = MuQMuLanConfig(
+            **config_request.muq_mulan
+        ) if hasattr(config_request, 'muq_mulan') and config_request.muq_mulan else MuQMuLanConfig()
         chroma_config = ChromaConfig(**config_request.chroma)
         database_config = DatabaseConfig()
         api_config = APIConfig(**config_request.api)
@@ -463,6 +467,7 @@ async def save_config(config_request: ConfigRequest):
             embedding=embedding_config,
             clap=clap_config,
             muq=muq_config,
+            muq_mulan=muq_mulan_config,
             chroma=chroma_config,
             database=database_config,
             api=api_config,

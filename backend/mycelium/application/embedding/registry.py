@@ -68,6 +68,18 @@ MODEL_REGISTRY: Dict[str, ModelSpec] = {
             "micro_batch_size": 4,
         },
     ),
+    "muq_mulan": ModelSpec(
+        key="muq_mulan",
+        adapter_class_path="mycelium.infrastructure.model.muq_mulan.MuQMuLanEmbeddingGenerator",
+        display_name="MuQ-MuLan (Music Understanding + Text)",
+        supports_text_search=True,
+        default_config={
+            "model_id": "OpenMuQ/MuQ-MuLan-large",
+            "target_sr": 24000,
+            "chunk_duration_s": 10,
+            "micro_batch_size": 4,
+        },
+    ),
 }
 
 

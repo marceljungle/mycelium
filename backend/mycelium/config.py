@@ -92,6 +92,15 @@ class MuQConfig:
 
 
 @dataclass
+class MuQMuLanConfig:
+    """Configuration for MuQ-MuLan model (acoustic + text embeddings)."""
+    model_id: str = "OpenMuQ/MuQ-MuLan-large"
+    target_sr: int = 24000
+    chunk_duration_s: int = 10
+    micro_batch_size: int = 4
+
+
+@dataclass
 class EmbeddingConfig:
     """Configuration for embedding model selection."""
     type: str = "clap"
@@ -163,6 +172,7 @@ class MyceliumConfig:
     embedding: EmbeddingConfig
     clap: CLAPConfig
     muq: MuQConfig
+    muq_mulan: MuQMuLanConfig
     chroma: ChromaConfig
     database: DatabaseConfig
     api: APIConfig
@@ -225,6 +235,13 @@ class MyceliumConfig:
             micro_batch_size=config_data.get("muq", {}).get("micro_batch_size", 4),
         )
 
+        muq_mulan_config = MuQMuLanConfig(
+            model_id=config_data.get("muq_mulan", {}).get("model_id", "OpenMuQ/MuQ-MuLan-large"),
+            target_sr=config_data.get("muq_mulan", {}).get("target_sr", 24000),
+            chunk_duration_s=config_data.get("muq_mulan", {}).get("chunk_duration_s", 10),
+            micro_batch_size=config_data.get("muq_mulan", {}).get("micro_batch_size", 4),
+        )
+
         chroma_config = ChromaConfig(
             collection_name=config_data.get("chroma", {}).get("collection_name", "my_music_library"),
             batch_size=config_data.get("chroma", {}).get("batch_size", 1000)
@@ -260,6 +277,7 @@ class MyceliumConfig:
             embedding=embedding_config,
             clap=clap_config,
             muq=muq_config,
+            muq_mulan=muq_mulan_config,
             chroma=chroma_config,
             database=database_config,
             api=api_config,
@@ -299,6 +317,7 @@ class MyceliumConfig:
             "embedding": asdict(self.embedding),
             "clap": asdict(self.clap),
             "muq": asdict(self.muq),
+            "muq_mulan": asdict(self.muq_mulan),
             "chroma": asdict(self.chroma),
             "database": asdict(self.database),
             "api": asdict(self.api),
@@ -344,6 +363,11 @@ class MyceliumConfig:
                 "model_id": self.muq.model_id,
                 "target_sr": self.muq.target_sr,
                 "chunk_duration_s": self.muq.chunk_duration_s,
+            },
+            "muq_mulan": {
+                "model_id": self.muq_mulan.model_id,
+                "target_sr": self.muq_mulan.target_sr,
+                "chunk_duration_s": self.muq_mulan.chunk_duration_s,
             },
             "logging": {
                 "level": self.logging.level
@@ -403,6 +427,7 @@ __all__ = [
     "PlexConfig",
     "CLAPConfig",
     "MuQConfig",
+    "MuQMuLanConfig",
     "ChromaConfig",
     "DatabaseConfig",
     "APIConfig",

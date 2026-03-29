@@ -223,6 +223,7 @@ class ConfigResponse(BaseModel):
     embedding: Dict[str, Any]
     clap: Dict[str, Any]
     muq: Dict[str, Any]
+    muq_mulan: Dict[str, Any]
     logging: Dict[str, Any]
 
 
@@ -236,6 +237,7 @@ class ConfigRequest(BaseModel):
     embedding: Optional[Dict[str, Any]] = None
     clap: Dict[str, Any]
     muq: Optional[Dict[str, Any]] = None
+    muq_mulan: Optional[Dict[str, Any]] = None
     server: Dict[str, Any]
     logging: Dict[str, Any]
     database: Optional[Dict[str, Any]] = None
