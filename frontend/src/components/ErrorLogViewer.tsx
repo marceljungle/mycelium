@@ -9,11 +9,7 @@ import type { ErrorLogEntry, ErrorLogResponse } from '@/server_api/client';
 // ---------------------------------------------------------------------------
 
 const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
-  download_404: { label: '404 Not Found', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
-  download_500: { label: '500 Server Error', color: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
-  download_timeout: { label: 'Timeout', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' },
-  download_connection: { label: 'Connection Error', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
-  download_error: { label: 'Download Error', color: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' },
+  download: { label: 'Download Error', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
   processing: { label: 'Processing Error', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
 };
 

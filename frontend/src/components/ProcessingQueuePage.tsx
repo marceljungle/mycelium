@@ -285,13 +285,18 @@ export default function ProcessingQueuePage() {
                 }`}
               >
                 {tab.label}
-                {stats && (
+                {stats && workerFilter === 'all' && (
                   <span className="ml-1.5 text-xs opacity-60">
                     {tab.id === 'all' ? stats.total_tasks
                       : tab.id === 'in_progress' ? stats.in_progress_tasks
                       : tab.id === 'pending' ? stats.pending_tasks
                       : tab.id === 'success' ? stats.completed_tasks
                       : stats.failed_tasks}
+                  </span>
+                )}
+                {workerFilter !== 'all' && filter === tab.id && taskPage && (
+                  <span className="ml-1.5 text-xs opacity-60">
+                    {taskPage.total_count}
                   </span>
                 )}
               </button>

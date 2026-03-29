@@ -39,6 +39,15 @@ class JobQueueService:
             if gpu_name is not None:
                 worker.gpu_name = gpu_name
         else:
+            # Deactivate any previous workers from the same IP
+            for existing in self._workers.values():
+                if existing.ip_address == ip_address and existing.is_active:
+                    logger.info(
+                        f"Deactivating old worker {existing.id} "
+                        f"(same IP {ip_address}, replaced by {worker_id})"
+                    )
+                    existing.is_active = False
+
             # Create new worker
             worker = Worker(
                 id=worker_id,
@@ -447,12 +456,18 @@ class JobQueueService:
             return page, total
 
     def get_workers_with_current_task(self) -> List[Tuple[Worker, Optional[Task]]]:
-        """Return all known workers paired with their current in-progress task.
+        """Return active workers paired with their current in-progress task.
 
-        Workers that are not currently processing any task will have
-        ``None`` as the task element.
+        Workers whose heartbeat is older than 60 seconds are marked
+        inactive and excluded from the result.
         """
         with self._lock:
+            # Mark stale workers as inactive
+            cutoff_time = datetime.now() - timedelta(seconds=60)
+            for worker in self._workers.values():
+                if worker.last_heartbeat < cutoff_time:
+                    worker.is_active = False
+
             # Build a map: worker_id → in-progress task (if any)
             worker_task_map: Dict[str, Task] = {}
             for task in self._tasks.values():
@@ -465,6 +480,7 @@ class JobQueueService:
             return [
                 (worker, worker_task_map.get(worker.id))
                 for worker in self._workers.values()
+                if worker.is_active
             ]
 
     def cancel_task(self, task_id: str) -> bool:

@@ -728,16 +728,8 @@ async def submit_result(request: TaskResultRequest):
             )
             # Categorise the error for the structured log
             msg = request.error_message
-            if "HTTP 404" in msg:
-                category = "download_404"
-            elif "HTTP 5" in msg:
-                category = "download_500"
-            elif "timeout" in msg.lower():
-                category = "download_timeout"
-            elif "connection" in msg.lower():
-                category = "download_connection"
-            elif "download" in msg.lower():
-                category = "download_error"
+            if any(kw in msg.lower() for kw in ("http ", "download", "timeout", "connection error")):
+                category = "download"
             else:
                 category = "processing"
 

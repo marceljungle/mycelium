@@ -564,7 +564,7 @@ class MyceliumClient:
             inputs,
             valid_jobs,
             self.embedding_generator.generate_embedding_batch,
-            error_label="audio",
+            batch_type="audio",
         )
 
         # Clean up downloaded audio files
@@ -606,7 +606,7 @@ class MyceliumClient:
             inputs,
             valid_jobs,
             self.embedding_generator.generate_text_embedding_batch,
-            error_label="text",
+            batch_type="text",
         )
 
     def _generate_and_submit(
@@ -614,22 +614,30 @@ class MyceliumClient:
         inputs: list,
         jobs: List[DownloadedJob],
         generate_fn,
-        error_label: str,
+        batch_type: str,
     ) -> None:
         """Generate embeddings in batch and submit each result to the server."""
         try:
             embeddings = generate_fn(inputs)
-            for job, embedding in zip(jobs, embeddings):
-                msg = None if embedding else f"Failed to compute {error_label} embedding"
+            # Retrieve per-file error reasons if available
+            batch_errors: dict[int, str] = {}
+            if hasattr(self.embedding_generator, "last_batch_errors"):
+                batch_errors = self.embedding_generator.last_batch_errors
+
+            for idx, (job, embedding) in enumerate(zip(jobs, embeddings)):
+                if embedding:
+                    msg = None
+                else:
+                    msg = batch_errors.get(idx, f"Failed to compute {batch_type} embedding")
                 success = self.submit_result(job.task_id, job.track_id, embedding, msg)
                 if success:
-                    logging.debug(f"Submitted {error_label} job {job.task_id}")
+                    logging.debug(f"Submitted {batch_type} job {job.task_id}")
                 else:
-                    logging.warning(f"Failed to submit {error_label} job {job.task_id}")
+                    logging.warning(f"Failed to submit {batch_type} job {job.task_id}")
         except Exception as e:
-            logging.error(f"{error_label.title()} batch processing failed: {e}", exc_info=True)
+            logging.error(f"{batch_type.title()} batch processing failed: {e}", exc_info=True)
             for job in jobs:
-                self.submit_result(job.task_id, job.track_id, None, f"{error_label.title()} batch failed: {e}")
+                self.submit_result(job.task_id, job.track_id, None, f"{batch_type.title()} batch failed: {e}")
 
     def run(self):
         """Main worker loop with batch processing for better GPU utilization."""

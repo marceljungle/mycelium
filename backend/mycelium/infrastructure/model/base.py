@@ -56,6 +56,10 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
         self._dtype_smoke_tested = False
         logger.info(f"{self.__class__.__name__} inference dtype: {self.model_dtype}")
 
+        # Per-file error reasons populated during the last batch call.
+        # Keyed by index in the filepaths list.
+        self.last_batch_errors: dict[int, str] = {}
+
     # ------------------------------------------------------------------
     # Device helpers
     # ------------------------------------------------------------------
@@ -143,25 +147,32 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
     # Audio chunking
     # ------------------------------------------------------------------
 
-    def _extract_chunks(self, filepath: Path) -> List[np.ndarray]:
-        """Load audio and split into non-overlapping windows of ``chunk_duration_s``."""
+    def _extract_chunks(self, filepath: Path) -> tuple[List[np.ndarray], float]:
+        """Load audio and split into non-overlapping windows of ``chunk_duration_s``.
+
+        Returns:
+            Tuple of ``(chunks, duration_seconds)``.  ``chunks`` is empty
+            when the file is shorter than one full window.
+        """
         chunk_samples = self.chunk_duration_s * self.target_sr
 
         waveform, _ = librosa.load(str(filepath), sr=self.target_sr, mono=True)
         total = len(waveform)
+        duration_s = total / self.target_sr
         num_windows = total // chunk_samples
 
         if num_windows == 0:
             logger.warning(
-                f"File {filepath} too short ({total / self.target_sr:.1f}s) "
+                f"File {filepath} too short ({duration_s:.1f}s) "
                 f"for a {self.chunk_duration_s}s window."
             )
-            return []
+            return [], duration_s
 
-        return [
+        chunks = [
             waveform[i * chunk_samples : (i + 1) * chunk_samples]
             for i in range(num_windows)
         ]
+        return chunks, duration_s
 
     # ------------------------------------------------------------------
     # Abstract — subclass must implement
@@ -196,6 +207,7 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
         self, filepaths: List[Path]
     ) -> List[Optional[List[float]]]:
         """Generate embeddings for multiple audio files with micro-batching."""
+        self.last_batch_errors = {}
         if not filepaths:
             return []
 
@@ -207,17 +219,22 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
             all_chunks: list[np.ndarray] = []
             file_chunk_counts: list[int] = []
 
-            for filepath in filepaths:
+            for idx, filepath in enumerate(filepaths):
                 try:
-                    chunks = self._extract_chunks(filepath)
+                    chunks, duration_s = self._extract_chunks(filepath)
                     if not chunks:
                         file_chunk_counts.append(0)
+                        self.last_batch_errors[idx] = (
+                            f"Audio too short ({duration_s:.1f}s) for "
+                            f"{self.chunk_duration_s}s window"
+                        )
                         continue
                     all_chunks.extend(chunks)
                     file_chunk_counts.append(len(chunks))
                 except Exception as e:
                     logger.error(f"Error loading audio file {filepath}: {e}")
                     file_chunk_counts.append(0)
+                    self.last_batch_errors[idx] = f"Failed to load audio: {e}"
 
             if not all_chunks:
                 return [None] * len(filepaths)
