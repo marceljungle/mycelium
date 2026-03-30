@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/server_api/client';
-import type { TrackResponse, SearchResultResponse } from '@/server_api/generated/models';
+import type { TrackResponse, SearchResultResponse } from '@/server_api/client';
 import PlaylistCreationModal from './PlaylistCreationModal';
+import { useTaskPolling } from '@/hooks/useTaskPolling';
 
-type Track = TrackResponse & { processed?: boolean };
 type LibrarySearchResult = SearchResultResponse;
+
+// Processed filter options
+type ProcessedFilter = 'all' | 'processed' | 'unprocessed';
 
 interface ProcessingTask {
   taskId: string;
@@ -16,15 +19,14 @@ interface ProcessingTask {
 
 export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredTracks, setFilteredTracks] = useState<Track[]>([]);
-  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [filteredTracks, setFilteredTracks] = useState<TrackResponse[]>([]);
+  const [selectedTrack, setSelectedTrack] = useState<TrackResponse | null>(null);
   const [recommendations, setRecommendations] = useState<LibrarySearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
   const [currentTask, setCurrentTask] = useState<ProcessingTask | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Advanced search state
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
@@ -33,28 +35,67 @@ export default function LibraryPage() {
   const [titleSearch, setTitleSearch] = useState('');
   const [numResults, setNumResults] = useState(10);
   
+  // Processed filter state
+  const [processedFilter, setProcessedFilter] = useState<ProcessedFilter>('all');
+  
   // Playlist creation state
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const fetchTracks = useCallback(async (searchTerm?: string) => {
+  // Track ref for retry after polling completes
+  const pendingTrackRef = useCallback(() => selectedTrack, [selectedTrack]);
+
+  const { startPolling, stopPolling } = useTaskPolling(
+    // onSuccess
+    useCallback((_taskId: string, searchResults: SearchResultResponse[]) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      if (searchResults.length > 0) {
+        setRecommendations(searchResults);
+      } else {
+        // Embedding saved but no results attached — re-fetch
+        const track = pendingTrackRef();
+        if (track) {
+          setTimeout(() => getRecommendations(track, true), 500);
+        }
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingTrackRef]),
+    // onError
+    useCallback((_taskId: string, message: string) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      setError(message);
+    }, []),
+    // onTimeout
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    useCallback((_taskId: string) => {
+      setCurrentTask(null);
+      setProcessingState('none');
+      setError('Processing took too long. Please try clicking the track again.');
+    }, []),
+  );
+
+  const mapTracks = (tracks: TrackResponse[]): TrackResponse[] => tracks;
+
+  const fetchTracks = useCallback(async (params: {
+    search?: string;
+    artist?: string;
+    album?: string;
+    title?: string;
+  } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getLibraryTracks({ page: 1, limit: 100, search: searchTerm?.trim() || undefined });
-      
-      // Convert API response to Track objects
-      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        artist: track.artist,
-        album: track.album,
-        title: track.title,
-        filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
-        processed: false // We'll determine this based on embeddings
-      }));
-      
-      setFilteredTracks(tracksData);
+      const data = await api.getLibraryTracks({
+        page: 1,
+        limit: 100,
+        search: params.search?.trim() || undefined,
+        artist: params.artist?.trim() || undefined,
+        album: params.album?.trim() || undefined,
+        title: params.title?.trim() || undefined,
+      });
+      setFilteredTracks(mapTracks(data.tracks));
     } catch (err) {
       console.error('Error fetching tracks:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
@@ -63,141 +104,17 @@ export default function LibraryPage() {
     }
   }, []);
 
-  const fetchTracksAdvanced = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.getLibraryTracks({
-        page: 1,
-        limit: 100,
-        artist: artistSearch.trim() || undefined,
-        album: albumSearch.trim() || undefined,
-        title: titleSearch.trim() || undefined,
-      });
-      
-      // Convert API response to Track objects
-      const tracksData: Track[] = data.tracks.map((track: TrackResponse) => ({
-        artist: track.artist,
-        album: track.album,
-        title: track.title,
-        filepath: track.filepath,
-        media_server_rating_key: track.media_server_rating_key,
-        media_server_type: track.media_server_type,
-        processed: false // We'll determine this based on embeddings
-      }));
-      
-      setFilteredTracks(tracksData);
-    } catch (err) {
-      console.error('Error fetching tracks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch tracks');
-    } finally {
-      setLoading(false);
-    }
-  }, [artistSearch, albumSearch, titleSearch]);
-
   useEffect(() => {
-    // Only setup cleanup for polling on unmount, don't auto-fetch tracks
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
-  }, [pollInterval]);
-
-  useEffect(() => {
-    // Trigger search when any search field changes
     if (showAdvancedSearch && (artistSearch.trim() || albumSearch.trim() || titleSearch.trim())) {
-      // Use advanced search when enabled AND at least one field has content
-      fetchTracksAdvanced();
+      fetchTracks({ artist: artistSearch, album: albumSearch, title: titleSearch });
     } else if (!showAdvancedSearch && searchQuery.trim()) {
-      // Use simple search when enabled AND search query has content
-      fetchTracks(searchQuery);
+      fetchTracks({ search: searchQuery });
     } else {
-      // No active search - clear the tracks to show empty state
       setFilteredTracks([]);
     }
-    // Note: No auto-fetch when no search is active - show empty state instead
-  }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks, fetchTracksAdvanced]);
+  }, [searchQuery, showAdvancedSearch, artistSearch, albumSearch, titleSearch, fetchTracks]);
 
-  const pollTaskStatus = async (taskId: string): Promise<boolean> => {
-    try {
-      console.log(`Polling task status for task_id: ${taskId}`);
-      const taskStatus = await api.getTaskStatus({ taskId });
-      if (taskStatus) {
-        console.log(`Task status response:`, taskStatus);
-        
-        if (taskStatus.status === 'success') {
-          console.log(`Task ${taskId} completed successfully`);
-          return true; // Task completed successfully
-        } else if (taskStatus.status === 'failed') {
-          console.error(`Task ${taskId} failed:`, taskStatus.error_message);
-          setError(`Processing failed: ${taskStatus.error_message || 'Unknown error'}`);
-          return false;
-        }
-        console.log(`Task ${taskId} still in progress, status: ${taskStatus.status}`);
-        // Still in progress, continue polling
-        return false;
-      } else {
-        // Task not found or error - assume it completed
-        return true;
-      }
-    } catch (err) {
-      console.error('Error polling task status:', err);
-      // On error, assume completed and try to get recommendations
-      return true;
-    }
-  };
-
-  const startTaskPolling = async (taskId: string, trackId: string, track: Track) => {
-    console.log(`Starting task polling for task_id: ${taskId}, track_id: ${trackId}`);
-    
-    // Clear any existing polling
-    if (pollInterval) {
-      clearInterval(pollInterval);
-    }
-
-    const task: ProcessingTask = {
-      taskId,
-      trackId,
-      startTime: Date.now()
-    };
-    setCurrentTask(task);
-    setProcessingState('worker');
-
-    const interval = setInterval(async () => {
-      const completed = await pollTaskStatus(taskId);
-      
-      if (completed) {
-        console.log(`Task ${taskId} completed, clearing polling and retrying recommendations`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setCurrentTask(null);
-        setProcessingState('none');
-        
-        // Wait a moment for the embedding to be fully saved
-        setTimeout(() => {
-          console.log(`Retrying recommendations for track after task completion`);
-          // Automatically retry getting recommendations
-          getRecommendations(track, true);
-        }, 1000);
-      }
-      
-      // Stop polling after 5 minutes to prevent infinite polling
-      const elapsed = Date.now() - task.startTime;
-      if (elapsed > 300000) {
-        console.warn(`Task ${taskId} polling timeout after ${elapsed}ms`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setCurrentTask(null);
-        setProcessingState('none');
-        setError('Processing took too long. Please try clicking the track again.');
-      }
-    }, 2000); // Poll every 2 seconds
-    
-    setPollInterval(interval);
-  };
-
-  const getRecommendations = async (track: Track, isRetry: boolean = false) => {
+  const getRecommendations = async (track: TrackResponse, isRetry: boolean = false) => {
     if (!isRetry) {
       setRecommendationsLoading(true);
       setRecommendations([]);
@@ -239,12 +156,13 @@ export default function LibraryPage() {
           }
         } else if (data.status === 'processing') {
           // Handle worker processing case - start polling immediately
-          if (!isRetry && data.task_id) {
+          if (data.task_id) {
             console.log('Starting worker processing with task_id:', data.task_id);
-            // Immediately set processing state to show worker processing UI
             setRecommendationsLoading(false);
-            startTaskPolling(data.task_id, track.media_server_rating_key, track);
-          } else if (!data.task_id) {
+            setCurrentTask({ taskId: data.task_id, trackId: track.media_server_rating_key, startTime: Date.now() });
+            setProcessingState('worker');
+            startPolling(data.task_id);
+          } else {
             console.error('Worker processing response missing taskId:', data);
             setError('Worker processing started but missing task ID. Please try again.');
             setRecommendationsLoading(false);
@@ -266,13 +184,8 @@ export default function LibraryPage() {
     }
   };
 
-  const handleTrackSelect = (track: Track) => {
-    // Clear any existing polling when selecting a new track
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
-    }
-    
+  const handleTrackSelect = (track: TrackResponse) => {
+    stopPolling();
     setSelectedTrack(track);
     setCurrentTask(null);
     setProcessingState('none');
@@ -410,9 +323,28 @@ export default function LibraryPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
         {/* Track List */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            Your Tracks
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Your Tracks
+            </h3>
+            {filteredTracks.length > 0 && (
+              <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                {(['all', 'processed', 'unprocessed'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setProcessedFilter(filter)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                      processedFilter === filter
+                        ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {filter === 'all' ? 'All' : filter === 'processed' ? 'Processed' : 'Unprocessed'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           
           {loading ? (
             <div className="space-y-3">
@@ -444,22 +376,68 @@ export default function LibraryPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {filteredTracks.map((track) => (
+            <div className="space-y-2 max-h-[32rem] overflow-y-auto">
+              {filteredTracks
+                .filter((track) => {
+                  if (processedFilter === 'processed') return track.processed === true;
+                  if (processedFilter === 'unprocessed') return track.processed === false;
+                  return true;
+                })
+                .map((track) => (
                 <button
-                  key={`${track.media_server_rating_key}`}
+                  key={track.media_server_rating_key}
                   onClick={() => handleTrackSelect(track)}
                   className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                    selectedTrack && `${selectedTrack.media_server_rating_key}` === `${track.media_server_rating_key}`
+                    selectedTrack?.media_server_rating_key === track.media_server_rating_key
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
                       : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500'
                   }`}
                 >
-                  <div className="font-medium text-gray-900 dark:text-white">
-                    {track.title}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {track.artist} • {track.album}
+                  <div className="flex items-center gap-3">
+                    {/* Album Art Thumbnail */}
+                    {track.thumb_url ? (
+                      <img
+                        src={track.thumb_url}
+                        alt={`${track.album} cover`}
+                        className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-gray-200 dark:bg-gray-700"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <div className={`w-12 h-12 rounded-md bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 ${track.thumb_url ? 'hidden' : ''}`}>
+                      <svg className="w-6 h-6 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                    </div>
+
+                    {/* Track Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
+                        {track.title}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {track.artist} &bull; {track.album}
+                      </div>
+                    </div>
+
+                    {/* Processed Badge */}
+                    {track.processed != null && (
+                      <div className="flex-shrink-0" title={track.processed ? 'Processed' : 'Not processed'}>
+                        {track.processed ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Ready
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500"></span>
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}
@@ -577,22 +555,38 @@ export default function LibraryPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 max-h-[32rem] overflow-y-auto">
               {recommendations.map((result) => (
                 <div
-                  key={`${result.track.media_server_rating_key}`}
+                  key={result.track.media_server_rating_key}
                   className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg"
                 >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-white">
+                  <div className="flex items-center gap-3">
+                    {/* Album Art */}
+                    {result.track.thumb_url ? (
+                      <img
+                        src={result.track.thumb_url}
+                        alt={`${result.track.album} cover`}
+                        className="w-10 h-10 rounded-md object-cover flex-shrink-0 bg-gray-200 dark:bg-gray-700"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <div className={`w-10 h-10 rounded-md bg-gray-200 dark:bg-gray-700 flex items-center justify-center flex-shrink-0 ${result.track.thumb_url ? 'hidden' : ''}`}>
+                      <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                      </svg>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900 dark:text-white truncate">
                         {result.track.title}
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-300">
-                        {result.track.artist} • {result.track.album}
+                      <div className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                        {result.track.artist} &bull; {result.track.album}
                       </div>
                     </div>
-                    <div className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+                    <div className="text-sm text-purple-600 dark:text-purple-400 font-medium flex-shrink-0">
                       {(result.similarity_score * 100).toFixed(1)}%
                     </div>
                   </div>

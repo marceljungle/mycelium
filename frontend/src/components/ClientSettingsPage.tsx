@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { workerApi } from '@/worker_api/client';
-import type { WorkerConfigResponse } from '@/worker_api/client';
+import type { WorkerConfigResponse, ClientStatusResponse } from '@/worker_api/client';
 
 export default function ClientSettingsPage() {
   const [config, setConfig] = useState<WorkerConfigResponse | null>(null);
@@ -11,10 +11,27 @@ export default function ClientSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<ClientStatusResponse | null>(null);
+  const statusInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const s = await workerApi.getClientStatus();
+      setStatus(s);
+    } catch {
+      // Silently ignore — status is advisory
+      setStatus(null);
+    }
+  }, []);
 
   useEffect(() => {
     fetchConfig();
-  }, []);
+    fetchStatus();
+    statusInterval.current = setInterval(fetchStatus, 5000);
+    return () => {
+      if (statusInterval.current) clearInterval(statusInterval.current);
+    };
+  }, [fetchStatus]);
 
   const fetchConfig = async () => {
     setLoading(true);
@@ -62,6 +79,20 @@ export default function ClientSettingsPage() {
     return JSON.stringify(config) !== JSON.stringify(originalConfig);
   };
 
+  const handleStopProcessing = async () => {
+    try {
+      const result = await workerApi.stopProcessing();
+      if (result.success) {
+        setSuccessMessage(result.message);
+      } else {
+        setError(result.message);
+      }
+      await fetchStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop processing');
+    }
+  };
+
   const updateConfig = <K extends keyof WorkerConfigResponse, P extends keyof WorkerConfigResponse[K]>(
     section: K,
     key: P,
@@ -105,6 +136,124 @@ export default function ClientSettingsPage() {
         </p>
       </div>
 
+      {/* Live Status Panel */}
+      {status && (
+        <div className="px-6 pt-4">
+          <div className="rounded-lg border border-gray-200 dark:border-gray-600 p-4 bg-gray-50 dark:bg-gray-700/50">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              {/* Server reachability */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    status.server_reachable
+                      ? 'bg-green-500 shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+                      : 'bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.6)]'
+                  }`}
+                  aria-label={status.server_reachable ? 'Server reachable' : 'Server unreachable'}
+                />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Server{' '}
+                  <span className={status.server_reachable ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
+                    {status.server_reachable ? 'Reachable' : 'Unreachable'}
+                  </span>
+                </span>
+              </div>
+
+              <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+
+              {/* Worker state */}
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${
+                    !status.worker.is_running
+                      ? 'bg-gray-400'
+                      : status.worker.is_stopping
+                        ? 'bg-amber-500 animate-pulse shadow-[0_0_4px_rgba(245,158,11,0.6)]'
+                        : status.worker.is_processing
+                          ? 'bg-green-500 animate-pulse shadow-[0_0_4px_rgba(34,197,94,0.6)]'
+                          : 'bg-yellow-400 shadow-[0_0_4px_rgba(250,204,21,0.6)]'
+                  }`}
+                  aria-label={
+                    !status.worker.is_running ? 'Worker stopped' : status.worker.is_stopping ? 'Stopping' : status.worker.is_processing ? 'Processing' : 'Idle'
+                  }
+                />
+                <span className="text-gray-700 dark:text-gray-300">
+                  Worker{' '}
+                  <span
+                    className={
+                      !status.worker.is_running
+                        ? 'text-gray-500 font-medium'
+                        : status.worker.is_stopping
+                          ? 'text-amber-600 dark:text-amber-400 font-medium'
+                          : status.worker.is_processing
+                            ? 'text-green-600 dark:text-green-400 font-medium'
+                            : 'text-yellow-600 dark:text-yellow-400 font-medium'
+                    }
+                  >
+                    {!status.worker.is_running ? 'Stopped' : status.worker.is_stopping ? 'Stopping…' : status.worker.is_processing ? 'Processing' : 'Idle'}
+                  </span>
+                </span>
+              </div>
+
+              <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+
+              {/* Queue stats */}
+              <div className="flex items-center gap-3 text-gray-600 dark:text-gray-400">
+                <span title="Jobs waiting to be downloaded">
+                  📥 {status.worker.jobs_in_download_queue} queued
+                </span>
+                <span title="Jobs downloaded and ready for GPU">
+                  🧠 {status.worker.jobs_ready_for_gpu} ready
+                </span>
+                <span title="Total jobs processed this session">
+                  ✅ {status.worker.total_jobs_processed} done
+                </span>
+              </div>
+
+              {/* Model info (assigned by server) */}
+              {status.worker.model_type && (
+                <>
+                  <span className="hidden sm:inline text-gray-300 dark:text-gray-500">|</span>
+                  <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                    <span title="Embedding model assigned by server">
+                      🎵 {status.worker.model_type.toUpperCase()}: {status.worker.model_id}
+                    </span>
+                    {status.worker.micro_batch_size != null && (
+                      <span title="Micro batch size (chunks per GPU forward pass)">
+                        · batch: {status.worker.micro_batch_size}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Stop Processing Button */}
+            {status.worker.is_running && (status.worker.is_processing || status.worker.is_stopping) && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                <button
+                  onClick={handleStopProcessing}
+                  disabled={status.worker.is_stopping}
+                  className="px-4 py-2 text-sm bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {status.worker.is_stopping ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Stopping… finishing queued jobs
+                    </span>
+                  ) : (
+                    '🛑 Stop Processing'
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="p-6 space-y-8">
         {error && (
           <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-700 rounded-lg p-4">
@@ -125,7 +274,7 @@ export default function ClientSettingsPage() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 🖥️ Client Worker
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Server Host
@@ -235,6 +384,23 @@ export default function ClientSettingsPage() {
                     GPU processing batch size
                   </p>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Micro Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.client.micro_batch_size}
+                    onChange={(e) => updateConfig('client', 'micro_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="4"
+                    min="1"
+                    max="32"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chunks per GPU forward pass (lower = less memory)
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -270,85 +436,6 @@ export default function ClientSettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="3001"
                   />
-                </div>
-              </div>
-            </div>
-
-            {/* CLAP Configuration */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🧠 AI Model (CLAP)
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Model ID
-                  </label>
-                  <select
-                    value={config.clap.model_id}
-                    onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
-                    <option value="laion/larger_clap_music">CLAP Music (If your library is mostly instrumental/electronic)</option>
-                    <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused (Trained with general sounds, not only music)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sample Rate
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.target_sr}
-                    onChange={(e) => updateConfig('clap', 'target_sr', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Chunk Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.chunk_duration_s}
-                    onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Number of Chunks
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.num_chunks}
-                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="10"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Number of audio chunks to extract per track
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Max Load Duration (s)
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.max_load_duration_s ?? 0}
-                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="10"
-                    max="600"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Maximum seconds of audio to load per track
-                  </p>
                 </div>
               </div>
             </div>

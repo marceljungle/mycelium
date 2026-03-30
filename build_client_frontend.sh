@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FRONTEND_DIR="$ROOT_DIR/frontend"
-CLIENT_DIST_DIR="$ROOT_DIR/src/mycelium/client_frontend_dist"
+CLIENT_DIST_DIR="$ROOT_DIR/backend/mycelium/client_frontend_dist"
 CLIENT_OUT_DIR="$FRONTEND_DIR/out"
 
 echo "Building Next.js frontend for client mode..."
@@ -22,8 +22,8 @@ fi
 echo "Creating new client_frontend_dist directory..."
 mkdir -p "$CLIENT_DIST_DIR"
 
-echo "Copying client frontend build output to src/mycelium/client_frontend_dist..."
+echo "Copying client frontend build output to backend/mycelium/client_frontend_dist..."
 cp -a "$CLIENT_OUT_DIR"/. "$CLIENT_DIST_DIR"/
 
 echo "Client frontend build completed successfully!"
-echo "Client static files are now available in src/mycelium/client_frontend_dist/"
+echo "Client static files are now available in backend/mycelium/client_frontend_dist/"

@@ -1,14 +1,6 @@
 # Mycelium Client Configuration Example
 # Copy this file to ~/.config/mycelium/client_config.yml and edit as needed
 
-# CLAP model configuration for embedding generation
-clap:
-  model_id: laion/larger_clap_music_and_speech
-  target_sr: 48000
-  chunk_duration_s: 10
-  num_chunks: 3
-  max_load_duration_s: 120
-
 # Client configuration for connecting to Mycelium server
 client:
   server_host: localhost
@@ -18,6 +10,7 @@ client:
   poll_interval: 5
   download_workers: 10
   gpu_batch_size: 4      # Number of jobs to process together on GPU
+  micro_batch_size: 4    # Chunks per GPU forward pass (lower = less memory)
 
 # Client API server configuration for local configuration management
 client_api:

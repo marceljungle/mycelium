@@ -41,8 +41,14 @@ export const API_ENDPOINTS = {
 } as const;
 
 // Worker API configuration (client/worker runtime)
+// In client mode the frontend is served by the same FastAPI process that
+// exposes the worker API, so we just use the current origin.
 export const WORKER_API_BASE_URL = (() => {
   if (typeof window !== 'undefined') {
+    if (IS_CLIENT_MODE) {
+      // Same origin — FastAPI serves both static files and /api/*
+      return window.location.origin;
+    }
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
     const port = process.env.NEXT_PUBLIC_WORKER_API_PORT || '8001';

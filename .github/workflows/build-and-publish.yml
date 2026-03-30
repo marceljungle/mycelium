@@ -152,8 +152,8 @@ jobs:
 
       - name: Verify frontend build outputs
         run: |
-          ls -la src/mycelium/frontend_dist/
-          ls -la src/mycelium/client_frontend_dist/
+          ls -la backend/mycelium/frontend_dist/
+          ls -la backend/mycelium/client_frontend_dist/
 
       - name: Install Python build dependencies
         run: |
@@ -258,7 +258,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "v$RELEASE_VERSION" \
-            --title "Release v$RELEASE_VERSION" \
+            --title "v$RELEASE_VERSION" \
             --notes-file RELEASE_NOTES.md \
             dist/*
 

@@ -7,7 +7,7 @@ mkdir -p build/wheels
 echo "Cleaning previous builds..."
 rm -rf build/lib
 rm -rf build/bdist.*
-rm -rf src/mycelium.egg-info
+rm -rf backend/mycelium.egg-info
 
 echo "Building wheel..."
 pip wheel . --wheel-dir build/wheels
