@@ -406,8 +406,6 @@ async def get_library_tracks(
         for track, processed in tracks_with_processed:
             resp = _track_to_response(track)
             resp.processed = processed
-            if track.media_server_rating_key:
-                resp.thumb_url = f"/api/library/tracks/{track.media_server_rating_key}/thumb"
             track_responses.append(resp)
 
         return TracksListResponse(
@@ -667,6 +665,7 @@ async def register_worker(request: WorkerRegistrationRequest):
 async def get_job(
     worker_id: str = Query(..., description="Worker ID"),
     ip_address: str = Query(..., description="Client IP address"),
+    gpu_name: Optional[str] = Query(None, description="GPU device name"),
 ):
     """Get the next job for a worker."""
     logger.debug(f"Worker job request received for worker ID {worker_id}")
@@ -676,7 +675,7 @@ async def get_job(
         if cleaned:
             logger.info(f"Cleaned up {cleaned} stale tasks from inactive workers")
 
-        task = job_queue.get_next_job(worker_id=worker_id, ip_address=ip_address)
+        task = job_queue.get_next_job(worker_id=worker_id, ip_address=ip_address, gpu_name=gpu_name)
         if task is None:
             # No job available - return 204 No Content
             logger.debug(f"No job available for worker {worker_id}")
@@ -1313,6 +1312,9 @@ async def clear_error_log():
 
 def _track_to_response(track: "Track") -> TrackResponse:
     """Convert a domain Track to an API TrackResponse."""
+    thumb_url = None
+    if track.media_server_rating_key:
+        thumb_url = f"/api/library/tracks/{track.media_server_rating_key}/thumb"
     return TrackResponse(
         artist=track.artist,
         album=track.album,
@@ -1320,6 +1322,7 @@ def _track_to_response(track: "Track") -> TrackResponse:
         filepath=str(track.filepath),
         media_server_rating_key=track.media_server_rating_key,
         media_server_type=track.media_server_type.value,
+        thumb_url=thumb_url,
     )
 
 
