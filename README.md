@@ -117,6 +117,11 @@ Upload any audio file to find tracks with similar sonic characteristics.
 Browse your collection with filters. Click any track to find similar music.
 ![Library View](docs/screenshots/library-view-search.png)
 
+### Processing Queue
+Monitor workers, task progress, and errors in real-time.
+![Queue Task List](docs/screenshots/queue-tasks.png)
+![Queue Error Log](docs/screenshots/queue-errors.png)
+
 ## Setup
 
 ### Requirements
