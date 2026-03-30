@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/server_api/client';
-import type { ConfigResponse } from '@/server_api/generated/models';
+import type { ConfigResponse } from '@/server_api/client';
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
@@ -274,10 +274,130 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* CLAP Configuration */}
+            {/* Embedding Model Selection */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                🧠 AI Model (CLAP)
+                🧠 AI Embedding Model
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Model Type
+                  </label>
+                  <select
+                    value={config.embedding?.type ?? 'clap'}
+                    onChange={(e) => updateConfig('embedding', 'type', e.target.value as 'clap' | 'muq' | 'muq_mulan')}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="muq">MuQ — Audio-Only (Best Acoustic Quality)</option>
+                    <option value="muq_mulan">MuQ-MuLan — Audio + Text Search</option>
+                    <option value="clap">CLAP — Audio + Text Search (Legacy)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Switching models requires re-processing your library.
+                  </p>
+                </div>
+              </div>
+              {config.embedding?.type === 'muq' && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">
+                  ⚠️ MuQ only supports audio-based search. Text search will be disabled.
+                </p>
+              )}
+
+              {/* Model Comparison Chart */}
+              <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Model Comparison</p>
+                {(() => {
+                  const models = [
+                    {
+                      key: 'muq',
+                      label: 'MuQ',
+                      color: 'bg-blue-500',
+                      acoustic: 95,
+                      semantic: 0,
+                      textSearch: false,
+                      vram: 45,
+                    },
+                    {
+                      key: 'muq_mulan',
+                      label: 'MuQ-MuLan',
+                      color: 'bg-purple-500',
+                      acoustic: 90,
+                      semantic: 85,
+                      textSearch: true,
+                      vram: 60,
+                    },
+                    {
+                      key: 'clap',
+                      label: 'CLAP',
+                      color: 'bg-green-500',
+                      acoustic: 70,
+                      semantic: 80,
+                      textSearch: true,
+                      vram: 35,
+                    },
+                  ];
+                  const metrics = [
+                    { key: 'acoustic' as const, label: 'Acoustic Quality' },
+                    { key: 'semantic' as const, label: 'Semantic Understanding' },
+                    { key: 'vram' as const, label: 'VRAM Usage' },
+                  ];
+                  const selected = config.embedding?.type ?? 'clap';
+                  return (
+                    <div className="space-y-3">
+                      {metrics.map((metric) => (
+                        <div key={metric.key}>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">{metric.label}</p>
+                          <div className="space-y-1">
+                            {models.map((m) => (
+                              <div key={m.key} className="flex items-center gap-2">
+                                <span className={`text-xs w-20 text-right ${
+                                  m.key === selected ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                                }`}>{m.label}</span>
+                                <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                                  <div
+                                    className={`${m.color} h-2.5 rounded-full transition-all duration-300 ${
+                                      m.key === selected ? 'opacity-100' : 'opacity-40'
+                                    }`}
+                                    style={{ width: `${m[metric.key]}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 w-8">{m[metric.key]}%</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Text Search</p>
+                        <div className="space-y-1">
+                          {models.map((m) => (
+                            <div key={m.key} className="flex items-center gap-2">
+                              <span className={`text-xs w-20 text-right ${
+                                m.key === selected ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                              }`}>{m.label}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded ${
+                                m.textSearch
+                                  ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                                  : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                              } ${m.key === selected ? 'opacity-100' : 'opacity-50'}`}>
+                                {m.textSearch ? '✓ Supported' : '✗ Not supported'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* CLAP Configuration */}
+            {(config.embedding?.type ?? 'clap') === 'clap' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 CLAP Settings
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
@@ -289,7 +409,7 @@ export default function SettingsPage() {
                     onChange={(e) => updateConfig('clap', 'model_id', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
-                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Recommended)</option>
+                    <option value="laion/larger_clap_music_and_speech">CLAP Music & Speech (Speech + Instrumental)</option>
                     <option value="laion/larger_clap_music">CLAP Music (If your library is mostly instrumental/electronic)</option>
                     <option value="laion/clap-htsat-unfused">CLAP HTSAT Unfused (Trained with general sounds, not only music)</option>
                   </select>
@@ -315,45 +435,171 @@ export default function SettingsPage() {
                     onChange={(e) => updateConfig('clap', 'chunk_duration_s', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     min="1"
-                    max="30"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Number of Chunks
-                  </label>
-                  <input
-                    type="number"
-                    value={config.clap.num_chunks}
-                    onChange={(e) => updateConfig('clap', 'num_chunks', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="1"
-                    max="10"
+                    max="60"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Number of audio chunks to extract per track
+                    Duration of each sequential audio window
                   </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Max Load Duration (s)
+                    Micro Batch Size
                   </label>
                   <input
                     type="number"
-                    value={config.clap.max_load_duration_s ?? 0}
-                    onChange={(e) => updateConfig('clap', 'max_load_duration_s', parseInt(e.target.value))}
+                    value={config.clap?.micro_batch_size ?? 4}
+                    onChange={(e) => updateConfig('clap', 'micro_batch_size', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    min="10"
-                    max="600"
+                    min="1"
+                    max="64"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Maximum seconds of audio to load per track
+                    Chunks per GPU forward pass (lower = less memory)
                   </p>
                 </div>
               </div>
             </div>
+            )}
+
+            {/* MuQ Configuration */}
+            {config.embedding?.type === 'muq' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 MuQ Settings
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <label htmlFor="muq-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Model ID
+                  </label>
+                  <input
+                    id="muq-model-id"
+                    name="muq-model-id"
+                    type="text"
+                    value={config.muq?.model_id ?? 'OpenMuQ/MuQ-large-msd-iter'}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Only one MuQ model is currently available
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Sample Rate
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.target_sr ?? 24000}
+                    onChange={(e) => updateConfig('muq', 'target_sr', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Chunk Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.chunk_duration_s ?? 30}
+                    onChange={(e) => updateConfig('muq', 'chunk_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="60"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Duration of each sequential audio window
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Micro Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq?.micro_batch_size ?? 4}
+                    onChange={(e) => updateConfig('muq', 'micro_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="32"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chunks per GPU forward pass (lower = less memory)
+                  </p>
+                </div>
+              </div>
+            </div>
+            )}
+
+            {/* MuQ-MuLan Configuration */}
+            {config.embedding?.type === 'muq_mulan' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                🎵 MuQ-MuLan Settings
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2">
+                  <label htmlFor="muq-mulan-model-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Model ID
+                  </label>
+                  <input
+                    id="muq-mulan-model-id"
+                    name="muq-mulan-model-id"
+                    type="text"
+                    value={config.muq_mulan?.model_id ?? 'OpenMuQ/MuQ-MuLan-large'}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    MuQ-MuLan with MuLan text tower for audio + text search
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Sample Rate
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq_mulan?.target_sr ?? 24000}
+                    onChange={(e) => updateConfig('muq_mulan', 'target_sr', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Chunk Duration (s)
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq_mulan?.chunk_duration_s ?? 10}
+                    onChange={(e) => updateConfig('muq_mulan', 'chunk_duration_s', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="60"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Duration of each sequential audio window
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Micro Batch Size
+                  </label>
+                  <input
+                    type="number"
+                    value={config.muq_mulan?.micro_batch_size ?? 4}
+                    onChange={(e) => updateConfig('muq_mulan', 'micro_batch_size', parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    min="1"
+                    max="32"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Chunks per GPU forward pass (lower = less memory)
+                  </p>
+                </div>
+              </div>
+            </div>
+            )}
 
             {/* Database Configuration */}
             <div className="space-y-4">

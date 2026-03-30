@@ -1,6 +1,6 @@
 'use client';
 
-type Section = 'search' | 'library' | 'settings';
+type Section = 'search' | 'library' | 'queue' | 'settings';
 
 interface NavigationProps {
   activeSection: Section;
@@ -11,6 +11,7 @@ export default function Navigation({ activeSection, onSectionChange }: Navigatio
   const sections = [
     { id: 'search' as Section, name: 'Search', icon: '🔍' },
     { id: 'library' as Section, name: 'Library', icon: '📚' },
+    { id: 'queue' as Section, name: 'Queue', icon: '📋' },
     { id: 'settings' as Section, name: 'Settings', icon: '⚙️' },
   ];
 

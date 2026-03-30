@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import SearchResults from './SearchResults';
 import { api } from '@/server_api/client';
-import type { SearchResultResponse } from '@/server_api/generated/models';
+import type { SearchResultResponse, CapabilitiesResponse } from '@/server_api/client';
+import { useTaskPolling } from '@/hooks/useTaskPolling';
 
 export default function SearchInterface() {
   const [query, setQuery] = useState('');
@@ -11,142 +12,101 @@ export default function SearchInterface() {
   const [loading, setLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchType, setSearchType] = useState<'text' | 'audio'>('text');
+  const [searchType, setSearchType] = useState<'text' | 'audio'>('audio');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [numResults, setNumResults] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Model capabilities
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
+  
   // Worker processing state
   const [processingState, setProcessingState] = useState<'none' | 'worker' | 'server'>('none');
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
-  // Cleanup polling on unmount
+  const clearLoadingState = useCallback(() => {
+    setLoading(false);
+    setAudioLoading(false);
+    setProcessingState('none');
+  }, []);
+
+  const { startPolling } = useTaskPolling(
+    // onSuccess
+    useCallback((_taskId: string, searchResults: SearchResultResponse[]) => {
+      setResults(searchResults);
+      clearLoadingState();
+    }, [clearLoadingState]),
+    // onError
+    useCallback((_taskId: string, message: string) => {
+      setError(message);
+      clearLoadingState();
+    }, [clearLoadingState]),
+  );
+
+  // Fetch capabilities on mount
   useEffect(() => {
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
+    api.getCapabilities().then((caps) => {
+      setCapabilities(caps);
+      setSearchType(caps.supports_text_search ? 'text' : 'audio');
+    }).catch(() => {
+      setSearchType('text');
+    });
+  }, []);
+
+  const handleSearchResponse = useCallback(
+    async (
+      data: SearchResultResponse[] | { status: string; task_id?: string },
+      serverFallback: () => Promise<SearchResultResponse[]>,
+      confirmMessage: string,
+    ) => {
+      if (Array.isArray(data)) {
+        setResults(data);
+        clearLoadingState();
+        return;
       }
-    };
-  }, [pollInterval]);
 
-  const pollTaskStatus = async (taskId: string): Promise<boolean> => {
-    try {
-      const taskData = await api.getTaskStatus({ taskId });
-      if (taskData) {
-        console.log(`Polling task ${taskId}: status=${taskData.status}, has_results=${!!taskData.search_results}`);
+      if (data.status === 'processing' && data.task_id) {
+        setProcessingState('worker');
+        startPolling(data.task_id);
+        return;
+      }
 
-        if (taskData.status === 'success' && taskData.search_results) {
-          // Task completed successfully with search results
-          console.log(`Task ${taskId} completed successfully with ${taskData.search_results.length} results`);
-          setResults(taskData.search_results);
-          return true;
-        } else if (taskData.status === 'failed') {
-          // Task failed
-          console.error(`Task ${taskId} failed:`, taskData.error_message);
-          setError(taskData.error_message || 'Search task failed on worker');
-          return true;
-        } else if (taskData.status === 'success' && !taskData.search_results) {
-          // Task marked as success but no results yet - this might be a race condition
-          console.warn(`Task ${taskId} marked as success but no search results yet, continuing polling...`);
-          return false;
+      if (data.status === 'confirmation_required') {
+        const shouldProcess = window.confirm(confirmMessage);
+        if (shouldProcess) {
+          setProcessingState('server');
+          try {
+            const serverResults = await serverFallback();
+            setResults(serverResults);
+          } catch {
+            setError('Error processing on server. Please check your connection.');
+          } finally {
+            clearLoadingState();
+          }
+        } else {
+          clearLoadingState();
         }
-        // Task still in progress
-        console.log(`Task ${taskId} still in progress (status: ${taskData.status})`);
-        return false;
-      } else {
-        return false;
+        return;
       }
-    } catch (error) {
-      console.error('Error polling task status:', error);
-      return false;
-    }
-  };
 
-  const startTaskPolling = (taskId: string) => {
-    console.log('Starting task polling for search task:', taskId);
-    setProcessingState('worker');
-
-    let pollCount = 0;
-    const maxPolls = 150; // 5 minutes with 2-second intervals
-
-    const interval = setInterval(async () => {
-      pollCount++;
-      const completed = await pollTaskStatus(taskId);
-      
-      if (completed) {
-        console.log(`Search task ${taskId} completed, clearing polling after ${pollCount} polls`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setProcessingState('none');
-        setLoading(false);
-        setAudioLoading(false);
-      } else if (pollCount >= maxPolls) {
-        console.warn(`Search task ${taskId} polling timeout after ${pollCount} polls (${maxPolls * 2} seconds)`);
-        clearInterval(interval);
-        setPollInterval(null);
-        setProcessingState('none');
-        setLoading(false);
-        setAudioLoading(false);
-        setError('Search task timed out. Please try again.');
-      }
-    }, 2000); // Poll every 2 seconds
-
-    setPollInterval(interval);
-  };
+      setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
+      clearLoadingState();
+    },
+    [startPolling, clearLoadingState],
+  );
 
   const handleTextSearch = async () => {
     if (!query.trim()) return;
-
     setLoading(true);
     setError(null);
 
     try {
       const data = await api.searchText({ q: query, nResults: numResults });
-      
-      // Check if it's direct search results or a processing response
-      if (Array.isArray(data)) {
-        // Direct search results (server processed immediately)
-        setResults(data);
-        setLoading(false);
-
-
-      } else if (data.status === 'processing') {
-        // Worker processing - start polling
-        if (data.task_id) {
-          console.log('Text search sent to worker, starting polling for task:', data.task_id);
-          startTaskPolling(data.task_id);
-        } else {
-          console.error('Processing response missing taskId for text search');
-          setError('Worker processing started but no task ID was returned.');
-          setLoading(false);
-        }
-      } else if (data.status === 'confirmation_required') {
-        // No workers available - ask for confirmation
-        const shouldProcess = window.confirm(
-          `Text search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?`
-        );
-        
-        if (shouldProcess) {
-          setProcessingState('server');
-          try {
-            // Process on server
-            const serverResults = await api.computeTextSearch({ computeTextSearchRequest: { query, n_results: numResults } });
-            setResults(serverResults);
-          } catch {
-            setError('Error processing text search on server. Please check your connection.');
-          } finally {
-            setProcessingState('none');
-            setLoading(false);
-          }
-        } else {
-          setLoading(false);
-        }
-      } else {
-        console.error('Unexpected response from text search:', data);
-        setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
-        setLoading(false);
-      }
+      await handleSearchResponse(
+        data,
+        () => api.computeTextSearch({ computeTextSearchRequest: { query, n_results: numResults } }),
+        'Text search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       setResults([]);
@@ -156,65 +116,17 @@ export default function SearchInterface() {
 
   const handleAudioSearch = async () => {
     if (!audioFile) return;
-
     setAudioLoading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('audio', audioFile);
-      formData.append('n_results', numResults.toString());
-
       const data = await api.searchAudio({ audio: audioFile, nResults: numResults });
-      
-      // Check if it's direct search results or a processing response
-      if (Array.isArray(data)) {
-        // Direct search results (server processed immediately)
-        setResults(data);
-        setAudioLoading(false);
-
-
-      } else if (data.status === 'processing') {
-        // Worker processing - start polling
-        if (data.task_id) {
-          console.log('Audio search sent to worker, starting polling for task:', data.task_id);
-          startTaskPolling(data.task_id);
-        } else {
-          console.error('Processing response missing taskId for audio search');
-          setError('Worker processing started but no task ID was returned.');
-          setAudioLoading(false);
-        }
-      } else if (data.status === 'confirmation_required') {
-        // No workers available - ask for confirmation
-        const shouldProcess = window.confirm(
-          `Audio search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?`
-        );
-        
-        if (shouldProcess) {
-          setProcessingState('server');
-          try {
-            const formData = new FormData();
-            formData.append('audio', audioFile);
-            formData.append('n_results', numResults.toString());
-
-            const serverResults = await api.computeAudioSearch({ audio: audioFile, nResults: numResults });
-            setResults(serverResults);
-          } catch {
-            setError('Error processing audio search on server. Please check your connection.');
-          } finally {
-            setProcessingState('none');
-            setAudioLoading(false);
-          }
-        } else {
-          setAudioLoading(false);
-        }
-      } else {
-        console.error('Unexpected response from audio search:', data);
-        setError(`Unexpected response from server: ${data.status || 'unknown status'}. Please try again.`);
-        setAudioLoading(false);
-      }
+      await handleSearchResponse(
+        data,
+        () => api.computeAudioSearch({ audio: audioFile, nResults: numResults }),
+        'Audio search requires embedding computation, and no workers are active.\n\nWould you like to process it on the server?',
+      );
     } catch (err) {
-      console.error('Audio search error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred during audio search');
       setResults([]);
       setAudioLoading(false);
@@ -293,27 +205,36 @@ export default function SearchInterface() {
       {/* Search Type Toggle */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
-          <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
-            <button
-              onClick={() => setSearchType('text')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                searchType === 'text'
-                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              📝 Text Search
-            </button>
-            <button
-              onClick={() => setSearchType('audio')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                searchType === 'audio'
-                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
-                  : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              🎧 Audio Search
-            </button>
+          <div className="flex items-center space-x-3">
+            <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
+              {capabilities?.supports_text_search !== false && (
+                <button
+                  onClick={() => setSearchType('text')}
+                  className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                    searchType === 'text'
+                      ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  📝 Text Search
+                </button>
+              )}
+              <button
+                onClick={() => setSearchType('audio')}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  searchType === 'audio'
+                    ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-400 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                🎧 Audio Search
+              </button>
+            </div>
+            {capabilities && (
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                {capabilities.embedding_model_type?.toUpperCase()}
+              </span>
+            )}
           </div>
           
           {/* Number of Results Control */}
