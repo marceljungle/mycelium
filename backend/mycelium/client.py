@@ -281,9 +281,12 @@ class MyceliumClient:
     def get_job(self) -> Optional[dict]:
         """Get the next job from the server."""
         try:
+            params = {"worker_id": self.worker_id, "ip_address": self.ip_address}
+            if self.gpu_name:
+                params["gpu_name"] = self.gpu_name
             response = requests.get(
                 f"{self.server_url}/workers/get_job",
-                params={"worker_id": self.worker_id, "ip_address": self.ip_address},
+                params=params,
                 timeout=30
             )
             response.raise_for_status()

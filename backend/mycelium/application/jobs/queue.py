@@ -166,15 +166,20 @@ class JobQueueService:
                     return task
             return None
 
-    def get_next_job(self, worker_id: str, ip_address: str) -> Optional[Task]:
+    def get_next_job(
+        self, worker_id: str, ip_address: str, gpu_name: Optional[str] = None,
+    ) -> Optional[Task]:
         """Get the next job for a worker."""
         with self._lock:
             # Update worker heartbeat
             if worker_id in self._workers:
-                self._workers[worker_id].last_heartbeat = datetime.now()
+                worker = self._workers[worker_id]
+                worker.last_heartbeat = datetime.now()
+                if gpu_name is not None and not worker.gpu_name:
+                    worker.gpu_name = gpu_name
             else:
                 logger.warning(f"Received heartbeat from unknown worker, registering {worker_id}...")
-                self._register_worker_internal(worker_id=worker_id, ip_address=ip_address)
+                self._register_worker_internal(worker_id=worker_id, ip_address=ip_address, gpu_name=gpu_name)
 
             # Get next pending task
             if not self._pending_tasks:
