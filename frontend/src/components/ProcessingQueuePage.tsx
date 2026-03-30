@@ -96,6 +96,7 @@ export default function ProcessingQueuePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [view, setView] = useState<'tasks' | 'errors'>('tasks');
 
   // ----- data fetching -----
 
@@ -263,7 +264,37 @@ export default function ProcessingQueuePage() {
         </div>
       )}
 
+      {/* ---- View Toggle ---- */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setView('tasks')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            view === 'tasks'
+              ? 'bg-purple-600 text-white'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+        >
+          Task List
+        </button>
+        <button
+          onClick={() => setView('errors')}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            view === 'errors'
+              ? 'bg-purple-600 text-white'
+              : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+          }`}
+        >
+          Error Log
+          {stats && stats.failed_tasks > 0 && view !== 'errors' && (
+            <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full">
+              {stats.failed_tasks.toLocaleString()}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* ---- Task List ---- */}
+      {view === 'tasks' && (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
         {/* Status filter tabs + worker filter */}
         <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-600 px-4 pt-4">
@@ -411,9 +442,10 @@ export default function ProcessingQueuePage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ---- Error Log ---- */}
-      <ErrorLogViewer />
+      {view === 'errors' && <ErrorLogViewer />}
     </div>
   );
 }
