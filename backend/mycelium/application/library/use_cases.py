@@ -75,14 +75,18 @@ class EmbeddingProcessingUseCase:
     def process_embeddings(
             self,
             progress_callback: Optional[callable] = None,
-            max_tracks: Optional[int] = None
+            max_tracks: Optional[int] = None,
+            include_errored: bool = False,
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks with resumability."""
         logger.info(f"Starting embedding processing with model: {self.model_id}")
 
         # Get unprocessed tracks for this specific model
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(model_id=self.model_id,
-                                                                        limit=max_tracks)
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(
+            model_id=self.model_id,
+            limit=max_tracks,
+            skip_errored=not include_errored,
+        )
 
         if not unprocessed_tracks:
             logger.info("No unprocessed tracks found")
@@ -126,7 +130,10 @@ class EmbeddingProcessingUseCase:
                 embeddings = self.embedding_generator.generate_embedding_batch(filepaths)
                 
                 # Process results
-                for track, stored_track, embedding in zip(tracks, valid_stored_tracks, embeddings):
+                batch_errors = getattr(self.embedding_generator, 'last_batch_errors', {})
+                for j, (track, stored_track, embedding) in enumerate(
+                    zip(tracks, valid_stored_tracks, embeddings)
+                ):
                     try:
                         if embedding:
                             # Create track embedding object with model info
@@ -146,6 +153,12 @@ class EmbeddingProcessingUseCase:
                                 model_id=self.model_id
                             )
 
+                            # Clear any previous error flag (successful retry)
+                            self.track_database.clear_track_error(
+                                media_server_rating_key=stored_track.media_server_rating_key,
+                                model_id=self.model_id,
+                            )
+
                             processed_count += 1
 
                             if progress_callback:
@@ -158,11 +171,27 @@ class EmbeddingProcessingUseCase:
                                     "current_track": track.display_name
                                 })
                         else:
-                            logger.warning(f"Failed to generate embedding for: {track.display_name}")
+                            # Determine error reason and flag the track
+                            error_reason = batch_errors.get(j, "Unknown error")
+                            logger.warning(
+                                f"Failed to generate embedding for: {track.display_name} — {error_reason}"
+                            )
+                            self.track_database.mark_track_errored(
+                                media_server_rating_key=stored_track.media_server_rating_key,
+                                model_id=self.model_id,
+                                error_category="processing",
+                                error_message=error_reason,
+                            )
                             failed_count += 1
 
                     except Exception as e:
                         logger.error(f"Error processing track {stored_track.media_server_rating_key}: {e}")
+                        self.track_database.mark_track_errored(
+                            media_server_rating_key=stored_track.media_server_rating_key,
+                            model_id=self.model_id,
+                            error_category="processing",
+                            error_message=str(e),
+                        )
                         failed_count += 1
 
             result = {
@@ -207,6 +236,7 @@ class ProcessingProgressUseCase:
             "total_tracks": stats["total_tracks"],
             "processed_tracks": stats["processed_tracks"],
             "unprocessed_tracks": stats["unprocessed_tracks"],
+            "errored_tracks": stats.get("errored_tracks", 0),
             "progress_percentage": (stats["processed_tracks"] / stats["total_tracks"] * 100) if stats[
                                                                                                     "total_tracks"] > 0 else 0,
             "model_id": model_id
@@ -251,7 +281,9 @@ class WorkerBasedProcessingUseCase:
             "queue_stats": queue_stats
         }
 
-    def create_worker_tasks(self, model_id: str, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+    def create_worker_tasks(
+        self, model_id: str, max_tracks: Optional[int] = None, include_errored: bool = False
+    ) -> Dict[str, Any]:
         """Create tasks for all unprocessed tracks to be handled by workers."""
         if not self.can_use_workers():
             return {
@@ -261,7 +293,9 @@ class WorkerBasedProcessingUseCase:
             }
 
         # Get unprocessed tracks
-        unprocessed_tracks = self.track_database.get_unprocessed_tracks(limit=max_tracks, model_id=model_id)
+        unprocessed_tracks = self.track_database.get_unprocessed_tracks(
+            limit=max_tracks, model_id=model_id, skip_errored=not include_errored,
+        )
 
         if not unprocessed_tracks:
             return {

@@ -34,6 +34,7 @@ export interface TrackDatabaseStats {
   total_tracks: number;
   processed_tracks: number;
   unprocessed_tracks: number;
+  errored_tracks?: number;
   progress_percentage: number;
   is_processing?: boolean;
   model_id?: string;

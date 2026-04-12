@@ -522,7 +522,9 @@ async def scan_library():
 
 @app.post("/api/library/process", response_model=ProcessingResponse)
 @with_service_lock
-async def process_library():
+async def process_library(
+    include_errored: bool = Query(False, description="Include previously errored tracks"),
+):
     """Process embeddings - prioritize workers, fallback to server with confirmation."""
     try:
         # Check if processing is already running
@@ -534,7 +536,7 @@ async def process_library():
         # Check for active workers first
         if service.can_use_workers():
             # Use worker-based processing
-            result = service.create_worker_tasks()
+            result = service.create_worker_tasks(include_errored=include_errored)
 
             if result["success"]:
                 return ProcessingResponse(
@@ -566,7 +568,10 @@ async def process_library():
 
 @app.post("/api/library/process/server", response_model=ProcessingResponse)
 @with_service_lock
-async def process_library_on_server(background_tasks: BackgroundTasks):
+async def process_library_on_server(
+    background_tasks: BackgroundTasks,
+    include_errored: bool = Query(False, description="Include previously errored tracks"),
+):
     """Process embeddings on server after user confirmation."""
     try:
         # Check if processing is already running
@@ -576,7 +581,9 @@ async def process_library_on_server(background_tasks: BackgroundTasks):
             )
 
         # Start processing in background on server
-        background_tasks.add_task(service.process_embeddings_from_database)
+        background_tasks.add_task(
+            service.process_embeddings_from_database, include_errored=include_errored,
+        )
 
         return ProcessingResponse(
             message="Server-side embedding processing started in background",
@@ -747,6 +754,22 @@ async def submit_result(request: TaskResultRequest):
                 worker_id=task.assigned_worker_id if task else None,
                 task_id=request.task_id,
             )
+
+            # Persist the error so this track is skipped on subsequent runs
+            if request.track_id and request.track_id.strip():
+                try:
+                    service.track_database.mark_track_errored(
+                        media_server_rating_key=request.track_id,
+                        model_id=service._config.active_model_id,
+                        error_category=category,
+                        error_message=msg,
+                    )
+                except Exception:
+                    logger.warning(
+                        f"Could not persist error flag for track {request.track_id}",
+                        exc_info=True,
+                    )
+
             job_queue.cleanup_task_files(request.task_id)
 
         return TaskResultResponse(
@@ -767,6 +790,14 @@ def _handle_embedding_result(request: TaskResultRequest, task: "Task") -> None:
     if task.task_type == TaskType.COMPUTE_AUDIO_EMBEDDING:
         if request.track_id and request.track_id.strip():
             service.save_embedding(request.track_id, request.embedding)
+            # Clear any previous error flag (successful retry)
+            try:
+                service.track_database.clear_track_error(
+                    media_server_rating_key=request.track_id,
+                    model_id=service._config.active_model_id,
+                )
+            except Exception:
+                pass
             logger.info(f"Saved embedding for track {request.track_id}")
 
     # Determine whether a post-embed similarity search is required

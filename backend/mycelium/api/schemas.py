@@ -60,6 +60,7 @@ class TrackDatabaseStats(BaseModel):
     total_tracks: int
     processed_tracks: int
     unprocessed_tracks: int
+    errored_tracks: int = 0
     progress_percentage: float
     is_processing: Optional[bool] = None
     model_id: Optional[str] = None
