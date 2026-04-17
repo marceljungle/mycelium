@@ -1255,7 +1255,7 @@ async def get_queue_tasks(
             except ValueError:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid status: {status}. Must be one of: pending, in_progress, success, failed",
+                    detail=f"Invalid status: {status}. Must be one of: pending, in_progress, success, failed, cancelled",
                 )
 
         tasks, total = job_queue.get_tasks_by_status(

@@ -218,6 +218,7 @@ export interface QueueStatsResponse {
   in_progress_tasks: number;
   completed_tasks: number;
   failed_tasks: number;
+  cancelled_tasks: number;
   total_tasks: number;
 }
 

@@ -182,6 +182,7 @@ class QueueStatsResponse(BaseModel):
     in_progress_tasks: int = 0
     completed_tasks: int = 0
     failed_tasks: int = 0
+    cancelled_tasks: int = 0
     total_tasks: int = 0
 
 

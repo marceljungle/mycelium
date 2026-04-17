@@ -297,7 +297,7 @@ class JobQueueService:
         start_time = time.time()
         while time.time() - start_time < timeout_seconds:
             task = self.get_task_status(task_id)
-            if task and task.status in [TaskStatus.SUCCESS, TaskStatus.FAILED]:
+            if task and task.status in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED]:
                 return task
             time.sleep(1)  # Poll every second
 
@@ -311,6 +311,7 @@ class JobQueueService:
             in_progress_tasks = len([t for t in self._tasks.values() if t.status == TaskStatus.IN_PROGRESS])
             completed_tasks = len([t for t in self._tasks.values() if t.status == TaskStatus.SUCCESS])
             failed_tasks = len([t for t in self._tasks.values() if t.status == TaskStatus.FAILED])
+            cancelled_tasks = len([t for t in self._tasks.values() if t.status == TaskStatus.CANCELLED])
 
             return {
                 "active_workers": active_workers,
@@ -318,6 +319,7 @@ class JobQueueService:
                 "in_progress_tasks": in_progress_tasks,
                 "completed_tasks": completed_tasks,
                 "failed_tasks": failed_tasks,
+                "cancelled_tasks": cancelled_tasks,
                 "total_tasks": len(self._tasks)
             }
 
@@ -329,8 +331,7 @@ class JobQueueService:
             # Mark all pending tasks as cancelled
             for task_id in self._pending_tasks:
                 if task_id in self._tasks:
-                    self._tasks[task_id].status = TaskStatus.FAILED
-                    self._tasks[task_id].error_message = "Processing stopped by user"
+                    self._tasks[task_id].status = TaskStatus.CANCELLED
                     self._tasks[task_id].completed_at = datetime.now()
 
             # Clear the pending tasks list
@@ -338,8 +339,9 @@ class JobQueueService:
 
             # When stopping, clean up ALL in-progress tasks, not just from inactive workers
             # This ensures processing state is properly cleared even if workers are still active
-            in_progress_cleaned = self._cleanup_tasks(lambda t: t.status == TaskStatus.IN_PROGRESS,
-                                                      "Processing stopped by user request")
+            in_progress_cleaned = self._cleanup_cancelled_tasks(
+                lambda t: t.status == TaskStatus.IN_PROGRESS
+            )
 
             return cleared_count + in_progress_cleaned
 
@@ -353,6 +355,19 @@ class JobQueueService:
             if predicate(task):
                 task.status = TaskStatus.FAILED
                 task.error_message = error_message
+                task.completed_at = datetime.now()
+                cleaned_count += 1
+        return cleaned_count
+
+    def _cleanup_cancelled_tasks(self, predicate: Callable[[Task], bool]) -> int:
+        """Mark tasks matching *predicate* as CANCELLED. Returns count of cleaned tasks.
+
+        Must be called while ``_lock`` is held.
+        """
+        cleaned_count = 0
+        for task in self._tasks.values():
+            if predicate(task):
+                task.status = TaskStatus.CANCELLED
                 task.completed_at = datetime.now()
                 cleaned_count += 1
         return cleaned_count
@@ -503,8 +518,7 @@ class JobQueueService:
             if task is None or task.status != TaskStatus.PENDING:
                 return False
 
-            task.status = TaskStatus.FAILED
-            task.error_message = "Cancelled by user"
+            task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
 
             # Remove from the pending list
