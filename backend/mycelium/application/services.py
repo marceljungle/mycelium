@@ -82,7 +82,8 @@ class MyceliumService:
     def process_embeddings_from_database(
             self,
             progress_callback: Optional[callable] = None,
-            max_tracks: Optional[int] = None
+            max_tracks: Optional[int] = None,
+            include_errored: bool = False,
     ) -> Dict[str, Any]:
         """Process embeddings for unprocessed tracks from database."""
         if self._processing_in_progress:
@@ -95,8 +96,11 @@ class MyceliumService:
         try:
             # Reset stop flag for new session
             self.reset_processing_stop_flag()
-            result = self.resumable_processing.process_embeddings(progress_callback=progress_callback,
-                                                                  max_tracks=max_tracks)
+            result = self.resumable_processing.process_embeddings(
+                progress_callback=progress_callback,
+                max_tracks=max_tracks,
+                include_errored=include_errored,
+            )
             return result
         finally:
             self._processing_in_progress = False
@@ -284,7 +288,9 @@ class MyceliumService:
             return {"active_workers": 0, "worker_details": [], "queue_stats": {}}
         return self.worker_processing.get_worker_info()
 
-    def create_worker_tasks(self, max_tracks: Optional[int] = None) -> Dict[str, Any]:
+    def create_worker_tasks(
+        self, max_tracks: Optional[int] = None, include_errored: bool = False
+    ) -> Dict[str, Any]:
         """Create tasks for worker processing."""
         if not hasattr(self, 'worker_processing'):
             return {
@@ -292,7 +298,11 @@ class MyceliumService:
                 "message": "Worker processing not initialized",
                 "tasks_created": 0
             }
-        return self.worker_processing.create_worker_tasks(max_tracks=max_tracks, model_id=self._config.active_model_id)
+        return self.worker_processing.create_worker_tasks(
+            max_tracks=max_tracks,
+            model_id=self._config.active_model_id,
+            include_errored=include_errored,
+        )
 
     def stop_worker_processing(self) -> Dict[str, Any]:
         """Stop worker processing by clearing pending tasks."""

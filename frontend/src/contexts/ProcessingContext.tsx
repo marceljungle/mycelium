@@ -12,6 +12,7 @@ interface LibraryStats {
     total_tracks: number;
     processed_tracks: number;
     unprocessed_tracks: number;
+    errored_tracks?: number;
     progress_percentage: number;
     is_processing?: boolean;
   };
@@ -49,6 +50,8 @@ interface ProcessingContextType {
   stopProcessing: () => Promise<void>;
   cancelConfirmation: () => void;
   setOperationMessage: (message: string | null) => void;
+  includeErrored: boolean;
+  setIncludeErrored: (value: boolean) => void;
 }
 
 const ProcessingContext = createContext<ProcessingContextType | undefined>(undefined);
@@ -77,6 +80,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
   const [operationMessage, setOperationMessage] = useState<string | null>(null);
   const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [includeErrored, setIncludeErrored] = useState(false);
 
   // Simple state setters - no localStorage persistence for processing state
   // Processing state should come from API, not localStorage
@@ -165,7 +169,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
     setProgressInfo({ stage: 'starting' });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/library/process`, {
+      const response = await fetch(`${API_BASE_URL}/api/library/process?include_errored=${includeErrored}`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -208,7 +212,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       setProcessLoading(false);
       setProgressInfo(null);
     }
-  }, []);
+  }, [includeErrored]);
 
   const processOnServer = useCallback(async () => {
     setProcessLoading(true);
@@ -217,7 +221,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
     setProgressInfo({ stage: 'starting' });
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/library/process/server`, {
+      const response = await fetch(`${API_BASE_URL}/api/library/process/server?include_errored=${includeErrored}`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -239,7 +243,7 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
       setProcessLoading(false);
       setProgressInfo(null);
     }
-  }, []);
+  }, [includeErrored]);
 
   const stopProcessing = useCallback(async () => {
     try {
@@ -301,6 +305,8 @@ export function ProcessingProvider({ children }: ProcessingProviderProps) {
     stopProcessing,
     cancelConfirmation,
     setOperationMessage,
+    includeErrored,
+    setIncludeErrored,
   };
 
   return (

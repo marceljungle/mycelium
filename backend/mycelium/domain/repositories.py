@@ -190,9 +190,13 @@ class TrackRepository(ABC):
 
     @abstractmethod
     def get_unprocessed_tracks(
-        self, model_id: str, limit: Optional[int] = None
+        self, model_id: str, limit: Optional[int] = None, skip_errored: bool = True
     ) -> List[Any]:
-        """Return tracks not yet processed by *model_id*."""
+        """Return tracks not yet processed by *model_id*.
+
+        When *skip_errored* is True (the default), tracks previously flagged
+        as errored for this model are excluded from the results.
+        """
         ...
 
     @abstractmethod
@@ -200,6 +204,29 @@ class TrackRepository(ABC):
         self, media_server_rating_key: str, model_id: str
     ) -> None:
         """Record that *model_id* has processed a track."""
+        ...
+
+    @abstractmethod
+    def mark_track_errored(
+        self,
+        media_server_rating_key: str,
+        model_id: str,
+        error_category: str,
+        error_message: str,
+    ) -> None:
+        """Flag a track as errored for *model_id*."""
+        ...
+
+    @abstractmethod
+    def clear_track_error(
+        self, media_server_rating_key: str, model_id: str
+    ) -> None:
+        """Remove the error flag for a track after a successful retry."""
+        ...
+
+    @abstractmethod
+    def get_errored_track_count(self, model_id: str) -> int:
+        """Return the number of errored tracks for *model_id*."""
         ...
 
     @abstractmethod

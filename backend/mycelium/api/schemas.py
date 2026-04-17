@@ -60,6 +60,7 @@ class TrackDatabaseStats(BaseModel):
     total_tracks: int
     processed_tracks: int
     unprocessed_tracks: int
+    errored_tracks: int = 0
     progress_percentage: float
     is_processing: Optional[bool] = None
     model_id: Optional[str] = None
@@ -181,6 +182,7 @@ class QueueStatsResponse(BaseModel):
     in_progress_tasks: int = 0
     completed_tasks: int = 0
     failed_tasks: int = 0
+    cancelled_tasks: int = 0
     total_tasks: int = 0
 
 
