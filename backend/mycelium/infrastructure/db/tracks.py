@@ -108,11 +108,27 @@ class TrackDatabase(TrackRepository):
                 )
             """)
             
+            # Create track_errors table for flagging tracks that failed processing
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS track_errors (
+                    media_server_rating_key TEXT NOT NULL,
+                    media_server_type TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    error_category TEXT NOT NULL,
+                    error_message TEXT NOT NULL,
+                    errored_at TIMESTAMP NOT NULL,
+                    UNIQUE(media_server_rating_key, media_server_type, model_id),
+                    FOREIGN KEY (media_server_rating_key, media_server_type) 
+                        REFERENCES tracks(media_server_rating_key, media_server_type)
+                )
+            """)
+
             # Create indexes for performance
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_media_server ON tracks(media_server_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_scanned ON tracks(last_scanned)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_track_embeddings_lookup ON track_embeddings(media_server_rating_key, media_server_type)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_track_embeddings_model ON track_embeddings(model_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_track_errors_model ON track_errors(model_id)")
             conn.commit()
             logger.debug("Database tables and indexes created/verified successfully")
     
@@ -161,9 +177,17 @@ class TrackDatabase(TrackRepository):
         logger.debug(f"Track save operation completed: {stats}")
         return stats
     
-    def get_unprocessed_tracks(self, model_id: str, limit: Optional[int] = None) -> List[StoredTrack]:
-        """Get tracks that haven't been processed for embeddings with the specified model."""
-        logger.debug(f"Getting unprocessed tracks for model: {model_id}, limit: {limit}")
+    def get_unprocessed_tracks(
+        self, model_id: str, limit: Optional[int] = None, skip_errored: bool = True
+    ) -> List[StoredTrack]:
+        """Get tracks that haven't been processed for embeddings with the specified model.
+
+        Args:
+            model_id: Model to check processing state for.
+            limit: Maximum number of tracks to return.
+            skip_errored: When True, exclude tracks that previously errored for this model.
+        """
+        logger.debug(f"Getting unprocessed tracks for model: {model_id}, limit: {limit}, skip_errored: {skip_errored}")
         query = """
             SELECT t.media_server_rating_key, t.media_server_type, t.artist, t.album, t.title, 
                    t.filepath, t.added_at, t.last_scanned
@@ -173,11 +197,24 @@ class TrackDatabase(TrackRepository):
                 AND t.media_server_type = te.media_server_type 
                 AND te.model_id = ?
             )
-            WHERE te.id IS NULL
-            ORDER BY t.added_at
         """
-        
-        params = [model_id]
+        params: list = [model_id]
+
+        if skip_errored:
+            query += """
+            LEFT JOIN track_errors terr ON (
+                t.media_server_rating_key = terr.media_server_rating_key
+                AND t.media_server_type = terr.media_server_type
+                AND terr.model_id = ?
+            )
+            WHERE te.id IS NULL AND terr.media_server_rating_key IS NULL
+            """
+            params.append(model_id)
+        else:
+            query += "WHERE te.id IS NULL\n"
+
+        query += "ORDER BY t.added_at\n"
+
         if limit:
             query += f" LIMIT {limit}"
         
@@ -216,9 +253,43 @@ class TrackDatabase(TrackRepository):
             """, (media_server_rating_key, self.media_server_type.value, model_id, processed_at))
             conn.commit()
         logger.debug(f"Track {media_server_rating_key} marked as processed for model {model_id}")
-    
 
-    
+    def mark_track_errored(
+        self,
+        media_server_rating_key: str,
+        model_id: str,
+        error_category: str,
+        error_message: str,
+    ) -> None:
+        """Flag a track as errored for a specific model."""
+        now = datetime.now(timezone.utc)
+        logger.debug(f"Marking track {media_server_rating_key} as errored for model {model_id}: {error_category}")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO track_errors
+                (media_server_rating_key, media_server_type, model_id, error_category, error_message, errored_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (media_server_rating_key, self.media_server_type.value, model_id, error_category, error_message, now))
+            conn.commit()
+
+    def clear_track_error(self, media_server_rating_key: str, model_id: str) -> None:
+        """Remove the error flag for a track and model (e.g. after a successful retry)."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                DELETE FROM track_errors
+                WHERE media_server_rating_key = ? AND media_server_type = ? AND model_id = ?
+            """, (media_server_rating_key, self.media_server_type.value, model_id))
+            conn.commit()
+
+    def get_errored_track_count(self, model_id: str) -> int:
+        """Return the number of tracks flagged as errored for a model."""
+        with sqlite3.connect(self.db_path) as conn:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM track_errors WHERE model_id = ?",
+                (model_id,),
+            ).fetchone()
+            return result[0]
+
     def get_processing_stats(self, model_id: Optional[str] = None) -> Dict[str, int]:
         """Get processing statistics, optionally filtered by model."""
         logger.debug(f"Getting processing stats for model: {model_id}")
@@ -248,8 +319,23 @@ class TrackDatabase(TrackRepository):
                 """).fetchone()
                 stats["processed_tracks"] = result[0]
             
-            stats["unprocessed_tracks"] = stats["total_tracks"] - stats["processed_tracks"]
-            
+            # Count errored tracks (per model or any)
+            if model_id:
+                result = conn.execute(
+                    "SELECT COUNT(*) FROM track_errors WHERE model_id = ?",
+                    (model_id,),
+                ).fetchone()
+                stats["errored_tracks"] = result[0]
+            else:
+                result = conn.execute(
+                    "SELECT COUNT(DISTINCT media_server_rating_key, media_server_type) FROM track_errors"
+                ).fetchone()
+                stats["errored_tracks"] = result[0]
+
+            stats["unprocessed_tracks"] = (
+                stats["total_tracks"] - stats["processed_tracks"] - stats["errored_tracks"]
+            )
+
             logger.debug(f"Processing stats: {stats}")
             return stats
 
