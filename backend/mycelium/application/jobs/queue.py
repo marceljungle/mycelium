@@ -328,22 +328,24 @@ class JobQueueService:
         with self._lock:
             cleared_count = len(self._pending_tasks)
 
-            # Mark all pending tasks as cancelled
+            # Remove all pending tasks entirely — they will be re-created
+            # when processing starts again.
             for task_id in self._pending_tasks:
-                if task_id in self._tasks:
-                    self._tasks[task_id].status = TaskStatus.CANCELLED
-                    self._tasks[task_id].completed_at = datetime.now()
+                self._tasks.pop(task_id, None)
 
             # Clear the pending tasks list
             self._pending_tasks.clear()
 
-            # When stopping, clean up ALL in-progress tasks, not just from inactive workers
+            # When stopping, also remove ALL in-progress tasks
             # This ensures processing state is properly cleared even if workers are still active
-            in_progress_cleaned = self._cleanup_cancelled_tasks(
-                lambda t: t.status == TaskStatus.IN_PROGRESS
-            )
+            in_progress_ids = [
+                t.task_id for t in self._tasks.values()
+                if t.status == TaskStatus.IN_PROGRESS
+            ]
+            for task_id in in_progress_ids:
+                self._tasks.pop(task_id, None)
 
-            return cleared_count + in_progress_cleaned
+            return cleared_count + len(in_progress_ids)
 
     def _cleanup_tasks(self, predicate: Callable[[Task], bool], error_message: str) -> int:
         """Mark tasks matching *predicate* as FAILED. Returns count of cleaned tasks.
@@ -355,19 +357,6 @@ class JobQueueService:
             if predicate(task):
                 task.status = TaskStatus.FAILED
                 task.error_message = error_message
-                task.completed_at = datetime.now()
-                cleaned_count += 1
-        return cleaned_count
-
-    def _cleanup_cancelled_tasks(self, predicate: Callable[[Task], bool]) -> int:
-        """Mark tasks matching *predicate* as CANCELLED. Returns count of cleaned tasks.
-
-        Must be called while ``_lock`` is held.
-        """
-        cleaned_count = 0
-        for task in self._tasks.values():
-            if predicate(task):
-                task.status = TaskStatus.CANCELLED
                 task.completed_at = datetime.now()
                 cleaned_count += 1
         return cleaned_count

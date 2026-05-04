@@ -11,6 +11,7 @@ export interface WorkerClientSection {
   download_workers: number;
   gpu_batch_size: number;
   micro_batch_size: number;
+  preprocessing_workers: number;
 }
 
 export interface WorkerClientAPISection {
@@ -71,6 +72,18 @@ export interface WorkerProcessingStatus {
   model_type: string | null;
   model_id: string | null;
   micro_batch_size: number | null;
+
+  // Pipeline monitor fields
+  active_downloads: number;
+  is_preprocessing: boolean;
+  preprocessing_files: number;
+  is_gpu_busy: boolean;
+  gpu_batch_chunks: number;
+  pending_uploads: number;
+  last_preprocess_duration: number | null;
+  last_gpu_duration: number | null;
+  jobs_per_minute: number;
+  pipeline_started_at: number | null;
 }
 
 export interface ClientStatusResponse {

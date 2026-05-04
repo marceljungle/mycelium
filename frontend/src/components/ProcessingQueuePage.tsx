@@ -13,7 +13,7 @@ import ErrorLogViewer from '@/components/ErrorLogViewer';
 // Helpers
 // ---------------------------------------------------------------------------
 
-type StatusFilter = 'all' | 'in_progress' | 'pending' | 'success' | 'failed' | 'cancelled';
+type StatusFilter = 'all' | 'in_progress' | 'pending' | 'success' | 'failed';
 
 function statusBadge(status: string) {
   switch (status) {
@@ -251,14 +251,13 @@ export default function ProcessingQueuePage() {
 
       {/* ---- Stats Bar ---- */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {([
             { label: 'Workers', value: stats.active_workers, color: 'text-purple-600 dark:text-purple-400' },
             { label: 'Pending', value: stats.pending_tasks, color: 'text-yellow-600 dark:text-yellow-400' },
             { label: 'Processing', value: stats.in_progress_tasks, color: 'text-blue-600 dark:text-blue-400' },
             { label: 'Completed', value: stats.completed_tasks, color: 'text-green-600 dark:text-green-400' },
             { label: 'Failed', value: stats.failed_tasks, color: 'text-red-600 dark:text-red-400' },
-            { label: 'Cancelled', value: stats.cancelled_tasks, color: 'text-gray-500 dark:text-gray-400' },
             { label: 'Total', value: stats.total_tasks, color: 'text-gray-600 dark:text-gray-400' },
           ] as const).map((s) => (
             <div
@@ -313,7 +312,6 @@ export default function ProcessingQueuePage() {
               { id: 'pending' as StatusFilter, label: 'Pending' },
               { id: 'success' as StatusFilter, label: 'Completed' },
               { id: 'failed' as StatusFilter, label: 'Failed' },
-              { id: 'cancelled' as StatusFilter, label: 'Cancelled' },
             ]).map((tab) => (
               <button
                 key={tab.id}
@@ -331,8 +329,6 @@ export default function ProcessingQueuePage() {
                       : tab.id === 'in_progress' ? stats.in_progress_tasks
                       : tab.id === 'pending' ? stats.pending_tasks
                       : tab.id === 'success' ? stats.completed_tasks
-                      : tab.id === 'failed' ? stats.failed_tasks
-                      : tab.id === 'cancelled' ? stats.cancelled_tasks
                       : stats.failed_tasks}
                   </span>
                 )}
