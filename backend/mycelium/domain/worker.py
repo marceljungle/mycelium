@@ -27,6 +27,7 @@ class TaskStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     SUCCESS = "success"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass

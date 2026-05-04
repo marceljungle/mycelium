@@ -25,6 +25,18 @@ class ClientWorkerStatus:
     model_id: Optional[str] = None
     micro_batch_size: Optional[int] = None
 
+    # Pipeline monitor fields
+    active_downloads: int = 0
+    is_preprocessing: bool = False
+    preprocessing_files: int = 0
+    is_gpu_busy: bool = False
+    gpu_batch_chunks: int = 0
+    pending_uploads: int = 0
+    last_preprocess_duration: Optional[float] = None
+    last_gpu_duration: Optional[float] = None
+    jobs_per_minute: float = 0.0
+    pipeline_started_at: Optional[float] = None
+
     def update(self, **kwargs: object) -> None:
         """Atomically update one or more status fields."""
         with self._lock:
@@ -49,6 +61,16 @@ class ClientWorkerStatus:
                 "model_type": self.model_type,
                 "model_id": self.model_id,
                 "micro_batch_size": self.micro_batch_size,
+                "active_downloads": self.active_downloads,
+                "is_preprocessing": self.is_preprocessing,
+                "preprocessing_files": self.preprocessing_files,
+                "is_gpu_busy": self.is_gpu_busy,
+                "gpu_batch_chunks": self.gpu_batch_chunks,
+                "pending_uploads": self.pending_uploads,
+                "last_preprocess_duration": self.last_preprocess_duration,
+                "last_gpu_duration": self.last_gpu_duration,
+                "jobs_per_minute": self.jobs_per_minute,
+                "pipeline_started_at": self.pipeline_started_at,
             }
 
 

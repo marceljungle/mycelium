@@ -19,6 +19,8 @@ export default function LibraryStats() {
     processOnServer,
     stopProcessing,
     cancelConfirmation,
+    includeErrored,
+    setIncludeErrored,
   } = useProcessing();
 
   if (loading) {
@@ -77,7 +79,7 @@ export default function LibraryStats() {
         <div className="space-y-4">
           {/* Track Database Stats */}
           <div className="bg-gradient-to-r from-blue-100 to-cyan-100 dark:from-blue-900 dark:to-cyan-900 p-4 rounded-lg">
-            <div className="grid grid-cols-2 gap-4 mb-3">
+            <div className={`grid ${(stats.track_database_stats?.errored_tracks ?? 0) > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-4 mb-3`}>
               <div>
                 <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {stats.track_database_stats?.total_tracks?.toLocaleString() || '0'}
@@ -94,6 +96,16 @@ export default function LibraryStats() {
                   Processed Tracks
                 </div>
               </div>
+              {(stats.track_database_stats?.errored_tracks ?? 0) > 0 && (
+                <div>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    {stats.track_database_stats?.errored_tracks?.toLocaleString()}
+                  </div>
+                  <div className="text-sm text-red-700 dark:text-red-300">
+                    Errored Tracks
+                  </div>
+                </div>
+              )}
             </div>
 
             {stats.track_database_stats && stats.track_database_stats.total_tracks > 0 && (
@@ -217,6 +229,18 @@ export default function LibraryStats() {
               '⚡ Process Embeddings'
             )}
           </button>
+
+          {(stats?.track_database_stats?.errored_tracks ?? 0) > 0 && !processLoading && (
+            <label className="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 mt-1">
+              <input
+                type="checkbox"
+                checked={includeErrored}
+                onChange={(e) => setIncludeErrored(e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              <span>Retry errored tracks ({stats?.track_database_stats?.errored_tracks?.toLocaleString()})</span>
+            </label>
+          )}
 
           {processLoading && (
             <button

@@ -1,6 +1,7 @@
 'use client';
 
 import ClientSettingsPage from '@/components/ClientSettingsPage';
+import SystemMonitor from '@/components/SystemMonitor';
 
 export default function ClientPage() {
   return (
@@ -30,6 +31,7 @@ export default function ClientPage() {
         </div>
 
         <div className="grid gap-8 grid-cols-1">
+          <SystemMonitor />
           <ClientSettingsPage />
         </div>
 

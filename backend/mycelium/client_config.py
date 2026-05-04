@@ -65,6 +65,7 @@ class ClientConfig:
     download_workers: int = 10
     gpu_batch_size: int = 4
     micro_batch_size: int = 4
+    preprocessing_workers: int = 8  # threads for parallel librosa loading
 
 
 @dataclass
@@ -116,6 +117,7 @@ class MyceliumClientConfig:
             download_workers=config_data.get("client", {}).get("download_workers", 10),
             gpu_batch_size=config_data.get("client", {}).get("gpu_batch_size", 4),
             micro_batch_size=config_data.get("client", {}).get("micro_batch_size", 4),
+            preprocessing_workers=config_data.get("client", {}).get("preprocessing_workers", 8),
         )
         
         client_api_config = ClientAPIConfig(
@@ -178,7 +180,8 @@ class MyceliumClientConfig:
                 "poll_interval": self.client.poll_interval,
                 "download_workers": self.client.download_workers,
                 "gpu_batch_size": self.client.gpu_batch_size,
-                "micro_batch_size": self.client.micro_batch_size
+                "micro_batch_size": self.client.micro_batch_size,
+                "preprocessing_workers": self.client.preprocessing_workers
             },
             "client_api": {
                 "host": self.client_api.host,

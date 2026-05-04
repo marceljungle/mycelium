@@ -60,6 +60,7 @@ class TrackDatabaseStats(BaseModel):
     total_tracks: int
     processed_tracks: int
     unprocessed_tracks: int
+    errored_tracks: int = 0
     progress_percentage: float
     is_processing: Optional[bool] = None
     model_id: Optional[str] = None
@@ -181,6 +182,7 @@ class QueueStatsResponse(BaseModel):
     in_progress_tasks: int = 0
     completed_tasks: int = 0
     failed_tasks: int = 0
+    cancelled_tasks: int = 0
     total_tasks: int = 0
 
 
@@ -292,6 +294,18 @@ class WorkerProcessingStatus(BaseModel):
     model_type: Optional[str] = None
     model_id: Optional[str] = None
     micro_batch_size: Optional[int] = None
+
+    # Pipeline monitor fields
+    active_downloads: int = 0
+    is_preprocessing: bool = False
+    preprocessing_files: int = 0
+    is_gpu_busy: bool = False
+    gpu_batch_chunks: int = 0
+    pending_uploads: int = 0
+    last_preprocess_duration: Optional[float] = None
+    last_gpu_duration: Optional[float] = None
+    jobs_per_minute: float = 0.0
+    pipeline_started_at: Optional[float] = None
 
 
 class ClientStatusResponse(BaseModel):

@@ -45,6 +45,13 @@ function statusBadge(status: string) {
           Failed
         </span>
       );
+    case 'cancelled':
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+          Cancelled
+        </span>
+      );
     default:
       return <span className="text-xs text-gray-500">{status}</span>;
   }

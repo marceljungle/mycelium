@@ -11,6 +11,7 @@ client:
   download_workers: 10
   gpu_batch_size: 4      # Number of jobs to process together on GPU
   micro_batch_size: 4    # Chunks per GPU forward pass (lower = less memory)
+  preprocessing_workers: 8  # Threads for parallel audio loading/resampling
 
 # Client API server configuration for local configuration management
 client_api:
