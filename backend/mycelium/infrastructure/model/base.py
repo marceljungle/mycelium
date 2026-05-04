@@ -7,8 +7,9 @@ loading and a single forward-pass method.
 
 import logging
 from abc import abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 import librosa
 import numpy as np
@@ -203,6 +204,66 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
         results = self.generate_embedding_batch([filepath])
         return results[0] if results else None
 
+    def extract_chunks_for_file(
+        self, idx: int, filepath: Path
+    ) -> Tuple[int, int, List[np.ndarray], Optional[str]]:
+        """Extract chunks for a single file (thread-safe, no model access).
+
+        Returns:
+            (idx, chunk_count, chunks, error_message)
+        """
+        try:
+            chunks, duration_s = self._extract_chunks(filepath)
+            if not chunks:
+                return (
+                    idx, 0, [],
+                    f"Audio too short ({duration_s:.1f}s) for "
+                    f"{self.chunk_duration_s}s window",
+                )
+            return (idx, len(chunks), chunks, None)
+        except Exception as e:
+            logger.error(f"Error loading audio file {filepath}: {e}")
+            return (idx, 0, [], f"Failed to load audio: {e}")
+
+    def preprocess_files(
+        self, filepaths: List[Path], max_workers: int = 8
+    ) -> Tuple[List[np.ndarray], List[int], dict]:
+        """Load and chunk multiple audio files in parallel using threads.
+
+        librosa releases the GIL during C-level resampling so threads give
+        real parallelism here.
+
+        Returns:
+            (all_chunks, file_chunk_counts, errors_dict)
+        """
+        all_chunks: list[np.ndarray] = []
+        file_chunk_counts: list[int] = [0] * len(filepaths)
+        errors: dict[int, str] = {}
+
+        # Results arrive out of order; we sort by idx to reassemble correctly
+        results: list[Tuple[int, int, List[np.ndarray], Optional[str]]] = []
+
+        workers = min(max_workers, len(filepaths))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self.extract_chunks_for_file, idx, fp): idx
+                for idx, fp in enumerate(filepaths)
+            }
+            for future in as_completed(futures):
+                results.append(future.result())
+
+        # Sort by original index to maintain file order
+        results.sort(key=lambda r: r[0])
+
+        for idx, count, chunks, error in results:
+            file_chunk_counts[idx] = count
+            if error:
+                errors[idx] = error
+            else:
+                all_chunks.extend(chunks)
+
+        return all_chunks, file_chunk_counts, errors
+
     def generate_embedding_batch(
         self, filepaths: List[Path]
     ) -> List[Optional[List[float]]]:
@@ -215,26 +276,11 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
             self._load_model_if_needed()
             self._smoke_test_dtype()
 
-            # Phase 1: collect all chunks across files
-            all_chunks: list[np.ndarray] = []
-            file_chunk_counts: list[int] = []
-
-            for idx, filepath in enumerate(filepaths):
-                try:
-                    chunks, duration_s = self._extract_chunks(filepath)
-                    if not chunks:
-                        file_chunk_counts.append(0)
-                        self.last_batch_errors[idx] = (
-                            f"Audio too short ({duration_s:.1f}s) for "
-                            f"{self.chunk_duration_s}s window"
-                        )
-                        continue
-                    all_chunks.extend(chunks)
-                    file_chunk_counts.append(len(chunks))
-                except Exception as e:
-                    logger.error(f"Error loading audio file {filepath}: {e}")
-                    file_chunk_counts.append(0)
-                    self.last_batch_errors[idx] = f"Failed to load audio: {e}"
+            # Phase 1: parallel chunk extraction across CPU threads
+            all_chunks, file_chunk_counts, errors = self.preprocess_files(
+                filepaths, max_workers=8
+            )
+            self.last_batch_errors = errors
 
             if not all_chunks:
                 return [None] * len(filepaths)
