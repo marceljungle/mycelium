@@ -116,6 +116,24 @@ class MyceliumClient:
         self.gpu_name = self._detect_gpu_name()
         logging.info(f"GPU: {self.gpu_name}")
 
+        # Throughput tracking (rolling window)
+        self._throughput_history: list = []  # list of (timestamp, job_count)
+
+    def _compute_jobs_per_minute(self, new_jobs: int) -> float:
+        """Compute rolling jobs/minute over the last 60 seconds."""
+        now = time.time()
+        self._throughput_history.append((now, new_jobs))
+        # Prune entries older than 60s
+        cutoff = now - 60.0
+        self._throughput_history = [
+            (t, n) for t, n in self._throughput_history if t >= cutoff
+        ]
+        total = sum(n for _, n in self._throughput_history)
+        window = now - self._throughput_history[0][0] if len(self._throughput_history) > 1 else 60.0
+        if window < 1.0:
+            window = 60.0
+        return round(total * 60.0 / window, 1)
+
     @staticmethod
     def _detect_gpu_name() -> str:
         """Detect the GPU/accelerator name for this worker."""
@@ -389,7 +407,7 @@ class MyceliumClient:
                     if job:
                         try:
                             self.job_queue.put_nowait(job)
-                            logging.info(f"Job fetcher: Got job {job['task_id']}, added to queue.")
+                            logging.debug(f"Job fetcher: Got job {job['task_id']}, added to queue.")
                         except Full:
                             held_job = job
                             logging.info(f"Job fetcher: Queue full, holding job {job['task_id']}")
@@ -443,8 +461,10 @@ class MyceliumClient:
                     continue
 
                 full_url = f"http://{self.server_host}:{self.server_port}{download_url}"
-                logging.info(f"Downloading audio for job {task_id} from {full_url}")
+                logging.debug(f"Downloading audio for job {task_id} from {full_url}")
+                worker_status.update(active_downloads=worker_status.active_downloads + 1)
                 audio_file, dl_error = self.download_audio_file(full_url)
+                worker_status.update(active_downloads=max(0, worker_status.active_downloads - 1))
 
                 if audio_file:
                     downloaded_job = DownloadedJob(
@@ -454,7 +474,7 @@ class MyceliumClient:
                         original_job=job
                     )
                     self.download_queue.put(downloaded_job)
-                    logging.info(f"Queued audio job {task_id} for processing.")
+                    logging.debug(f"Queued audio job {task_id} for processing.")
                 else:
                     logging.error(f"Failed to download audio for job {task_id}: {dl_error}")
                     self.submit_result(task_id, job.get("track_id", ""), None, dl_error or "Failed to download audio file")
@@ -553,89 +573,122 @@ class MyceliumClient:
         librosa loading, and puts PreprocessedBatch on gpu_ready_queue.
 
         This ensures the GPU never waits for CPU-bound audio decoding/resampling.
+        Uses a short initial wait then drains immediately — starts librosa ASAP
+        rather than waiting for a full batch, since parallel librosa is fast enough
+        that partial batches still keep the GPU fed.
         """
         gpu_batch_size = self.config.client.gpu_batch_size
         logging.info("Preprocessor worker started")
 
         while not self.stop_event.is_set() or not self.download_queue.empty():
-            # Collect a batch
+            # Collect a batch — short initial wait, then drain what's available
             batch: List[DownloadedJob] = []
-            batch_wait_deadline = time.time() + 2.0
-            while len(batch) < gpu_batch_size:
-                remaining = batch_wait_deadline - time.time()
-                if remaining <= 0:
-                    break
-                try:
-                    downloaded_job = self.download_queue.get(
-                        timeout=min(remaining, 0.5)
-                    )
-                    batch.append(downloaded_job)
-                except Empty:
-                    if self.stop_event.is_set():
-                        break
-                    if batch:
-                        break
-                    continue
 
-            if not batch:
+            # Wait for at least 1 item (or stop signal)
+            try:
+                first = self.download_queue.get(timeout=1.0)
+                batch.append(first)
+            except Empty:
                 if self.stop_event.is_set():
                     break
                 continue
 
-            # Separate audio from text jobs
-            audio_jobs: List[DownloadedJob] = []
-            text_jobs: List[DownloadedJob] = []
-            for job in batch:
-                task_type = job.original_job.get("task_type", "compute_audio_embedding")
-                if task_type == "compute_audio_embedding":
-                    audio_jobs.append(job)
-                elif task_type == "compute_text_embedding":
-                    text_jobs.append(job)
-
-            preprocessed = PreprocessedBatch(
-                audio_jobs=audio_jobs,
-                text_jobs=text_jobs,
-            )
-
-            # Pre-load and chunk audio files in parallel (the expensive part)
-            if audio_jobs and self.embedding_generator is not None:
-                valid_jobs: List[DownloadedJob] = []
-                filepaths: List[Path] = []
-                for job in audio_jobs:
-                    if job.audio_file and job.audio_file.exists():
-                        filepaths.append(job.audio_file)
-                        valid_jobs.append(job)
-                    else:
-                        self.submit_result(
-                            job.task_id, job.track_id, None,
-                            "Audio file not available"
-                        )
-
-                if filepaths:
-                    all_chunks, file_chunk_counts, errors = (
-                        self.embedding_generator.preprocess_files(
-                            filepaths,
-                            max_workers=self.config.client.preprocessing_workers,
-                        )
-                    )
-                    preprocessed.all_chunks = all_chunks
-                    preprocessed.file_chunk_counts = file_chunk_counts
-                    preprocessed.preprocess_errors = errors
-                    preprocessed.valid_audio_jobs = valid_jobs
-
-            # Put on GPU-ready queue (blocks if GPU is busy with previous batch)
-            while not self.stop_event.is_set():
+            # Drain up to gpu_batch_size without blocking (grab what's ready NOW)
+            while len(batch) < gpu_batch_size:
                 try:
-                    self.gpu_ready_queue.put(preprocessed, timeout=1.0)
+                    batch.append(self.download_queue.get_nowait())
+                except Empty:
                     break
-                except Full:
-                    continue
 
-            # Mark download_queue items done
-            for _ in batch:
-                self.download_queue.task_done()
+            try:
+                self._preprocess_batch(batch, gpu_batch_size)
+            except Exception as e:
+                logging.error(f"Preprocessor: batch failed, returning {len(batch)} jobs to queue: {e}", exc_info=True)
+                # Return jobs to download_queue so they can be retried
+                for job in batch:
+                    try:
+                        self.download_queue.put_nowait(job)
+                    except Full:
+                        # Queue full, discard with error
+                        self.submit_result(job.task_id, job.track_id, None, f"Preprocessor error: {e}")
+                # Small backoff to avoid tight error loops
+                time.sleep(2.0)
+            finally:
+                for _ in batch:
+                    self.download_queue.task_done()
 
         logging.info("Preprocessor worker stopped")
+
+    def _preprocess_batch(self, batch: List[DownloadedJob], gpu_batch_size: int) -> None:
+        """Process a single batch in the preprocessor thread."""
+        logging.info(
+            f"Preprocessor: collected {len(batch)} jobs "
+            f"(download_queue remaining: ~{self.download_queue.qsize()})"
+        )
+
+        # Separate audio from text jobs
+        audio_jobs: List[DownloadedJob] = []
+        text_jobs: List[DownloadedJob] = []
+        for job in batch:
+            task_type = job.original_job.get("task_type", "compute_audio_embedding")
+            if task_type == "compute_audio_embedding":
+                audio_jobs.append(job)
+            elif task_type == "compute_text_embedding":
+                text_jobs.append(job)
+
+        preprocessed = PreprocessedBatch(
+            audio_jobs=audio_jobs,
+            text_jobs=text_jobs,
+        )
+
+        # Pre-load and chunk audio files in parallel (the expensive part)
+        if audio_jobs and self.embedding_generator is not None:
+            valid_jobs: List[DownloadedJob] = []
+            filepaths: List[Path] = []
+            for job in audio_jobs:
+                if job.audio_file and job.audio_file.exists():
+                    filepaths.append(job.audio_file)
+                    valid_jobs.append(job)
+                else:
+                    self.submit_result(
+                        job.task_id, job.track_id, None,
+                        "Audio file not available"
+                    )
+
+            if filepaths:
+                preprocess_start = time.time()
+                worker_status.update(
+                    is_preprocessing=True,
+                    preprocessing_files=len(filepaths),
+                )
+                all_chunks, file_chunk_counts, errors = (
+                    self.embedding_generator.preprocess_files(
+                        filepaths,
+                        max_workers=self.config.client.preprocessing_workers,
+                    )
+                )
+                preprocess_elapsed = time.time() - preprocess_start
+                worker_status.update(
+                    is_preprocessing=False,
+                    preprocessing_files=0,
+                    last_preprocess_duration=round(preprocess_elapsed, 2),
+                )
+                logging.info(
+                    f"Preprocessor: librosa done for {len(filepaths)} files "
+                    f"({len(all_chunks)} chunks) in {preprocess_elapsed:.2f}s"
+                )
+                preprocessed.all_chunks = all_chunks
+                preprocessed.file_chunk_counts = file_chunk_counts
+                preprocessed.preprocess_errors = errors
+                preprocessed.valid_audio_jobs = valid_jobs
+
+        # Put on GPU-ready queue (blocks if GPU is busy with previous batch)
+        while not self.stop_event.is_set():
+            try:
+                self.gpu_ready_queue.put(preprocessed, timeout=1.0)
+                break
+            except Full:
+                continue
 
     def _process_batch(self, batch: List[DownloadedJob]) -> None:
         """Process a batch of jobs to improve GPU utilization."""
@@ -781,6 +834,11 @@ class MyceliumClient:
 
                 # Micro-batched forward passes (GPU only)
                 import torch
+                gpu_start = time.time()
+                worker_status.update(
+                    is_gpu_busy=True,
+                    gpu_batch_chunks=len(preprocessed.all_chunks),
+                )
                 embeddings_list: list = []
                 micro_bs = self.embedding_generator.micro_batch_size
                 for i in range(0, len(preprocessed.all_chunks), micro_bs):
@@ -811,7 +869,12 @@ class MyceliumClient:
 
                 logging.info(
                     f"GPU processed {len(preprocessed.valid_audio_jobs)} audio files "
-                    f"({len(preprocessed.all_chunks)} chunks)"
+                    f"({len(preprocessed.all_chunks)} chunks) in {time.time() - gpu_start:.2f}s"
+                )
+                worker_status.update(
+                    is_gpu_busy=False,
+                    gpu_batch_chunks=0,
+                    last_gpu_duration=round(time.time() - gpu_start, 2),
                 )
             except Exception as e:
                 logging.error(f"Audio batch GPU processing failed: {e}", exc_info=True)
@@ -851,6 +914,7 @@ class MyceliumClient:
             current_batch_size=0,
             total_jobs_processed=worker_status.total_jobs_processed + total_jobs,
             last_job_completed_at=time.time(),
+            jobs_per_minute=self._compute_jobs_per_minute(total_jobs),
         )
 
     def run(self):
@@ -868,6 +932,7 @@ class MyceliumClient:
             return
 
         self._start_workers()
+        worker_status.update(pipeline_started_at=time.time())
         self._log_queue_status("worker started")
 
         last_status_log = time.time()

@@ -295,6 +295,18 @@ class WorkerProcessingStatus(BaseModel):
     model_id: Optional[str] = None
     micro_batch_size: Optional[int] = None
 
+    # Pipeline monitor fields
+    active_downloads: int = 0
+    is_preprocessing: bool = False
+    preprocessing_files: int = 0
+    is_gpu_busy: bool = False
+    gpu_batch_chunks: int = 0
+    pending_uploads: int = 0
+    last_preprocess_duration: Optional[float] = None
+    last_gpu_duration: Optional[float] = None
+    jobs_per_minute: float = 0.0
+    pipeline_started_at: Optional[float] = None
+
 
 class ClientStatusResponse(BaseModel):
     """Aggregated client status (server reachability + worker state)."""
