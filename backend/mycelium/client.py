@@ -338,6 +338,8 @@ class MyceliumClient:
             logging.error(f"Error getting job from server: {e}")
             return None
 
+    MAX_DOWNLOAD_SIZE_MB = 500  # Skip files larger than this
+
     @staticmethod
     def download_audio_file(download_url: str) -> tuple[Optional[Path], Optional[str]]:
         """Download audio file from server.
@@ -349,8 +351,28 @@ class MyceliumClient:
         try:
             response = requests.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
+
+            # Check Content-Length before downloading
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None:
+                size_mb = int(content_length) / (1024 * 1024)
+                if size_mb > MyceliumClient.MAX_DOWNLOAD_SIZE_MB:
+                    response.close()
+                    msg = f"File too large ({size_mb:.0f}MB > {MyceliumClient.MAX_DOWNLOAD_SIZE_MB}MB limit), skipping"
+                    logging.warning(f"Skipping download {download_url}: {msg}")
+                    return None, msg
+
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+            bytes_written = 0
+            max_bytes = MyceliumClient.MAX_DOWNLOAD_SIZE_MB * 1024 * 1024
             for chunk in response.iter_content(chunk_size=8192):
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    temp_file.close()
+                    os.unlink(temp_file.name)
+                    msg = f"File exceeded {MyceliumClient.MAX_DOWNLOAD_SIZE_MB}MB during download, skipping"
+                    logging.warning(f"Aborted download {download_url}: {msg}")
+                    return None, msg
                 temp_file.write(chunk)
             temp_file.close()
             return Path(temp_file.name), None
