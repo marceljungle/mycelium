@@ -603,14 +603,15 @@ class MyceliumClient:
             try:
                 self._preprocess_batch(batch, gpu_batch_size)
             except Exception as e:
-                logging.error(f"Preprocessor: batch failed, returning {len(batch)} jobs to queue: {e}", exc_info=True)
-                # Return jobs to download_queue so they can be retried
+                logging.error(f"Preprocessor: batch failed, discarding {len(batch)} jobs: {e}", exc_info=True)
+                # Clean up temp files and report errors
                 for job in batch:
-                    try:
-                        self.download_queue.put_nowait(job)
-                    except Full:
-                        # Queue full, discard with error
-                        self.submit_result(job.task_id, job.track_id, None, f"Preprocessor error: {e}")
+                    if job.audio_file:
+                        try:
+                            os.unlink(job.audio_file)
+                        except OSError:
+                            pass
+                    self.submit_result(job.task_id, job.track_id, None, f"Preprocessor error: {e}")
                 # Small backoff to avoid tight error loops
                 time.sleep(2.0)
             finally:
