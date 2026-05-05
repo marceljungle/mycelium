@@ -396,6 +396,15 @@ class MyceliumClient:
         except requests.exceptions.RequestException as e:
             logging.error(f"Error downloading file from {download_url}: {e}")
             return None, f"Download error: {e}"
+        except OSError as e:
+            # Clean up partial temp file on disk errors (ENOSPC, quota, etc.)
+            try:
+                if 'temp_file' in locals():
+                    temp_file.close()
+                    os.unlink(temp_file.name)
+            except Exception:
+                pass
+            raise  # Let caller handle retry logic
 
     def _job_fetcher(self):
         """Thread that requests jobs from the server and puts them in the job_queue.
@@ -417,7 +426,7 @@ class MyceliumClient:
                 if held_job is not None:
                     try:
                         self.job_queue.put(held_job, block=False)
-                        logging.info(f"Job fetcher: Enqueued held job {held_job['task_id']}")
+                        logging.debug(f"Job fetcher: Enqueued held job {held_job['task_id']}")
                         held_job = None
                     except Full:
                         pass  # Still full — will heartbeat below and retry next loop
@@ -432,7 +441,7 @@ class MyceliumClient:
                             logging.debug(f"Job fetcher: Got job {job['task_id']}, added to queue.")
                         except Full:
                             held_job = job
-                            logging.info(f"Job fetcher: Queue full, holding job {job['task_id']}")
+                            logging.debug(f"Job fetcher: Queue full, holding job {job['task_id']}")
                     else:
                         time.sleep(self.poll_interval)
                 else:
@@ -505,6 +514,21 @@ class MyceliumClient:
 
             except Empty:
                 continue
+            except OSError as e:
+                import errno as errno_mod
+                if e.errno in (errno_mod.ENOSPC, 122):  # Disk full / quota exceeded
+                    logging.warning(f"Download worker: disk full (errno {e.errno}), re-queuing job and waiting for space...")
+                    try:
+                        self.job_queue.put(job)
+                    except Exception:
+                        pass
+                    # Back off — GPU is processing and deleting files, space will free up
+                    for _ in range(30):  # wait up to 30s, checking stop_event
+                        if self.stop_event.is_set():
+                            break
+                        time.sleep(1)
+                else:
+                    logging.error(f"Download worker OS error: {e}")
             except Exception as e:
                 logging.error(f"Download worker error: {e}")
 
