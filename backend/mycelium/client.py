@@ -534,9 +534,32 @@ class MyceliumClient:
 
         logging.info("Download worker thread stopped")
 
+    @staticmethod
+    def _cleanup_stale_tmp_files():
+        """Remove orphaned .tmp files in /tmp from previous runs."""
+        import glob
+        tmp_files = glob.glob("/tmp/tmp*.tmp")
+        if not tmp_files:
+            return
+        cleaned = 0
+        freed_bytes = 0
+        for f in tmp_files:
+            try:
+                freed_bytes += os.path.getsize(f)
+                os.unlink(f)
+                cleaned += 1
+            except OSError:
+                pass
+        if cleaned:
+            freed_mb = freed_bytes / (1024 * 1024)
+            logging.info(f"Startup cleanup: removed {cleaned} orphaned temp files ({freed_mb:.0f}MB)")
+
     def _start_workers(self):
         """Start job fetcher, download workers, and preprocessor thread."""
         self.stop_event.clear()
+
+        # Clean up orphaned temp files from previous runs (e.g. after crash/OOM)
+        self._cleanup_stale_tmp_files()
 
         self.job_fetcher_thread = threading.Thread(target=self._job_fetcher, daemon=True)
         self.job_fetcher_thread.start()
