@@ -338,6 +338,8 @@ class MyceliumClient:
             logging.error(f"Error getting job from server: {e}")
             return None
 
+    MAX_DOWNLOAD_SIZE_MB = 500  # Skip files larger than this
+
     @staticmethod
     def download_audio_file(download_url: str) -> tuple[Optional[Path], Optional[str]]:
         """Download audio file from server.
@@ -349,8 +351,28 @@ class MyceliumClient:
         try:
             response = requests.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
+
+            # Check Content-Length before downloading
+            content_length = response.headers.get("Content-Length")
+            if content_length is not None:
+                size_mb = int(content_length) / (1024 * 1024)
+                if size_mb > MyceliumClient.MAX_DOWNLOAD_SIZE_MB:
+                    response.close()
+                    msg = f"File too large ({size_mb:.0f}MB > {MyceliumClient.MAX_DOWNLOAD_SIZE_MB}MB limit), skipping"
+                    logging.warning(f"Skipping download {download_url}: {msg}")
+                    return None, msg
+
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".tmp")
+            bytes_written = 0
+            max_bytes = MyceliumClient.MAX_DOWNLOAD_SIZE_MB * 1024 * 1024
             for chunk in response.iter_content(chunk_size=8192):
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    temp_file.close()
+                    os.unlink(temp_file.name)
+                    msg = f"File exceeded {MyceliumClient.MAX_DOWNLOAD_SIZE_MB}MB during download, skipping"
+                    logging.warning(f"Aborted download {download_url}: {msg}")
+                    return None, msg
                 temp_file.write(chunk)
             temp_file.close()
             return Path(temp_file.name), None
@@ -374,6 +396,15 @@ class MyceliumClient:
         except requests.exceptions.RequestException as e:
             logging.error(f"Error downloading file from {download_url}: {e}")
             return None, f"Download error: {e}"
+        except OSError as e:
+            # Clean up partial temp file on disk errors (ENOSPC, quota, etc.)
+            try:
+                if 'temp_file' in locals():
+                    temp_file.close()
+                    os.unlink(temp_file.name)
+            except Exception:
+                pass
+            raise  # Let caller handle retry logic
 
     def _job_fetcher(self):
         """Thread that requests jobs from the server and puts them in the job_queue.
@@ -395,7 +426,7 @@ class MyceliumClient:
                 if held_job is not None:
                     try:
                         self.job_queue.put(held_job, block=False)
-                        logging.info(f"Job fetcher: Enqueued held job {held_job['task_id']}")
+                        logging.debug(f"Job fetcher: Enqueued held job {held_job['task_id']}")
                         held_job = None
                     except Full:
                         pass  # Still full — will heartbeat below and retry next loop
@@ -410,7 +441,7 @@ class MyceliumClient:
                             logging.debug(f"Job fetcher: Got job {job['task_id']}, added to queue.")
                         except Full:
                             held_job = job
-                            logging.info(f"Job fetcher: Queue full, holding job {job['task_id']}")
+                            logging.debug(f"Job fetcher: Queue full, holding job {job['task_id']}")
                     else:
                         time.sleep(self.poll_interval)
                 else:
@@ -483,14 +514,52 @@ class MyceliumClient:
 
             except Empty:
                 continue
+            except OSError as e:
+                import errno as errno_mod
+                if e.errno in (errno_mod.ENOSPC, 122):  # Disk full / quota exceeded
+                    logging.warning(f"Download worker: disk full (errno {e.errno}), re-queuing job and waiting for space...")
+                    try:
+                        self.job_queue.put(job)
+                    except Exception:
+                        pass
+                    # Back off — GPU is processing and deleting files, space will free up
+                    for _ in range(30):  # wait up to 30s, checking stop_event
+                        if self.stop_event.is_set():
+                            break
+                        time.sleep(1)
+                else:
+                    logging.error(f"Download worker OS error: {e}")
             except Exception as e:
                 logging.error(f"Download worker error: {e}")
 
         logging.info("Download worker thread stopped")
 
+    @staticmethod
+    def _cleanup_stale_tmp_files():
+        """Remove orphaned .tmp files in /tmp from previous runs."""
+        import glob
+        tmp_files = glob.glob("/tmp/tmp*.tmp")
+        if not tmp_files:
+            return
+        cleaned = 0
+        freed_bytes = 0
+        for f in tmp_files:
+            try:
+                freed_bytes += os.path.getsize(f)
+                os.unlink(f)
+                cleaned += 1
+            except OSError:
+                pass
+        if cleaned:
+            freed_mb = freed_bytes / (1024 * 1024)
+            logging.info(f"Startup cleanup: removed {cleaned} orphaned temp files ({freed_mb:.0f}MB)")
+
     def _start_workers(self):
         """Start job fetcher, download workers, and preprocessor thread."""
         self.stop_event.clear()
+
+        # Clean up orphaned temp files from previous runs (e.g. after crash/OOM)
+        self._cleanup_stale_tmp_files()
 
         self.job_fetcher_thread = threading.Thread(target=self._job_fetcher, daemon=True)
         self.job_fetcher_thread.start()

@@ -35,6 +35,14 @@ Mycelium supports three embedding models. The model determines what search modes
 
 All models use windowed mean pooling (non-overlapping chunks) with L2 normalization. Switching models requires re-processing the entire library.
 
+### Processing Limits
+
+To prevent GPU hangs and temp disk exhaustion during large library scans, the worker enforces two safeguards:
+
+- **Chunk cap (10 minutes)** — Files longer than 10 minutes of audio (e.g. DJ mixes, full-album FLACs) are sampled using evenly-spaced chunks instead of processing every chunk. This keeps GPU batch sizes bounded while still capturing the full sonic range of the track. Songs under 10 minutes are unaffected. The cap adapts to the configured `chunk_duration_s` (e.g. 30s chunks → max 20 chunks, 5s chunks → max 120 chunks).
+
+- **Download size limit (500 MB)** — Files larger than 500 MB are skipped entirely and reported as errors. The size is checked via `Content-Length` before downloading when possible, and enforced during download as a fallback. This prevents multi-GB files from filling up temp storage (especially relevant when `/tmp` is a RAM-backed tmpfs).
+
 ## Features
 
 - **Text search** — Search by natural language description (requires CLAP or MuQ-MuLan)
