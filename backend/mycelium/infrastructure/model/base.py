@@ -148,8 +148,12 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
     # Audio chunking
     # ------------------------------------------------------------------
 
-    def _extract_chunks(self, filepath: Path) -> tuple[List[np.ndarray], float]:
+    def _extract_chunks(self, filepath: Path, max_duration_s: int = 600) -> tuple[List[np.ndarray], float]:
         """Load audio and split into non-overlapping windows of ``chunk_duration_s``.
+
+        If the file produces more chunks than fit in ``max_duration_s`` (default
+        10 minutes), evenly-spaced samples are taken to cap memory and GPU time
+        while still representing the full track.
 
         Returns:
             Tuple of ``(chunks, duration_seconds)``.  ``chunks`` is empty
@@ -169,9 +173,24 @@ class BaseAudioEmbeddingGenerator(EmbeddingGenerator):
             )
             return [], duration_s
 
+        max_chunks = max_duration_s // self.chunk_duration_s
+
+        if num_windows > max_chunks:
+            # Evenly sample across the track instead of taking the first N
+            indices = [
+                int(i * num_windows / max_chunks)
+                for i in range(max_chunks)
+            ]
+            logger.info(
+                f"File {filepath.name}: {num_windows} chunks ({duration_s:.0f}s), "
+                f"sampling {max_chunks} evenly-spaced"
+            )
+        else:
+            indices = list(range(num_windows))
+
         chunks = [
             waveform[i * chunk_samples : (i + 1) * chunk_samples]
-            for i in range(num_windows)
+            for i in indices
         ]
         return chunks, duration_s
 
