@@ -536,9 +536,10 @@ class MyceliumClient:
 
     @staticmethod
     def _cleanup_stale_tmp_files():
-        """Remove orphaned .tmp files in /tmp from previous runs."""
+        """Remove orphaned .tmp files from previous runs."""
         import glob
-        tmp_files = glob.glob("/tmp/tmp*.tmp")
+        tmp_dir = tempfile.gettempdir()
+        tmp_files = glob.glob(os.path.join(tmp_dir, "tmp*.tmp"))
         if not tmp_files:
             return
         cleaned = 0
